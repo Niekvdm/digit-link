@@ -24,11 +24,21 @@ A lightweight ngrok-like tunnel system for exposing local services to the intern
 # Build the server
 make build-server
 
-# Create initial admin account
-./build/bin/digit-link-server --setup-admin
-
 # Run the server
 ./build/bin/digit-link-server
+```
+
+#### First-Boot Setup (Recommended)
+
+When the server starts with no admin account, navigate to your domain in a browser. The **first-boot setup wizard** will guide you through creating your admin account and generating your token.
+
+This is ideal for Kubernetes/k3s deployments where CLI access is limited.
+
+#### Alternative: CLI Setup
+
+```bash
+# Create initial admin account via command line
+./build/bin/digit-link-server --setup-admin
 ```
 
 On first run with `--setup-admin`, you'll receive an admin token. Save it securely!

@@ -59,6 +59,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Setup endpoints (always available for status check)
+	if strings.HasPrefix(r.URL.Path, "/setup") {
+		s.handleSetup(w, r)
+		return
+	}
+
 	// Admin API endpoints
 	if strings.HasPrefix(r.URL.Path, "/admin/") {
 		s.handleAdmin(w, r)
@@ -115,6 +121,23 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 // serveDashboard serves the static dashboard files or the default page
 func (s *Server) serveDashboard(w http.ResponseWriter, r *http.Request) {
+	// Check if initial setup is needed
+	if s.NeedsSetup() {
+		path := r.URL.Path
+		// If requesting root or index, redirect to setup
+		if path == "/" || path == "/index.html" {
+			content, contentType, found := getStaticFile("/setup.html")
+			if found {
+				w.Header().Set("Content-Type", contentType)
+				w.Write(content)
+				return
+			}
+			// Fallback redirect
+			http.Redirect(w, r, "/setup.html", http.StatusTemporaryRedirect)
+			return
+		}
+	}
+
 	// Try to serve static files from embedded public directory
 	path := r.URL.Path
 	if path == "/" {

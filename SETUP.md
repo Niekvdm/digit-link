@@ -12,6 +12,24 @@ make build-server
 
 ### 2. Create the Initial Admin Account
 
+There are three ways to create the initial admin account:
+
+#### Option A: Web-Based First-Boot Setup (Recommended for k3s/Kubernetes)
+
+Simply start the server and navigate to your domain. If no admin account exists, you'll be automatically redirected to a setup wizard:
+
+1. Deploy and start the server
+2. Navigate to `https://tunnel.yourdomain.com/`
+3. The first-boot setup page will appear
+4. Choose a username (default: "admin")
+5. Optionally auto-whitelist your current IP
+6. Click "Create Admin Account"
+7. **Save the generated token immediately** - it will only be shown once!
+
+This is the preferred method for containerized deployments where CLI access is limited.
+
+#### Option B: Command Line Setup
+
 Run the server with the `--setup-admin` flag:
 
 ```bash
@@ -34,6 +52,17 @@ Use this token to access the admin dashboard and API.
 
 **Save this token immediately!** It's the only way to access the admin dashboard.
 
+#### Option C: Environment Variable
+
+Set the `ADMIN_TOKEN` environment variable before starting:
+
+```bash
+export ADMIN_TOKEN=your-secure-token-here
+./build/bin/digit-link-server
+```
+
+The server will automatically create an admin account with this token if no admin exists.
+
 ### 3. Start the Server
 
 ```bash
@@ -45,17 +74,6 @@ export DB_PATH=data/digit-link.db
 # Start the server
 ./build/bin/digit-link-server
 ```
-
-### Alternative: Auto-Create Admin on Startup
-
-Instead of using `--setup-admin`, you can set the `ADMIN_TOKEN` environment variable:
-
-```bash
-export ADMIN_TOKEN=your-secure-token-here
-./build/bin/digit-link-server
-```
-
-The server will automatically create an admin account with this token if no admin exists.
 
 ## Admin Dashboard Setup
 
@@ -154,6 +172,13 @@ Forwarding to localhost:3000
 - Try creating a new admin via `ADMIN_TOKEN` environment variable
 - Check the database file permissions
 
+### First-boot setup not appearing
+
+- Verify no admin account exists in the database
+- To reset, delete the database file and restart the server
+- Check browser console for JavaScript errors
+- Ensure you're accessing the main domain (not a subdomain)
+
 ## Database Management
 
 The SQLite database is stored at the path specified by `DB_PATH` (default: `data/digit-link.db`).
@@ -177,14 +202,103 @@ rm data/digit-link.db
 
 ### Kubernetes/k3s
 
-1. Create a secret for the admin token:
+The recommended setup for Kubernetes uses the **first-boot web wizard**:
 
-```bash
-kubectl create secret generic digit-link-secrets \
-  --from-literal=admin-token=your-secure-token
+1. Deploy the server with a persistent volume (no admin token needed):
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: digit-link
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: digit-link
+  template:
+    metadata:
+      labels:
+        app: digit-link
+    spec:
+      containers:
+        - name: digit-link
+          image: digit-link-server:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: DOMAIN
+              value: tunnel.yourdomain.com
+            - name: DB_PATH
+              value: /data/digit-link.db
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: digit-link-data
 ```
 
-2. Configure the deployment environment variables:
+2. Create a PersistentVolumeClaim for the database:
+
+```yaml
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: digit-link-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+```
+
+3. Create a Service and Ingress:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: digit-link
+spec:
+  selector:
+    app: digit-link
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: digit-link
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+spec:
+  tls:
+    - hosts:
+        - tunnel.yourdomain.com
+        - "*.tunnel.yourdomain.com"
+      secretName: digit-link-tls
+  rules:
+    - host: tunnel.yourdomain.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: digit-link
+                port:
+                  number: 80
+```
+
+4. **First-Boot Setup**: Navigate to `https://tunnel.yourdomain.com/` and complete the setup wizard. Your admin token will be generated and displayed - save it securely!
+
+#### Alternative: Pre-configured Admin Token
+
+If you prefer to set the admin token via environment variable:
 
 ```yaml
 env:
@@ -193,22 +307,13 @@ env:
       secretKeyRef:
         name: digit-link-secrets
         key: admin-token
-  - name: DOMAIN
-    value: tunnel.yourdomain.com
-  - name: DB_PATH
-    value: /data/digit-link.db
 ```
 
-3. Mount a persistent volume for the database:
+Create the secret first:
 
-```yaml
-volumes:
-  - name: data
-    persistentVolumeClaim:
-      claimName: digit-link-data
-volumeMounts:
-  - name: data
-    mountPath: /data
+```bash
+kubectl create secret generic digit-link-secrets \
+  --from-literal=admin-token=your-secure-token
 ```
 
 ### Docker
