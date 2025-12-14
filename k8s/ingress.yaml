@@ -1,3 +1,13 @@
+# digit-link Ingress Configuration
+#
+# First-boot setup:
+#   Navigate to https://tunnel.digit.zone/ after deployment.
+#   If no admin account exists, the setup wizard will appear.
+#
+# Routes:
+#   - tunnel.digit.zone: Admin dashboard & WebSocket control plane
+#   - *.tunnel.digit.zone: Tunnel subdomains for forwarded traffic
+#
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -13,7 +23,7 @@ metadata:
     haproxy.org/ssl-redirect: "true"
 spec:
   rules:
-  # Main domain for WebSocket control connections
+  # Main domain for admin dashboard, API, and WebSocket control connections
   - host: tunnel.digit.zone
     http:
       paths:

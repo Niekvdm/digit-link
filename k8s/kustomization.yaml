@@ -7,3 +7,5 @@ resources:
   - namespace.yaml
   - service.yaml
   - ingress.yaml
+  # Optional: Pre-configure admin token (copy secrets.yaml.example to secrets.yaml)
+  # - secrets.yaml

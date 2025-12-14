@@ -12,6 +12,19 @@ spec:
       targetPort: 8080
   type: ClusterIP
 ---
+# Persistent storage for SQLite database
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: digit-link-data
+  namespace: dzone-dev
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -38,12 +51,17 @@ spec:
               value: "8080"
             - name: DOMAIN
               value: "tunnel.digit.zone"
-            # Uncomment to enable secret authentication
-            # - name: SECRET
+            - name: DB_PATH
+              value: "/data/digit-link.db"
+            # Optional: Pre-configure admin token (otherwise use first-boot web setup)
+            # - name: ADMIN_TOKEN
             #   valueFrom:
             #     secretKeyRef:
-            #       name: digit-link-secret
-            #       key: secret
+            #       name: digit-link-secrets
+            #       key: admin-token
+          volumeMounts:
+            - name: data
+              mountPath: /data
           resources:
             requests:
               memory: "64Mi"
@@ -63,3 +81,7 @@ spec:
               port: 8080
             initialDelaySeconds: 5
             periodSeconds: 5
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: digit-link-data
