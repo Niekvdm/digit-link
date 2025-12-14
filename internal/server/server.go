@@ -13,23 +13,27 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/niekvdm/digit-link/internal/auth"
+	"github.com/niekvdm/digit-link/internal/db"
 	"github.com/niekvdm/digit-link/internal/protocol"
 )
 
 // Server manages tunnel connections and HTTP routing
 type Server struct {
 	domain   string
-	secret   string
+	secret   string // Legacy secret for backward compatibility
+	db       *db.DB
 	tunnels  map[string]*Tunnel
 	mu       sync.RWMutex
 	upgrader websocket.Upgrader
 }
 
 // New creates a new tunnel server
-func New(domain, secret string) *Server {
+func New(domain, secret string, database *db.DB) *Server {
 	return &Server{
 		domain:  domain,
 		secret:  secret,
+		db:      database,
 		tunnels: make(map[string]*Tunnel),
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
@@ -45,8 +49,7 @@ func New(domain, secret string) *Server {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Health check endpoint
 	if r.URL.Path == "/health" {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
+		s.handleHealth(w, r)
 		return
 	}
 
@@ -56,23 +59,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract subdomain from Host header
-	subdomain := s.extractSubdomain(r.Host)
-	if subdomain == "" {
-		// Main domain - show status page
-		w.Header().Set("Content-Type", "text/html")
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `<!DOCTYPE html>
-<html>
-<head><title>digit-link</title></head>
-<body>
-<h1>digit-link tunnel server</h1>
-<p>Connect with: <code>digit-link --server %s --subdomain &lt;name&gt; --port &lt;port&gt;</code></p>
-<p>Active tunnels: %d</p>
-</body>
-</html>`, s.domain, len(s.tunnels))
+	// Admin API endpoints
+	if strings.HasPrefix(r.URL.Path, "/admin/") {
+		s.handleAdmin(w, r)
 		return
 	}
+
+	// Static files for dashboard (on main domain)
+	if s.extractSubdomain(r.Host) == "" {
+		// Serve static dashboard files
+		s.serveDashboard(w, r)
+		return
+	}
+
+	// Extract subdomain from Host header
+	subdomain := s.extractSubdomain(r.Host)
 
 	// Find tunnel for subdomain
 	s.mu.RLock()
@@ -86,6 +87,85 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Forward request through tunnel
 	s.forwardRequest(w, r, tunnel)
+}
+
+// handleHealth returns health and stats info
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	s.mu.RLock()
+	tunnelCount := len(s.tunnels)
+	s.mu.RUnlock()
+
+	response := map[string]interface{}{
+		"status":        "ok",
+		"activeTunnels": tunnelCount,
+	}
+
+	if s.db != nil {
+		if count, err := s.db.CountActiveAccounts(); err == nil {
+			response["activeAccounts"] = count
+		}
+		if count, err := s.db.CountGlobalWhitelist(); err == nil {
+			response["whitelistEntries"] = count
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// serveDashboard serves the static dashboard files or the default page
+func (s *Server) serveDashboard(w http.ResponseWriter, r *http.Request) {
+	// Try to serve static files from embedded public directory
+	path := r.URL.Path
+	if path == "/" {
+		path = "/index.html"
+	}
+
+	// Check if file exists in public directory
+	content, contentType, found := getStaticFile(path)
+	if found {
+		w.Header().Set("Content-Type", contentType)
+		w.Write(content)
+		return
+	}
+
+	// Fallback to basic status page
+	s.mu.RLock()
+	tunnelCount := len(s.tunnels)
+	s.mu.RUnlock()
+
+	w.Header().Set("Content-Type", "text/html")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, `<!DOCTYPE html>
+<html>
+<head><title>digit-link</title></head>
+<body>
+<h1>digit-link tunnel server</h1>
+<p>Connect with: <code>digit-link --server %s --subdomain &lt;name&gt; --port &lt;port&gt; --token &lt;token&gt;</code></p>
+<p>Active tunnels: %d</p>
+</body>
+</html>`, s.domain, tunnelCount)
+}
+
+// GetActiveTunnels returns a list of active tunnels (for admin API)
+func (s *Server) GetActiveTunnels() []map[string]interface{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	tunnels := make([]map[string]interface{}, 0, len(s.tunnels))
+	for subdomain, tunnel := range s.tunnels {
+		tunnels = append(tunnels, map[string]interface{}{
+			"subdomain": subdomain,
+			"url":       fmt.Sprintf("https://%s.%s", subdomain, s.domain),
+			"createdAt": tunnel.CreatedAt,
+		})
+	}
+	return tunnels
+}
+
+// DB returns the database instance
+func (s *Server) DB() *db.DB {
+	return s.db
 }
 
 // extractSubdomain extracts the subdomain from the host
@@ -111,6 +191,9 @@ func (s *Server) extractSubdomain(host string) string {
 
 // handleWebSocket handles WebSocket connections from tunnel clients
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	// Get client IP for whitelist check
+	clientIP := auth.GetClientIP(r)
+
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("WebSocket upgrade error: %v", err)
@@ -149,11 +232,67 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate secret if configured
-	if s.secret != "" && regReq.Secret != s.secret {
-		s.sendRegisterResponse(conn, false, "", "", "Invalid secret")
-		conn.Close()
-		return
+	// Authenticate using token-based auth (preferred) or legacy secret
+	var account *db.Account
+	if s.db != nil {
+		// Token-based authentication
+		if regReq.Token == "" {
+			// Fallback to legacy secret if no token provided
+			if s.secret != "" && regReq.Secret != s.secret {
+				log.Printf("Authentication failed for subdomain %s from %s: no valid token or secret", regReq.Subdomain, clientIP)
+				s.sendRegisterResponse(conn, false, "", "", "Authentication required: provide a valid token")
+				conn.Close()
+				return
+			}
+			// Legacy mode without token - skip account/IP checks if secret matches
+			if s.secret == "" {
+				log.Printf("Authentication failed for subdomain %s from %s: no token provided", regReq.Subdomain, clientIP)
+				s.sendRegisterResponse(conn, false, "", "", "Authentication required: provide a valid token")
+				conn.Close()
+				return
+			}
+		} else {
+			// Validate token
+			tokenHash := auth.HashToken(regReq.Token)
+			account, err = s.db.GetAccountByTokenHash(tokenHash)
+			if err != nil {
+				log.Printf("Database error during auth: %v", err)
+				s.sendRegisterResponse(conn, false, "", "", "Internal server error")
+				conn.Close()
+				return
+			}
+			if account == nil {
+				log.Printf("Authentication failed for subdomain %s from %s: invalid token", regReq.Subdomain, clientIP)
+				s.sendRegisterResponse(conn, false, "", "", "Invalid token")
+				conn.Close()
+				return
+			}
+
+			// Check IP whitelist
+			whitelisted, err := s.db.IsIPWhitelistedForAccount(clientIP, account.ID)
+			if err != nil {
+				log.Printf("Whitelist check error: %v", err)
+				s.sendRegisterResponse(conn, false, "", "", "Internal server error")
+				conn.Close()
+				return
+			}
+			if !whitelisted {
+				log.Printf("Connection rejected for %s (%s): IP %s not whitelisted", account.Username, regReq.Subdomain, clientIP)
+				s.sendRegisterResponse(conn, false, "", "", "IP address not whitelisted")
+				conn.Close()
+				return
+			}
+
+			// Update last used timestamp
+			s.db.UpdateAccountLastUsed(account.ID)
+		}
+	} else {
+		// No database - legacy mode with secret only
+		if s.secret != "" && regReq.Secret != s.secret {
+			s.sendRegisterResponse(conn, false, "", "", "Invalid secret")
+			conn.Close()
+			return
+		}
 	}
 
 	// Validate subdomain
@@ -178,8 +317,23 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.tunnels[subdomain] = tunnel
 	s.mu.Unlock()
 
+	// Record tunnel in database if we have an authenticated account
+	var tunnelRecordID string
+	if s.db != nil && account != nil {
+		tunnelRecord, err := s.db.CreateTunnel(account.ID, subdomain, clientIP)
+		if err != nil {
+			log.Printf("Failed to record tunnel: %v", err)
+		} else {
+			tunnelRecordID = tunnelRecord.ID
+		}
+	}
+
 	url := fmt.Sprintf("https://%s.%s", subdomain, s.domain)
-	log.Printf("Tunnel registered: %s -> %s", subdomain, url)
+	if account != nil {
+		log.Printf("Tunnel registered: %s -> %s (user: %s, ip: %s)", subdomain, url, account.Username, clientIP)
+	} else {
+		log.Printf("Tunnel registered: %s -> %s (legacy auth, ip: %s)", subdomain, url, clientIP)
+	}
 
 	// Send success response
 	s.sendRegisterResponse(conn, true, subdomain, url, "")
@@ -192,6 +346,12 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	delete(s.tunnels, subdomain)
 	s.mu.Unlock()
 	tunnel.Close()
+
+	// Close tunnel record in database
+	if s.db != nil && tunnelRecordID != "" {
+		s.db.CloseTunnel(tunnelRecordID)
+	}
+
 	log.Printf("Tunnel disconnected: %s", subdomain)
 }
 

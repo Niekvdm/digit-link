@@ -16,7 +16,8 @@ import (
 type Client struct {
 	serverURL string
 	subdomain string
-	secret    string
+	token     string
+	secret    string // Legacy
 	localPort int
 	conn      *websocket.Conn
 	proxy     *Proxy
@@ -35,7 +36,8 @@ type Client struct {
 type Config struct {
 	Server         string
 	Subdomain      string
-	Secret         string
+	Token          string
+	Secret         string // Legacy support
 	LocalPort      int
 	MaxRetries     int
 	InitialBackoff time.Duration
@@ -61,6 +63,7 @@ func New(cfg Config) *Client {
 	return &Client{
 		serverURL:      wsURL,
 		subdomain:      cfg.Subdomain,
+		token:          cfg.Token,
 		secret:         cfg.Secret,
 		localPort:      cfg.LocalPort,
 		proxy:          NewProxy(cfg.LocalPort),
@@ -103,7 +106,8 @@ func (c *Client) Connect() error {
 		Type: protocol.TypeRegisterRequest,
 		Payload: protocol.RegisterRequest{
 			Subdomain: c.subdomain,
-			Secret:    c.secret,
+			Token:     c.token,
+			Secret:    c.secret, // Legacy support
 		},
 	}
 

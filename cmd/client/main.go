@@ -14,10 +14,11 @@ import (
 
 func main() {
 	// Parse flags
-	server := flag.String("server", "tunnel.digit.zone", "Tunnel server address")
+	serverAddr := flag.String("server", "tunnel.digit.zone", "Tunnel server address")
 	subdomain := flag.String("subdomain", "", "Subdomain to register")
 	port := flag.Int("port", 0, "Local port to forward to")
-	secret := flag.String("secret", "", "Server secret (optional)")
+	token := flag.String("token", "", "Authentication token (required)")
+	secret := flag.String("secret", "", "Server secret (deprecated, use --token)")
 	flag.Parse()
 
 	// Validate required flags
@@ -33,11 +34,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Token can also come from environment
+	authToken := *token
+	if authToken == "" {
+		authToken = os.Getenv("DIGIT_LINK_TOKEN")
+	}
+
+	// Warn if no token provided
+	if authToken == "" && *secret == "" {
+		fmt.Println("Warning: No --token provided. Authentication may fail.")
+		fmt.Println("Get a token from your digit-link administrator.")
+	}
+
 	// Create client
 	c := client.New(client.Config{
-		Server:         *server,
+		Server:         *serverAddr,
 		Subdomain:      *subdomain,
-		Secret:         *secret,
+		Token:          authToken,
+		Secret:         *secret, // Legacy support
 		LocalPort:      *port,
 		MaxRetries:     -1, // Infinite retries
 		InitialBackoff: 1 * time.Second,

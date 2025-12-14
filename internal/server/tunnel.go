@@ -2,6 +2,7 @@ package server
 
 import (
 	"sync"
+	"time"
 
 	"github.com/gorilla/websocket"
 )
@@ -10,6 +11,7 @@ import (
 type Tunnel struct {
 	Subdomain  string
 	Conn       *websocket.Conn
+	CreatedAt  time.Time
 	ResponseCh map[string]chan []byte // Request ID -> response channel
 	mu         sync.RWMutex
 }
@@ -19,6 +21,7 @@ func NewTunnel(subdomain string, conn *websocket.Conn) *Tunnel {
 	return &Tunnel{
 		Subdomain:  subdomain,
 		Conn:       conn,
+		CreatedAt:  time.Now(),
 		ResponseCh: make(map[string]chan []byte),
 	}
 }

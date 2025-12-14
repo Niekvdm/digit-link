@@ -66,6 +66,10 @@ run-client:
 	@echo "Usage: make run-client SUBDOMAIN=myapp PORT=3000"
 	go run ./cmd/client --subdomain=$(SUBDOMAIN) --port=$(PORT)
 
+# Setup admin account
+setup-admin:
+	go run ./cmd/server --setup-admin
+
 # Clean build artifacts
 clean:
 	rm -rf build/
@@ -87,5 +91,6 @@ help:
 	@echo "  make docker-run     - Run Docker container"
 	@echo "  make run-server     - Run server locally"
 	@echo "  make run-client     - Run client (SUBDOMAIN=x PORT=y required)"
+	@echo "  make setup-admin    - Create initial admin account"
 	@echo "  make clean          - Remove build artifacts"
 	@echo "  make help           - Show this help"

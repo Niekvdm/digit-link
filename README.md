@@ -1,13 +1,37 @@
 # digit-link
 
-A lightweight ngrok-like tunnel system for exposing local services to the internet.
+A lightweight ngrok-like tunnel system for exposing local services to the internet, with built-in authentication and IP whitelisting.
+
+## Features
+
+- **Token-based Authentication**: Secure API tokens for client connections
+- **IP Whitelisting**: Strict control over which IPs can connect
+- **Admin Dashboard**: Web-based management interface
+- **SQLite Storage**: Persistent account and tunnel data
+- **Automatic Reconnection**: Clients auto-reconnect on disconnection
 
 ## Architecture
 
 - **Server**: Runs on k3s, handles WebSocket connections from clients and routes HTTP traffic
 - **Client**: CLI tool that connects to the server and forwards requests to local ports
+- **Admin Dashboard**: Web UI for managing accounts, IP whitelist, and monitoring tunnels
 
 ## Quick Start
+
+### Server Setup
+
+```bash
+# Build the server
+make build-server
+
+# Create initial admin account
+./build/bin/digit-link-server --setup-admin
+
+# Run the server
+./build/bin/digit-link-server
+```
+
+On first run with `--setup-admin`, you'll receive an admin token. Save it securely!
 
 ### Client Usage
 
@@ -16,7 +40,7 @@ A lightweight ngrok-like tunnel system for exposing local services to the intern
 make build-client
 
 # Connect to tunnel server
-./build/bin/digit-link --server tunnel.digit.zone --subdomain myapp --port 3000
+./build/bin/digit-link --server tunnel.digit.zone --subdomain myapp --port 3000 --token YOUR_TOKEN
 
 # Your local service is now available at:
 # https://myapp.tunnel.digit.zone
@@ -25,11 +49,43 @@ make build-client
 ### Options
 
 ```
+Client:
 --server     Tunnel server address (default: tunnel.digit.zone)
 --subdomain  Subdomain to register (required)
 --port       Local port to forward to (required)
---secret     Server secret for authentication (optional)
+--token      Authentication token (required)
+
+Server:
+--setup-admin     Create initial admin account and exit
+--admin-username  Username for initial admin account (default: admin)
 ```
+
+## Admin Dashboard
+
+Access the admin dashboard at `https://tunnel.digit.zone/` (or your server domain).
+
+Features:
+- **Accounts**: Create and manage user accounts, generate tokens
+- **Whitelist**: Add/remove IP addresses or CIDR ranges
+- **Tunnels**: Monitor active tunnel connections in real-time
+
+## Environment Variables
+
+### Server
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PORT` | Server port | `8080` |
+| `DOMAIN` | Base domain for tunnels | `tunnel.digit.zone` |
+| `SECRET` | Legacy shared secret (deprecated) | (none) |
+| `DB_PATH` | SQLite database path | `data/digit-link.db` |
+| `ADMIN_TOKEN` | Auto-create admin with this token on startup | (none) |
+
+### Client
+
+| Variable | Description |
+|----------|-------------|
+| `DIGIT_LINK_TOKEN` | Authentication token (alternative to `--token` flag) |
 
 ## Building
 
@@ -51,14 +107,6 @@ make build-all
 
 The server is deployed to k3s via ArgoCD. See the `k8s/` directory for manifests.
 
-### Environment Variables
-
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PORT` | Server port | `8080` |
-| `DOMAIN` | Base domain for tunnels | `tunnel.digit.zone` |
-| `SECRET` | Shared secret for authentication | (none) |
-
 ### DNS Setup
 
 Point your wildcard DNS to the k3s ingress:
@@ -68,13 +116,44 @@ Point your wildcard DNS to the k3s ingress:
 tunnel      A    <K3S_INGRESS_IP>
 ```
 
+## Security
+
+- **Tokens**: Generated using `crypto/rand`, stored as SHA-256 hashes
+- **IP Whitelisting**: Only whitelisted IPs can establish tunnels
+- **HTTPS**: All traffic should be served over HTTPS (via ingress)
+- **Admin API**: Protected by admin token header (`X-Admin-Token`)
+
 ## How It Works
 
 1. Client connects to server via WebSocket at `wss://tunnel.digit.zone/_tunnel`
-2. Client registers a subdomain (e.g., `myapp`)
-3. Server confirms and provides public URL (`https://myapp.tunnel.digit.zone`)
-4. When requests arrive at the public URL, server forwards them to the client over WebSocket
-5. Client forwards requests to the local service and returns responses
+2. Client sends registration with subdomain and authentication token
+3. Server validates token and checks if client IP is whitelisted
+4. On success, server registers the tunnel and provides public URL
+5. When requests arrive at the public URL, server forwards them to the client over WebSocket
+6. Client forwards requests to the local service and returns responses
+
+## API Endpoints
+
+### Admin API (requires `X-Admin-Token` header)
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/admin/accounts` | GET | List all accounts |
+| `/admin/accounts` | POST | Create new account |
+| `/admin/accounts/{id}` | DELETE | Deactivate account |
+| `/admin/accounts/{id}/regenerate` | POST | Regenerate token |
+| `/admin/whitelist` | GET | List whitelisted IPs |
+| `/admin/whitelist` | POST | Add IP to whitelist |
+| `/admin/whitelist/{id}` | DELETE | Remove from whitelist |
+| `/admin/tunnels` | GET | List active tunnels |
+| `/admin/stats` | GET | Get server statistics |
+
+### Public Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `/health` | Health check (returns JSON) |
+| `/_tunnel` | WebSocket endpoint for tunnel clients |
 
 ## License
 

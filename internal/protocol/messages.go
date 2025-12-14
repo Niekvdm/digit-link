@@ -19,7 +19,8 @@ type Message struct {
 // RegisterRequest is sent by the client to register a subdomain
 type RegisterRequest struct {
 	Subdomain string `json:"subdomain"`
-	Secret    string `json:"secret,omitempty"`
+	Secret    string `json:"secret,omitempty"` // Deprecated: use Token instead
+	Token     string `json:"token,omitempty"`  // Authentication token
 }
 
 // RegisterResponse is sent by the server to confirm or reject registration
