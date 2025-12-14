@@ -502,7 +502,7 @@ func (s *Server) forwardRequest(w http.ResponseWriter, r *http.Request, tunnel *
 			w.Write(httpResp.Body)
 		}
 
-	case <-time.After(60 * time.Second):
+	case <-time.After(5 * time.Minute):
 		http.Error(w, "Tunnel timeout", http.StatusGatewayTimeout)
 	}
 }

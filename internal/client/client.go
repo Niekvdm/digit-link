@@ -39,6 +39,7 @@ type Config struct {
 	Token          string
 	Secret         string // Legacy support
 	LocalPort      int
+	Timeout        time.Duration // Request timeout (default: 5 minutes)
 	MaxRetries     int
 	InitialBackoff time.Duration
 	MaxBackoff     time.Duration
@@ -59,6 +60,9 @@ func New(cfg Config) *Client {
 	if cfg.MaxBackoff == 0 {
 		cfg.MaxBackoff = 30 * time.Second
 	}
+	if cfg.Timeout == 0 {
+		cfg.Timeout = 5 * time.Minute // Default 5 minute timeout
+	}
 
 	return &Client{
 		serverURL:      wsURL,
@@ -66,7 +70,7 @@ func New(cfg Config) *Client {
 		token:          cfg.Token,
 		secret:         cfg.Secret,
 		localPort:      cfg.LocalPort,
-		proxy:          NewProxy(cfg.LocalPort),
+		proxy:          NewProxyWithTimeout(cfg.LocalPort, cfg.Timeout),
 		done:           make(chan struct{}),
 		maxRetries:     cfg.MaxRetries,
 		initialBackoff: cfg.InitialBackoff,

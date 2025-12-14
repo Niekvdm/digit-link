@@ -64,6 +64,7 @@ Client:
 --subdomain  Subdomain to register (required)
 --port       Local port to forward to (required)
 --token      Authentication token (required)
+--timeout    Request timeout for slow endpoints (default: 5m, e.g., 10m, 1h)
 
 Server:
 --setup-admin     Create initial admin account and exit

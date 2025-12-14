@@ -19,6 +19,7 @@ func main() {
 	port := flag.Int("port", 0, "Local port to forward to")
 	token := flag.String("token", "", "Authentication token (required)")
 	secret := flag.String("secret", "", "Server secret (deprecated, use --token)")
+	timeout := flag.Duration("timeout", 5*time.Minute, "Request timeout for forwarding (e.g., 5m, 10m, 1h)")
 	flag.Parse()
 
 	// Validate required flags
@@ -53,6 +54,7 @@ func main() {
 		Token:          authToken,
 		Secret:         *secret, // Legacy support
 		LocalPort:      *port,
+		Timeout:        *timeout,
 		MaxRetries:     -1, // Infinite retries
 		InitialBackoff: 1 * time.Second,
 		MaxBackoff:     30 * time.Second,

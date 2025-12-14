@@ -17,12 +17,20 @@ type Proxy struct {
 	client    *http.Client
 }
 
+// DefaultTimeout is the default timeout for forwarding requests (5 minutes)
+const DefaultTimeout = 5 * time.Minute
+
 // NewProxy creates a new local proxy
 func NewProxy(localPort int) *Proxy {
+	return NewProxyWithTimeout(localPort, DefaultTimeout)
+}
+
+// NewProxyWithTimeout creates a new local proxy with a custom timeout
+func NewProxyWithTimeout(localPort int, timeout time.Duration) *Proxy {
 	return &Proxy{
 		localAddr: fmt.Sprintf("http://localhost:%d", localPort),
 		client: &http.Client{
-			Timeout: 60 * time.Second,
+			Timeout: timeout,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				return http.ErrUseLastResponse // Don't follow redirects
 			},
