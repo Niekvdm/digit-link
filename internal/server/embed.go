@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-//go:embed public/*
+//go:embed all:public
 var publicFS embed.FS
 
 func init() {
