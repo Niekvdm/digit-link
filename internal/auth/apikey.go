@@ -102,13 +102,19 @@ func (h *APIKeyAuthHandler) Authenticate(w http.ResponseWriter, r *http.Request,
 // Challenge sends an API key auth challenge to the client
 func (h *APIKeyAuthHandler) Challenge(w http.ResponseWriter, r *http.Request, p *policy.EffectivePolicy, ctx *policy.AuthContext) {
 	w.Header().Set("WWW-Authenticate", `Bearer realm="digit-link", error="invalid_token"`)
-	http.Error(w, "API key required. Provide via 'Authorization: Bearer <key>' or 'X-API-Key: <key>' header", http.StatusUnauthorized)
+	http.Error(w, "API key required. Provide via 'Authorization: Bearer <key>', 'X-API-Key: <key>', or 'X-Tunnel-API-Key: <key>' header", http.StatusUnauthorized)
 }
 
 // extractAPIKey extracts the API key from the request
 func (h *APIKeyAuthHandler) extractAPIKey(r *http.Request) string {
 	// Try X-API-Key header first
 	apiKey := r.Header.Get("X-API-Key")
+	if apiKey != "" {
+		return apiKey
+	}
+
+	// Try X-Tunnel-API-Key header (alias for tunnel clients)
+	apiKey = r.Header.Get("X-Tunnel-API-Key")
 	if apiKey != "" {
 		return apiKey
 	}

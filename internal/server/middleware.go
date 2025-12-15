@@ -353,6 +353,10 @@ func (m *AuthMiddleware) defaultAPIKeyAuth(w http.ResponseWriter, r *http.Reques
 	// Check for API key in header
 	apiKey := r.Header.Get("X-API-Key")
 	if apiKey == "" {
+		// Try X-Tunnel-API-Key header (alias for tunnel clients)
+		apiKey = r.Header.Get("X-Tunnel-API-Key")
+	}
+	if apiKey == "" {
 		// Try Authorization: Bearer
 		authHeader := r.Header.Get("Authorization")
 		if strings.HasPrefix(authHeader, "Bearer ") {

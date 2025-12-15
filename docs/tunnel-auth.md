@@ -45,7 +45,7 @@ Applications are persistent entities with a reserved subdomain. Each application
 Three authentication methods are supported:
 
 1. **Basic Auth** - Username/password with bcrypt hashing
-2. **API Key** - Bearer token or X-API-Key header with SHA-256 hashing
+2. **API Key** - Bearer token or X-API-Key/X-Tunnel-API-Key header with SHA-256 hashing
 3. **OIDC** - OAuth2/OpenID Connect with any compatible provider
 
 ## Request Flow
