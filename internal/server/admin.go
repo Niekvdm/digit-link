@@ -56,7 +56,8 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// authenticateAdmin verifies the admin token from the request
+// authenticateAdmin verifies the admin authentication from the request
+// Supports both JWT tokens (for dashboard) and API tokens (for clients)
 func (s *Server) authenticateAdmin(r *http.Request) (*struct {
 	ID       string
 	Username string
@@ -80,7 +81,25 @@ func (s *Server) authenticateAdmin(r *http.Request) (*struct {
 		return nil, nil
 	}
 
-	// Validate token
+	// First, try to validate as JWT token
+	claims, err := auth.ValidateJWT(token)
+	if err == nil && claims != nil {
+		// Valid JWT token
+		if !claims.IsAdmin {
+			return nil, nil
+		}
+		return &struct {
+			ID       string
+			Username string
+			IsAdmin  bool
+		}{
+			ID:       claims.AccountID,
+			Username: claims.Username,
+			IsAdmin:  claims.IsAdmin,
+		}, nil
+	}
+
+	// Fall back to API token validation (for backward compatibility)
 	tokenHash := auth.HashToken(token)
 	account, err := s.db.GetAccountByTokenHash(tokenHash)
 	if err != nil {
@@ -114,12 +133,13 @@ func (s *Server) handleListAccounts(w http.ResponseWriter, r *http.Request) {
 	result := make([]map[string]interface{}, len(accounts))
 	for i, acc := range accounts {
 		result[i] = map[string]interface{}{
-			"id":        acc.ID,
-			"username":  acc.Username,
-			"isAdmin":   acc.IsAdmin,
-			"createdAt": acc.CreatedAt,
-			"lastUsed":  acc.LastUsed,
-			"active":    acc.Active,
+			"id":          acc.ID,
+			"username":    acc.Username,
+			"isAdmin":     acc.IsAdmin,
+			"totpEnabled": acc.TOTPEnabled,
+			"createdAt":   acc.CreatedAt,
+			"lastUsed":    acc.LastUsed,
+			"active":      acc.Active,
 		}
 	}
 

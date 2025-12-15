@@ -10,13 +10,16 @@ import (
 
 // Account represents a user account in the system
 type Account struct {
-	ID        string     `json:"id"`
-	Username  string     `json:"username"`
-	TokenHash string     `json:"-"` // Never expose hash
-	IsAdmin   bool       `json:"isAdmin"`
-	CreatedAt time.Time  `json:"createdAt"`
-	LastUsed  *time.Time `json:"lastUsed,omitempty"`
-	Active    bool       `json:"active"`
+	ID           string     `json:"id"`
+	Username     string     `json:"username"`
+	TokenHash    string     `json:"-"` // Never expose hash
+	PasswordHash string     `json:"-"` // Never expose hash
+	TOTPSecret   string     `json:"-"` // Never expose secret
+	TOTPEnabled  bool       `json:"totpEnabled"`
+	IsAdmin      bool       `json:"isAdmin"`
+	CreatedAt    time.Time  `json:"createdAt"`
+	LastUsed     *time.Time `json:"lastUsed,omitempty"`
+	Active       bool       `json:"active"`
 }
 
 // CreateAccount creates a new account with the given username and token hash
@@ -46,12 +49,14 @@ func (db *DB) CreateAccount(username, tokenHash string, isAdmin bool) (*Account,
 func (db *DB) GetAccountByID(id string) (*Account, error) {
 	account := &Account{}
 	var lastUsed sql.NullTime
+	var passwordHash, totpSecret sql.NullString
 
 	err := db.conn.QueryRow(`
-		SELECT id, username, token_hash, is_admin, created_at, last_used, active
+		SELECT id, username, token_hash, password_hash, totp_secret, totp_enabled, is_admin, created_at, last_used, active
 		FROM accounts WHERE id = ?
 	`, id).Scan(
 		&account.ID, &account.Username, &account.TokenHash,
+		&passwordHash, &totpSecret, &account.TOTPEnabled,
 		&account.IsAdmin, &account.CreatedAt, &lastUsed, &account.Active,
 	)
 	if err == sql.ErrNoRows {
@@ -63,6 +68,12 @@ func (db *DB) GetAccountByID(id string) (*Account, error) {
 
 	if lastUsed.Valid {
 		account.LastUsed = &lastUsed.Time
+	}
+	if passwordHash.Valid {
+		account.PasswordHash = passwordHash.String
+	}
+	if totpSecret.Valid {
+		account.TOTPSecret = totpSecret.String
 	}
 
 	return account, nil
@@ -72,12 +83,14 @@ func (db *DB) GetAccountByID(id string) (*Account, error) {
 func (db *DB) GetAccountByTokenHash(tokenHash string) (*Account, error) {
 	account := &Account{}
 	var lastUsed sql.NullTime
+	var passwordHash, totpSecret sql.NullString
 
 	err := db.conn.QueryRow(`
-		SELECT id, username, token_hash, is_admin, created_at, last_used, active
+		SELECT id, username, token_hash, password_hash, totp_secret, totp_enabled, is_admin, created_at, last_used, active
 		FROM accounts WHERE token_hash = ? AND active = TRUE
 	`, tokenHash).Scan(
 		&account.ID, &account.Username, &account.TokenHash,
+		&passwordHash, &totpSecret, &account.TOTPEnabled,
 		&account.IsAdmin, &account.CreatedAt, &lastUsed, &account.Active,
 	)
 	if err == sql.ErrNoRows {
@@ -89,6 +102,12 @@ func (db *DB) GetAccountByTokenHash(tokenHash string) (*Account, error) {
 
 	if lastUsed.Valid {
 		account.LastUsed = &lastUsed.Time
+	}
+	if passwordHash.Valid {
+		account.PasswordHash = passwordHash.String
+	}
+	if totpSecret.Valid {
+		account.TOTPSecret = totpSecret.String
 	}
 
 	return account, nil
@@ -98,12 +117,14 @@ func (db *DB) GetAccountByTokenHash(tokenHash string) (*Account, error) {
 func (db *DB) GetAccountByUsername(username string) (*Account, error) {
 	account := &Account{}
 	var lastUsed sql.NullTime
+	var passwordHash, totpSecret sql.NullString
 
 	err := db.conn.QueryRow(`
-		SELECT id, username, token_hash, is_admin, created_at, last_used, active
+		SELECT id, username, token_hash, password_hash, totp_secret, totp_enabled, is_admin, created_at, last_used, active
 		FROM accounts WHERE username = ?
 	`, username).Scan(
 		&account.ID, &account.Username, &account.TokenHash,
+		&passwordHash, &totpSecret, &account.TOTPEnabled,
 		&account.IsAdmin, &account.CreatedAt, &lastUsed, &account.Active,
 	)
 	if err == sql.ErrNoRows {
@@ -116,6 +137,12 @@ func (db *DB) GetAccountByUsername(username string) (*Account, error) {
 	if lastUsed.Valid {
 		account.LastUsed = &lastUsed.Time
 	}
+	if passwordHash.Valid {
+		account.PasswordHash = passwordHash.String
+	}
+	if totpSecret.Valid {
+		account.TOTPSecret = totpSecret.String
+	}
 
 	return account, nil
 }
@@ -123,7 +150,7 @@ func (db *DB) GetAccountByUsername(username string) (*Account, error) {
 // ListAccounts returns all accounts
 func (db *DB) ListAccounts() ([]*Account, error) {
 	rows, err := db.conn.Query(`
-		SELECT id, username, token_hash, is_admin, created_at, last_used, active
+		SELECT id, username, token_hash, password_hash, totp_secret, totp_enabled, is_admin, created_at, last_used, active
 		FROM accounts ORDER BY created_at DESC
 	`)
 	if err != nil {
@@ -135,9 +162,11 @@ func (db *DB) ListAccounts() ([]*Account, error) {
 	for rows.Next() {
 		account := &Account{}
 		var lastUsed sql.NullTime
+		var passwordHash, totpSecret sql.NullString
 
 		err := rows.Scan(
 			&account.ID, &account.Username, &account.TokenHash,
+			&passwordHash, &totpSecret, &account.TOTPEnabled,
 			&account.IsAdmin, &account.CreatedAt, &lastUsed, &account.Active,
 		)
 		if err != nil {
@@ -146,6 +175,12 @@ func (db *DB) ListAccounts() ([]*Account, error) {
 
 		if lastUsed.Valid {
 			account.LastUsed = &lastUsed.Time
+		}
+		if passwordHash.Valid {
+			account.PasswordHash = passwordHash.String
+		}
+		if totpSecret.Valid {
+			account.TOTPSecret = totpSecret.String
 		}
 
 		accounts = append(accounts, account)
@@ -168,6 +203,46 @@ func (db *DB) UpdateAccountToken(id, tokenHash string) error {
 		UPDATE accounts SET token_hash = ? WHERE id = ?
 	`, tokenHash, id)
 	return err
+}
+
+// UpdateAccountPassword updates the password hash for an account
+func (db *DB) UpdateAccountPassword(id, passwordHash string) error {
+	_, err := db.conn.Exec(`
+		UPDATE accounts SET password_hash = ? WHERE id = ?
+	`, passwordHash, id)
+	return err
+}
+
+// UpdateAccountTOTP updates the TOTP secret and enabled status for an account
+func (db *DB) UpdateAccountTOTP(id, totpSecret string, enabled bool) error {
+	_, err := db.conn.Exec(`
+		UPDATE accounts SET totp_secret = ?, totp_enabled = ? WHERE id = ?
+	`, totpSecret, enabled, id)
+	return err
+}
+
+// CreateAccountWithPassword creates a new account with username, password, and token
+func (db *DB) CreateAccountWithPassword(username, tokenHash, passwordHash string, isAdmin bool) (*Account, error) {
+	id := uuid.New().String()
+	now := time.Now()
+
+	_, err := db.conn.Exec(`
+		INSERT INTO accounts (id, username, token_hash, password_hash, is_admin, created_at, active)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, id, username, tokenHash, passwordHash, isAdmin, now, true)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create account: %w", err)
+	}
+
+	return &Account{
+		ID:           id,
+		Username:     username,
+		TokenHash:    tokenHash,
+		PasswordHash: passwordHash,
+		IsAdmin:      isAdmin,
+		CreatedAt:    now,
+		Active:       true,
+	}, nil
 }
 
 // DeactivateAccount deactivates an account (soft delete)

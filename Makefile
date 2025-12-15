@@ -1,10 +1,24 @@
-.PHONY: all build build-server build-client build-windows build-linux build-darwin clean help
+.PHONY: all build build-server build-client build-frontend deps build-windows build-linux build-darwin clean help
 
 # Default target
 all: build
 
 # Build both server and client for current platform
-build: build-server build-client
+build: build-frontend deps build-server build-client
+
+# Install/update Go dependencies
+deps:
+	@echo "Installing Go dependencies..."
+	go mod tidy
+	go mod download
+
+# Build frontend
+build-frontend:
+	@echo "Building frontend..."
+	cd frontend && yarn install && yarn build
+	@echo "Copying frontend build to internal/server/public..."
+	rm -rf internal/server/public/*
+	cp -r frontend/dist/* internal/server/public/
 
 # Build server
 build-server:
@@ -79,7 +93,9 @@ help:
 	@echo "digit-link Makefile"
 	@echo ""
 	@echo "Usage:"
-	@echo "  make build          - Build server and client for current platform"
+	@echo "  make build          - Build frontend, server and client for current platform"
+	@echo "  make build-frontend - Build Vue.js frontend"
+	@echo "  make deps           - Install/update Go dependencies"
 	@echo "  make build-server   - Build server only"
 	@echo "  make build-client   - Build client only"
 	@echo "  make build-windows  - Cross-compile for Windows"

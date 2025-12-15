@@ -1,0 +1,360 @@
+package server
+
+import (
+	"encoding/json"
+	"log"
+	"net/http"
+	"strings"
+
+	"github.com/niekvdm/digit-link/internal/auth"
+)
+
+// LoginRequest contains the login credentials
+type LoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// LoginResponse contains the login result
+type LoginResponse struct {
+	Success      bool   `json:"success"`
+	PendingToken string `json:"pendingToken,omitempty"`
+	NeedsTOTP    bool   `json:"needsTotp,omitempty"`
+	NeedsSetup   bool   `json:"needsSetup,omitempty"`
+	Error        string `json:"error,omitempty"`
+}
+
+// TOTPSetupRequest contains the TOTP setup verification
+type TOTPSetupRequest struct {
+	PendingToken string `json:"pendingToken"`
+	Code         string `json:"code"`
+}
+
+// TOTPSetupResponse contains the TOTP setup result
+type TOTPSetupResponse struct {
+	Success bool   `json:"success"`
+	Secret  string `json:"secret,omitempty"`
+	URL     string `json:"url,omitempty"`
+	Token   string `json:"token,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+// TOTPVerifyRequest contains the TOTP verification
+type TOTPVerifyRequest struct {
+	PendingToken string `json:"pendingToken"`
+	Code         string `json:"code"`
+}
+
+// TOTPVerifyResponse contains the TOTP verification result
+type TOTPVerifyResponse struct {
+	Success bool   `json:"success"`
+	Token   string `json:"token,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+// handleAuth routes authentication endpoints
+func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	path := strings.TrimPrefix(r.URL.Path, "/auth")
+
+	switch {
+	case path == "/login" && r.Method == http.MethodPost:
+		s.handleLogin(w, r)
+	case path == "/totp/setup" && r.Method == http.MethodGet:
+		s.handleTOTPSetupGet(w, r)
+	case path == "/totp/setup" && r.Method == http.MethodPost:
+		s.handleTOTPSetupPost(w, r)
+	case path == "/totp/verify" && r.Method == http.MethodPost:
+		s.handleTOTPVerify(w, r)
+	default:
+		http.Error(w, `{"error": "Not found"}`, http.StatusNotFound)
+	}
+}
+
+// handleLogin handles username/password authentication
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	var req LoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(LoginResponse{Error: "Invalid request"})
+		return
+	}
+
+	if req.Username == "" || req.Password == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(LoginResponse{Error: "Username and password required"})
+		return
+	}
+
+	if s.db == nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(LoginResponse{Error: "Database not configured"})
+		return
+	}
+
+	// Get account by username
+	account, err := s.db.GetAccountByUsername(req.Username)
+	if err != nil {
+		log.Printf("Login error: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(LoginResponse{Error: "Internal error"})
+		return
+	}
+
+	if account == nil || !account.Active || !account.IsAdmin {
+		// Use same error message to prevent username enumeration
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(LoginResponse{Error: "Invalid credentials"})
+		return
+	}
+
+	// Check if account has password set
+	if account.PasswordHash == "" {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(LoginResponse{Error: "Account not configured for password login"})
+		return
+	}
+
+	// Verify password
+	if !auth.VerifyPassword(req.Password, account.PasswordHash) {
+		log.Printf("Failed login attempt for user: %s", req.Username)
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(LoginResponse{Error: "Invalid credentials"})
+		return
+	}
+
+	// Generate pending token for TOTP step
+	pendingToken, err := auth.GeneratePendingToken(account.ID, account.Username)
+	if err != nil {
+		log.Printf("Failed to generate pending token: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(LoginResponse{Error: "Internal error"})
+		return
+	}
+
+	// Check if TOTP is set up
+	if !account.TOTPEnabled || account.TOTPSecret == "" {
+		// User needs to set up TOTP
+		json.NewEncoder(w).Encode(LoginResponse{
+			Success:      true,
+			PendingToken: pendingToken,
+			NeedsSetup:   true,
+		})
+		return
+	}
+
+	// User has TOTP, needs to verify
+	json.NewEncoder(w).Encode(LoginResponse{
+		Success:      true,
+		PendingToken: pendingToken,
+		NeedsTOTP:    true,
+	})
+}
+
+// handleTOTPSetupGet generates a new TOTP secret for setup
+func (s *Server) handleTOTPSetupGet(w http.ResponseWriter, r *http.Request) {
+	pendingToken := r.URL.Query().Get("token")
+	if pendingToken == "" {
+		// Try header
+		authHeader := r.Header.Get("Authorization")
+		if strings.HasPrefix(authHeader, "Bearer ") {
+			pendingToken = strings.TrimPrefix(authHeader, "Bearer ")
+		}
+	}
+
+	if pendingToken == "" {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(TOTPSetupResponse{Error: "Pending token required"})
+		return
+	}
+
+	// Validate pending token
+	accountID, username, err := auth.ValidatePendingToken(pendingToken)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(TOTPSetupResponse{Error: "Invalid or expired token"})
+		return
+	}
+
+	// Generate TOTP secret
+	totpKey, err := auth.GenerateTOTPSecret(username)
+	if err != nil {
+		log.Printf("Failed to generate TOTP secret: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(TOTPSetupResponse{Error: "Failed to generate TOTP"})
+		return
+	}
+
+	// Encrypt and store the secret (but don't enable yet)
+	encryptedSecret, err := auth.EncryptTOTPSecret(totpKey.Secret)
+	if err != nil {
+		log.Printf("Failed to encrypt TOTP secret: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(TOTPSetupResponse{Error: "Failed to setup TOTP"})
+		return
+	}
+
+	// Store the secret (not enabled until verified)
+	if err := s.db.UpdateAccountTOTP(accountID, encryptedSecret, false); err != nil {
+		log.Printf("Failed to store TOTP secret: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(TOTPSetupResponse{Error: "Failed to setup TOTP"})
+		return
+	}
+
+	json.NewEncoder(w).Encode(TOTPSetupResponse{
+		Success: true,
+		Secret:  totpKey.Secret,
+		URL:     totpKey.URL,
+	})
+}
+
+// handleTOTPSetupPost verifies the TOTP code and enables TOTP
+func (s *Server) handleTOTPSetupPost(w http.ResponseWriter, r *http.Request) {
+	var req TOTPSetupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(TOTPSetupResponse{Error: "Invalid request"})
+		return
+	}
+
+	if req.PendingToken == "" || req.Code == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(TOTPSetupResponse{Error: "Token and code required"})
+		return
+	}
+
+	// Validate pending token
+	accountID, _, err := auth.ValidatePendingToken(req.PendingToken)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(TOTPSetupResponse{Error: "Invalid or expired token"})
+		return
+	}
+
+	// Get account
+	account, err := s.db.GetAccountByID(accountID)
+	if err != nil || account == nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(TOTPSetupResponse{Error: "Account not found"})
+		return
+	}
+
+	// Decrypt the TOTP secret
+	secret, err := auth.DecryptTOTPSecret(account.TOTPSecret)
+	if err != nil {
+		log.Printf("Failed to decrypt TOTP secret: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(TOTPSetupResponse{Error: "Failed to verify TOTP"})
+		return
+	}
+
+	// Validate the code
+	if !auth.ValidateTOTPWithWindow(secret, req.Code) {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(TOTPSetupResponse{Error: "Invalid TOTP code"})
+		return
+	}
+
+	// Enable TOTP
+	if err := s.db.UpdateAccountTOTP(accountID, account.TOTPSecret, true); err != nil {
+		log.Printf("Failed to enable TOTP: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(TOTPSetupResponse{Error: "Failed to enable TOTP"})
+		return
+	}
+
+	// Generate JWT token
+	token, err := auth.GenerateJWT(account.ID, account.Username, account.IsAdmin)
+	if err != nil {
+		log.Printf("Failed to generate JWT: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(TOTPSetupResponse{Error: "Failed to generate session"})
+		return
+	}
+
+	log.Printf("TOTP enabled for user: %s", account.Username)
+
+	// Update last used
+	s.db.UpdateAccountLastUsed(accountID)
+
+	json.NewEncoder(w).Encode(TOTPSetupResponse{
+		Success: true,
+		Token:   token,
+	})
+}
+
+// handleTOTPVerify verifies the TOTP code and issues JWT
+func (s *Server) handleTOTPVerify(w http.ResponseWriter, r *http.Request) {
+	var req TOTPVerifyRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(TOTPVerifyResponse{Error: "Invalid request"})
+		return
+	}
+
+	if req.PendingToken == "" || req.Code == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(TOTPVerifyResponse{Error: "Token and code required"})
+		return
+	}
+
+	// Validate pending token
+	accountID, _, err := auth.ValidatePendingToken(req.PendingToken)
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(TOTPVerifyResponse{Error: "Invalid or expired token"})
+		return
+	}
+
+	// Get account
+	account, err := s.db.GetAccountByID(accountID)
+	if err != nil || account == nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(TOTPVerifyResponse{Error: "Account not found"})
+		return
+	}
+
+	if !account.TOTPEnabled || account.TOTPSecret == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(TOTPVerifyResponse{Error: "TOTP not configured"})
+		return
+	}
+
+	// Decrypt the TOTP secret
+	secret, err := auth.DecryptTOTPSecret(account.TOTPSecret)
+	if err != nil {
+		log.Printf("Failed to decrypt TOTP secret: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(TOTPVerifyResponse{Error: "Failed to verify TOTP"})
+		return
+	}
+
+	// Validate the code
+	if !auth.ValidateTOTPWithWindow(secret, req.Code) {
+		log.Printf("Invalid TOTP code for user: %s", account.Username)
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(TOTPVerifyResponse{Error: "Invalid TOTP code"})
+		return
+	}
+
+	// Generate JWT token
+	token, err := auth.GenerateJWT(account.ID, account.Username, account.IsAdmin)
+	if err != nil {
+		log.Printf("Failed to generate JWT: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(TOTPVerifyResponse{Error: "Failed to generate session"})
+		return
+	}
+
+	log.Printf("Successful login for user: %s", account.Username)
+
+	// Update last used
+	s.db.UpdateAccountLastUsed(accountID)
+
+	json.NewEncoder(w).Encode(TOTPVerifyResponse{
+		Success: true,
+		Token:   token,
+	})
+}

@@ -65,6 +65,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Authentication endpoints
+	if strings.HasPrefix(r.URL.Path, "/auth/") {
+		s.handleAuth(w, r)
+		return
+	}
+
 	// Admin API endpoints
 	if strings.HasPrefix(r.URL.Path, "/admin/") {
 		s.handleAdmin(w, r)

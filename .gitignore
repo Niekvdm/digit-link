@@ -1,6 +1,19 @@
 # Build artifacts
 build/
 
+# Frontend
+frontend/dist/
+frontend/.yarn/
+frontend/node_modules/
+frontend/.pnp.*
+frontend/.yarnrc.yml
+
+# Built frontend copied to server (keep index.html for embed)
+internal/server/public/assets/
+
+# TypeScript build info
+*.tsbuildinfo
+
 # IDE
 .idea/
 .vscode/

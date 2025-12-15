@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -55,6 +56,9 @@ func (db *DB) initSchema() error {
 		id TEXT PRIMARY KEY,
 		username TEXT UNIQUE NOT NULL,
 		token_hash TEXT NOT NULL,
+		password_hash TEXT,
+		totp_secret TEXT,
+		totp_enabled BOOLEAN DEFAULT FALSE,
 		is_admin BOOLEAN DEFAULT FALSE,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		last_used TIMESTAMP,
@@ -99,7 +103,43 @@ func (db *DB) initSchema() error {
 	`
 
 	_, err := db.conn.Exec(schema)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Run migrations for existing databases
+	return db.runMigrations()
+}
+
+// runMigrations adds new columns to existing databases
+func (db *DB) runMigrations() error {
+	// Check if password_hash column exists
+	var count int
+	err := db.conn.QueryRow(`
+		SELECT COUNT(*) FROM pragma_table_info('accounts') WHERE name='password_hash'
+	`).Scan(&count)
+	if err != nil {
+		return err
+	}
+
+	if count == 0 {
+		// Add new columns for TOTP authentication
+		migrations := []string{
+			`ALTER TABLE accounts ADD COLUMN password_hash TEXT`,
+			`ALTER TABLE accounts ADD COLUMN totp_secret TEXT`,
+			`ALTER TABLE accounts ADD COLUMN totp_enabled BOOLEAN DEFAULT FALSE`,
+		}
+		for _, migration := range migrations {
+			if _, err := db.conn.Exec(migration); err != nil {
+				// Ignore "duplicate column" errors
+				if !strings.Contains(err.Error(), "duplicate column") {
+					return fmt.Errorf("migration failed: %w", err)
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 // GetDBPath returns the default database path from environment or default
