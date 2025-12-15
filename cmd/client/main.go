@@ -3,12 +3,10 @@ package main
 import (
 	"flag"
 	"fmt"
-	"log"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/niekvdm/digit-link/internal/client"
 )
 
@@ -56,18 +54,26 @@ func main() {
 		Insecure:       *insecure,
 	})
 
-	// Handle graceful shutdown
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	// Get the model from the client
+	model := c.Model()
 
+	// Start client in goroutine
 	go func() {
-		<-sigCh
-		log.Println("Shutting down...")
-		c.Close()
+		if err := c.Run(); err != nil {
+			// Send quit message to model on error
+			if model != nil {
+				model.SendUpdate(client.QuitMsg{})
+			}
+		}
 	}()
 
-	// Run client
-	if err := c.Run(); err != nil {
-		log.Fatalf("Client error: %v", err)
+	// Run Bubbletea program (blocks until quit)
+	p := tea.NewProgram(model, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		fmt.Printf("Error running program: %v\n", err)
+		os.Exit(1)
 	}
+
+	// Cleanup on exit
+	c.Close()
 }

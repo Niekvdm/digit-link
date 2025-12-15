@@ -4,24 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/niekvdm/digit-link/internal/protocol"
-)
-
-// ANSI color codes
-const (
-	colorReset   = "\033[0m"
-	colorCyan    = "\033[36m"
-	colorYellow  = "\033[33m"
-	colorGreen   = "\033[32m"
-	colorMagenta = "\033[35m"
-	colorWhite   = "\033[37m"
-	colorGray    = "\033[90m"
-	colorRed     = "\033[31m"
 )
 
 // RequestLog represents a logged request
@@ -33,63 +20,6 @@ type RequestLog struct {
 	StatusCode int
 	Duration   time.Duration
 	Pending    bool
-}
-
-// Display handles the console UI
-type Display struct {
-	mu          sync.Mutex
-	requests    []RequestLog
-	maxRequests int
-	bytesSent   int64
-	bytesRecv   int64
-	startTime   time.Time
-	initialized bool
-}
-
-// NewDisplay creates a new display
-func NewDisplay() *Display {
-	return &Display{
-		requests:    make([]RequestLog, 0, 5),
-		maxRequests: 5,
-		startTime:   time.Now(),
-	}
-}
-
-// AddRequest adds a request to the log
-func (d *Display) AddRequest(id, method, path string) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	req := RequestLog{
-		ID:      id,
-		Time:    time.Now(),
-		Method:  method,
-		Path:    path,
-		Pending: true,
-	}
-
-	d.requests = append(d.requests, req)
-	if len(d.requests) > d.maxRequests {
-		d.requests = d.requests[1:]
-	}
-}
-
-// CompleteRequest marks a request as complete
-func (d *Display) CompleteRequest(id string, statusCode int, duration time.Duration, bytesSent, bytesRecv int64) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	for i := range d.requests {
-		if d.requests[i].ID == id {
-			d.requests[i].StatusCode = statusCode
-			d.requests[i].Duration = duration
-			d.requests[i].Pending = false
-			break
-		}
-	}
-
-	d.bytesSent += bytesSent
-	d.bytesRecv += bytesRecv
 }
 
 // formatBytes formats bytes to human readable format
@@ -129,100 +59,6 @@ func formatUptime(d time.Duration) string {
 	return fmt.Sprintf("%ds", s)
 }
 
-// Render renders the display to the terminal
-func (d *Display) Render(status, server, publicURL string, localPort int) {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
-	var sb strings.Builder
-
-	// Move cursor to home position and clear screen (only on first render)
-	if !d.initialized {
-		sb.WriteString("\033[2J") // Clear screen
-		d.initialized = true
-	}
-	sb.WriteString("\033[H") // Move to home
-
-	// Header
-	sb.WriteString(fmt.Sprintf("%sdigit-link%s                                                    %s(Ctrl+C to quit)%s\n", colorCyan, colorReset, colorGray, colorReset))
-	sb.WriteString("\n")
-
-	// Status section
-	statusColor := colorGreen
-	if status != "online" {
-		statusColor = colorYellow
-	}
-	sb.WriteString(fmt.Sprintf("%-20s %s%s%s\n", colorYellow+"Session Status"+colorReset, statusColor, status, colorReset))
-	sb.WriteString(fmt.Sprintf("%-20s %s\n", colorYellow+"Version"+colorReset, "1.0.0"))
-	sb.WriteString(fmt.Sprintf("%-20s %s\n", colorYellow+"Server"+colorReset, server))
-	sb.WriteString(fmt.Sprintf("%-20s %s\n", colorYellow+"Forwarding"+colorReset, fmt.Sprintf("%s%s%s -> %shttp://localhost:%d%s", colorMagenta, publicURL, colorReset, colorWhite, localPort, colorReset)))
-	sb.WriteString("\n")
-
-	// Stats section
-	uptime := time.Since(d.startTime)
-	sb.WriteString(fmt.Sprintf("%sStats%s          %-15s %-15s %-15s\n", colorYellow, colorReset, "Uptime", "Sent", "Received"))
-	sb.WriteString(fmt.Sprintf("               %-15s %-15s %-15s\n", formatUptime(uptime), formatBytes(d.bytesSent), formatBytes(d.bytesRecv)))
-	sb.WriteString("\n")
-
-	// Recent requests header
-	sb.WriteString(fmt.Sprintf("%sRecent Requests%s\n", colorYellow, colorReset))
-	sb.WriteString(fmt.Sprintf("%s─────────────────────────────────────────────────────────────────────────────────%s\n", colorGray, colorReset))
-
-	// Display last 5 requests (or empty lines)
-	for i := 0; i < d.maxRequests; i++ {
-		if i < len(d.requests) {
-			req := d.requests[len(d.requests)-1-i] // Most recent first
-
-			// Truncate path if too long
-			path := req.Path
-			if len(path) > 40 {
-				path = path[:37] + "..."
-			}
-
-			if req.Pending {
-				// Show pending request with spinner
-				spinChars := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
-				spinIdx := int(time.Since(req.Time).Milliseconds()/100) % len(spinChars)
-				sb.WriteString(fmt.Sprintf("%s%-8s%s %-7s %-40s %s%s%s %8s\n",
-					colorGray,
-					req.Time.Format("15:04:05"),
-					colorReset,
-					req.Method,
-					path,
-					colorYellow,
-					spinChars[spinIdx],
-					colorReset,
-					"...",
-				))
-			} else {
-				statusColor := colorGreen
-				if req.StatusCode >= 400 && req.StatusCode < 500 {
-					statusColor = colorYellow
-				} else if req.StatusCode >= 500 {
-					statusColor = colorRed
-				}
-
-				sb.WriteString(fmt.Sprintf("%s%-8s%s %-7s %-40s %s%3d%s %8s\n",
-					colorGray,
-					req.Time.Format("15:04:05"),
-					colorReset,
-					req.Method,
-					path,
-					statusColor,
-					req.StatusCode,
-					colorReset,
-					formatDuration(req.Duration),
-				))
-			}
-		} else {
-			// Empty line placeholder (clears previous content)
-			sb.WriteString(fmt.Sprintf("%-80s\n", ""))
-		}
-	}
-
-	fmt.Print(sb.String())
-}
-
 // formatDuration formats a duration for display
 func formatDuration(d time.Duration) string {
 	if d < time.Millisecond {
@@ -253,9 +89,8 @@ type Client struct {
 	maxBackoff     time.Duration
 
 	// Display
-	display       *Display
-	server        string // Original server hostname for display
-	displayTicker *time.Ticker
+	model  *Model
+	server string // Original server hostname for display
 }
 
 // Config holds client configuration
@@ -295,7 +130,7 @@ func New(cfg Config) *Client {
 		cfg.Timeout = 5 * time.Minute // Default 5 minute timeout
 	}
 
-	return &Client{
+	c := &Client{
 		serverURL:      wsURL,
 		subdomain:      cfg.Subdomain,
 		token:          cfg.Token,
@@ -306,9 +141,10 @@ func New(cfg Config) *Client {
 		maxRetries:     cfg.MaxRetries,
 		initialBackoff: cfg.InitialBackoff,
 		maxBackoff:     cfg.MaxBackoff,
-		display:        NewDisplay(),
 		server:         cfg.Server,
 	}
+	c.model = NewModel(c, cfg.Server, cfg.LocalPort)
+	return c
 }
 
 // Connect establishes a connection to the tunnel server
@@ -407,8 +243,14 @@ func (c *Client) Run() error {
 				return fmt.Errorf("max retries exceeded: %w", err)
 			}
 
-			// Update display to show connecting status
-			c.display.Render("connecting", c.server, "", c.localPort)
+			// Update model to show connecting status
+			if c.model != nil {
+				c.model.SendUpdate(StatusUpdateMsg{
+					Status:    "connecting",
+					Server:    c.server,
+					PublicURL: "",
+				})
+			}
 			time.Sleep(backoff)
 
 			// Exponential backoff
@@ -423,18 +265,17 @@ func (c *Client) Run() error {
 		retries = 0
 		backoff = c.initialBackoff
 
-		// Render initial display
-		c.display.Render("online", c.server, c.publicURL, c.localPort)
-
-		// Start display refresh ticker
-		c.displayTicker = time.NewTicker(1 * time.Second)
-		go c.refreshDisplay()
+		// Update model with initial status
+		if c.model != nil {
+			c.model.SendUpdate(StatusUpdateMsg{
+				Status:    "online",
+				Server:    c.server,
+				PublicURL: c.publicURL,
+			})
+		}
 
 		// Handle messages until disconnection
 		c.handleMessages()
-
-		// Stop display ticker
-		c.displayTicker.Stop()
 
 		c.mu.Lock()
 		c.connected = false
@@ -444,8 +285,14 @@ func (c *Client) Run() error {
 		}
 		c.mu.Unlock()
 
-		// Update display to show reconnecting status
-		c.display.Render("reconnecting", c.server, c.publicURL, c.localPort)
+		// Update model to show reconnecting status
+		if c.model != nil {
+			c.model.SendUpdate(StatusUpdateMsg{
+				Status:    "reconnecting",
+				Server:    c.server,
+				PublicURL: c.publicURL,
+			})
+		}
 	}
 }
 
@@ -492,8 +339,13 @@ func (c *Client) handleHTTPRequest(payload interface{}) {
 	}
 
 	// Add request immediately as pending
-	c.display.AddRequest(httpReq.ID, httpReq.Method, httpReq.Path)
-	c.display.Render("online", c.server, c.publicURL, c.localPort)
+	if c.model != nil {
+		c.model.SendUpdate(RequestAddedMsg{
+			ID:     httpReq.ID,
+			Method: httpReq.Method,
+			Path:   httpReq.Path,
+		})
+	}
 
 	// Calculate bytes received (request body)
 	bytesRecv := int64(len(httpReq.Body))
@@ -510,7 +362,15 @@ func (c *Client) handleHTTPRequest(payload interface{}) {
 	bytesSent := int64(len(httpResp.Body))
 
 	// Mark request as complete
-	c.display.CompleteRequest(httpReq.ID, httpResp.StatusCode, duration, bytesSent, bytesRecv)
+	if c.model != nil {
+		c.model.SendUpdate(RequestCompletedMsg{
+			ID:         httpReq.ID,
+			StatusCode: httpResp.StatusCode,
+			Duration:   duration,
+			BytesSent:  bytesSent,
+			BytesRecv:  bytesRecv,
+		})
+	}
 
 	// Send response back
 	respMsg := protocol.Message{
@@ -525,9 +385,6 @@ func (c *Client) handleHTTPRequest(payload interface{}) {
 		c.conn.WriteMessage(websocket.TextMessage, data)
 	}
 	c.mu.RUnlock()
-
-	// Update display
-	c.display.Render("online", c.server, c.publicURL, c.localPort)
 }
 
 // sendPong sends a pong response
@@ -540,24 +397,6 @@ func (c *Client) sendPong() {
 	c.mu.RUnlock()
 }
 
-// refreshDisplay periodically refreshes the display
-func (c *Client) refreshDisplay() {
-	for {
-		select {
-		case <-c.done:
-			return
-		case <-c.displayTicker.C:
-			c.mu.RLock()
-			connected := c.connected
-			publicURL := c.publicURL
-			c.mu.RUnlock()
-
-			if connected {
-				c.display.Render("online", c.server, publicURL, c.localPort)
-			}
-		}
-	}
-}
 
 // Close closes the client connection
 func (c *Client) Close() {
@@ -574,4 +413,9 @@ func (c *Client) PublicURL() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.publicURL
+}
+
+// Model returns the Bubbletea model for UI rendering
+func (c *Client) Model() *Model {
+	return c.model
 }
