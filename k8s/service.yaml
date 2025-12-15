@@ -53,6 +53,9 @@ spec:
               value: "tunnel.digit.zone"
             - name: DB_PATH
               value: "/data/digit-link.db"
+            # Trust proxy headers from internal cluster IPs (required for correct client IP detection)
+            - name: TRUSTED_PROXIES
+              value: "private"
             # Optional: Pre-configure admin token (otherwise use first-boot web setup)
             # - name: ADMIN_TOKEN
             #   valueFrom:

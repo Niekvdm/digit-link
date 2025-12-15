@@ -100,6 +100,31 @@ Features:
 | `DB_PATH` | SQLite database path | `data/digit-link.db` |
 | `ADMIN_TOKEN` | Auto-create admin with this token on startup | (none) |
 | `JWT_SECRET` | Secret for signing JWT tokens (auto-generated if not set) | (auto) |
+| `TRUSTED_PROXIES` | Trusted proxy IPs/CIDRs for X-Forwarded-For (see below) | (none) |
+
+#### TRUSTED_PROXIES Configuration
+
+When running behind a reverse proxy, load balancer, or in Kubernetes, the server sees the proxy's IP instead of the client's real IP. Set `TRUSTED_PROXIES` to tell digit-link which proxies to trust for forwarded headers.
+
+**Values:**
+- `private` - Trust all private IP ranges (recommended for k8s/Docker)
+- `10.42.0.0/16` - Trust specific CIDR range
+- `10.0.0.1,10.0.0.2` - Trust specific IPs (comma-separated)
+- `*` - Trust all IPs (not recommended for production)
+
+**Kubernetes/k3s example:**
+```yaml
+env:
+  - name: TRUSTED_PROXIES
+    value: "private"
+```
+
+**Docker example:**
+```bash
+docker run -e TRUSTED_PROXIES=private digit-link-server
+```
+
+**Important:** Your ingress or reverse proxy must be configured to set `X-Forwarded-For` or `X-Real-IP` headers. For Traefik (k3s default), this is typically automatic.
 
 ### Client
 

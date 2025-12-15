@@ -160,6 +160,17 @@ Forwarding to localhost:3000
 - Check your current public IP at https://whatismyip.com
 - Remember that your IP may change if you're on a dynamic connection
 
+**Running in Kubernetes/Docker?** The server may see internal cluster IPs (like `10.42.0.1`) instead of the real client IP. Set `TRUSTED_PROXIES=private` to trust forwarded headers from internal proxies:
+
+```yaml
+# Kubernetes deployment
+env:
+  - name: TRUSTED_PROXIES
+    value: "private"
+```
+
+Also ensure your Ingress is configured to forward client IPs via `X-Forwarded-For` header.
+
 ### "Invalid token"
 
 - Verify the token is correct (no extra spaces)
