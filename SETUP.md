@@ -160,16 +160,30 @@ Forwarding to localhost:3000
 - Check your current public IP at https://whatismyip.com
 - Remember that your IP may change if you're on a dynamic connection
 
-**Running in Kubernetes/Docker?** The server may see internal cluster IPs (like `10.42.0.1`) instead of the real client IP. Set `TRUSTED_PROXIES=private` to trust forwarded headers from internal proxies:
+**Running in Kubernetes/Docker?** The server may see internal cluster IPs (like `10.42.0.1`) instead of the real client IP. Two configuration changes are required:
 
+1. **Set `TRUSTED_PROXIES=private`** on the digit-link deployment:
 ```yaml
-# Kubernetes deployment
 env:
   - name: TRUSTED_PROXIES
     value: "private"
 ```
 
-Also ensure your Ingress is configured to forward client IPs via `X-Forwarded-For` header.
+2. **Set `externalTrafficPolicy: Local`** on your ingress controller service:
+```bash
+# For HAProxy Ingress:
+kubectl -n haproxy-ingress patch svc haproxy-kubernetes-ingress \
+  -p '{"spec":{"externalTrafficPolicy":"Local"}}'
+
+# For Traefik (k3s default):
+kubectl -n kube-system patch svc traefik \
+  -p '{"spec":{"externalTrafficPolicy":"Local"}}'
+
+# Verify the change:
+kubectl -n <namespace> get svc <service> -o jsonpath='{.spec.externalTrafficPolicy}'
+```
+
+Without `externalTrafficPolicy: Local`, Kubernetes performs SNAT and replaces the client IP with an internal cluster IP.
 
 ### "Invalid token"
 

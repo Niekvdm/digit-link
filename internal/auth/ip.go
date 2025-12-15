@@ -2,6 +2,7 @@ package auth
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 var (
 	trustedProxies     []*net.IPNet
 	trustedProxiesOnce sync.Once
+	debugIPLogging     bool
 )
 
 // initTrustedProxies initializes the trusted proxy list from environment variable
@@ -22,13 +24,17 @@ var (
 //   - "*" or "all": trust all IPs (use with caution!)
 func initTrustedProxies() {
 	trustedProxiesOnce.Do(func() {
+		debugIPLogging = os.Getenv("DEBUG_IP") == "true"
+
 		envValue := os.Getenv("TRUSTED_PROXIES")
 		if envValue == "" {
 			// Default: don't trust any proxies (use RemoteAddr directly)
+			log.Printf("TRUSTED_PROXIES not set, will use RemoteAddr directly")
 			return
 		}
 
 		envValue = strings.TrimSpace(envValue)
+		log.Printf("TRUSTED_PROXIES configured: %s", envValue)
 
 		// Handle special values
 		switch strings.ToLower(envValue) {
@@ -48,6 +54,7 @@ func initTrustedProxies() {
 					trustedProxies = append(trustedProxies, network)
 				}
 			}
+			log.Printf("Trusting private IP ranges: %v", privateRanges)
 			return
 		case "*", "all":
 			// Trust all IPs - equivalent to previous behavior
@@ -55,6 +62,7 @@ func initTrustedProxies() {
 			_, ipv4All, _ := net.ParseCIDR("0.0.0.0/0")
 			_, ipv6All, _ := net.ParseCIDR("::/0")
 			trustedProxies = append(trustedProxies, ipv4All, ipv6All)
+			log.Printf("Trusting ALL IPs (not recommended for production)")
 			return
 		}
 
@@ -84,6 +92,7 @@ func initTrustedProxies() {
 				trustedProxies = append(trustedProxies, &net.IPNet{IP: ip, Mask: mask})
 			}
 		}
+		log.Printf("Loaded %d trusted proxy ranges", len(trustedProxies))
 	})
 }
 
@@ -128,34 +137,57 @@ func getRemoteIP(r *http.Request) string {
 //   - TRUSTED_PROXIES=10.42.0.0/16     - Trust specific CIDR range
 //   - TRUSTED_PROXIES=10.0.0.1,10.0.0.2 - Trust specific IPs
 //   - TRUSTED_PROXIES=*                - Trust all (not recommended for production)
+//
+// Set DEBUG_IP=true for verbose logging of IP resolution
 func GetClientIP(r *http.Request) string {
+	initTrustedProxies()
+
 	remoteIP := getRemoteIP(r)
+	xff := r.Header.Get("X-Forwarded-For")
+	xri := r.Header.Get("X-Real-IP")
+
+	if debugIPLogging {
+		log.Printf("[IP Debug] RemoteAddr=%s, X-Forwarded-For=%q, X-Real-IP=%q, ProxyTrusted=%v",
+			remoteIP, xff, xri, isProxyTrusted(remoteIP))
+	}
 
 	// Only trust forwarded headers if the immediate connection is from a trusted proxy
 	if !isProxyTrusted(remoteIP) {
+		if debugIPLogging {
+			log.Printf("[IP Debug] Proxy not trusted, returning RemoteAddr: %s", remoteIP)
+		}
 		return remoteIP
 	}
 
 	// Check X-Forwarded-For header (may contain multiple IPs)
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+	if xff != "" {
 		// Take the first IP (original client)
 		parts := strings.Split(xff, ",")
 		if len(parts) > 0 {
 			ip := strings.TrimSpace(parts[0])
 			if parsed := net.ParseIP(ip); parsed != nil {
+				if debugIPLogging {
+					log.Printf("[IP Debug] Using X-Forwarded-For: %s", ip)
+				}
 				return ip
 			}
 		}
 	}
 
 	// Check X-Real-IP header
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+	if xri != "" {
 		if parsed := net.ParseIP(xri); parsed != nil {
+			if debugIPLogging {
+				log.Printf("[IP Debug] Using X-Real-IP: %s", xri)
+			}
 			return xri
 		}
 	}
 
 	// Fall back to RemoteAddr
+	if debugIPLogging {
+		log.Printf("[IP Debug] No valid forwarded IP, using RemoteAddr: %s", remoteIP)
+	}
 	return remoteIP
 }
 

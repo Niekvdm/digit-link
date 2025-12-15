@@ -3,6 +3,9 @@ kind: Service
 metadata:
   name: digit-link-service
   namespace: dzone-dev
+  annotations:
+    # Ensure HAProxy adds X-Forwarded-For header with client IP
+    haproxy.org/forwarded-for: "true"
 spec:
   selector:
     app: digit-link
@@ -54,8 +57,13 @@ spec:
             - name: DB_PATH
               value: "/data/digit-link.db"
             # Trust proxy headers from internal cluster IPs (required for correct client IP detection)
+            # Also requires ingress service to have externalTrafficPolicy: Local
+            # See ingress.yaml comments for setup instructions
             - name: TRUSTED_PROXIES
               value: "private"
+            # Debug IP resolution (set to "true" to enable verbose logging, disable in production)
+            # - name: DEBUG_IP
+            #   value: "true"
             # Optional: Pre-configure admin token (otherwise use first-boot web setup)
             # - name: ADMIN_TOKEN
             #   valueFrom:

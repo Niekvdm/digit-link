@@ -124,7 +124,23 @@ env:
 docker run -e TRUSTED_PROXIES=private digit-link-server
 ```
 
-**Important:** Your ingress or reverse proxy must be configured to set `X-Forwarded-For` or `X-Real-IP` headers. For Traefik (k3s default), this is typically automatic.
+**Important:** Your ingress or reverse proxy must be configured to preserve the client IP:
+
+1. **Set `TRUSTED_PROXIES=private`** on the digit-link deployment
+2. **Configure ingress service** with `externalTrafficPolicy: Local`:
+   ```bash
+   # For HAProxy Ingress:
+   kubectl -n haproxy-ingress patch svc haproxy-kubernetes-ingress \
+     -p '{"spec":{"externalTrafficPolicy":"Local"}}'
+   
+   # For Traefik (k3s default):
+   kubectl -n kube-system patch svc traefik \
+     -p '{"spec":{"externalTrafficPolicy":"Local"}}'
+   ```
+
+Without `externalTrafficPolicy: Local`, Kubernetes SNAT rewrites the source IP to an internal cluster IP (e.g., `10.42.0.1`), breaking IP whitelisting.
+
+**Note:** `externalTrafficPolicy: Local` means traffic only routes to pods on the same node. Ensure your ingress controller runs on all nodes receiving external traffic (typically via DaemonSet).
 
 ### Client
 

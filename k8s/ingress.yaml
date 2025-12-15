@@ -9,8 +9,20 @@
 #   - *.tunnel.digit.zone: Tunnel subdomains for forwarded traffic
 #
 # Client IP forwarding:
-#   The server needs TRUSTED_PROXIES=private env var to trust X-Forwarded-For headers
-#   from internal cluster IPs. See deployment configuration.
+#   For IP whitelisting to work correctly in Kubernetes, you need:
+#   1. TRUSTED_PROXIES=private env var on the digit-link deployment
+#   2. Ingress controller service with externalTrafficPolicy: Local
+#
+#   For HAProxy Ingress, run:
+#     kubectl -n <ingress-namespace> patch svc <ingress-service> \
+#       -p '{"spec":{"externalTrafficPolicy":"Local"}}'
+#
+#   Example for HAProxy:
+#     kubectl -n haproxy-ingress patch svc haproxy-kubernetes-ingress \
+#       -p '{"spec":{"externalTrafficPolicy":"Local"}}'
+#
+#   Note: externalTrafficPolicy: Local means traffic only routes to ingress pods
+#   on the same node. Ensure your ingress runs on all nodes receiving traffic.
 #
 apiVersion: networking.k8s.io/v1
 kind: Ingress
