@@ -15,6 +15,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/niekvdm/digit-link/internal/auth"
 	"github.com/niekvdm/digit-link/internal/db"
+	"github.com/niekvdm/digit-link/internal/policy"
 	"github.com/niekvdm/digit-link/internal/protocol"
 )
 
@@ -26,11 +27,17 @@ type Server struct {
 	tunnels  map[string]*Tunnel
 	mu       sync.RWMutex
 	upgrader websocket.Upgrader
+
+	// Auth middleware for tunnel-level authentication
+	authMiddleware *AuthMiddleware
+
+	// OIDC handler for OIDC authentication
+	oidcHandler *auth.OIDCAuthHandler
 }
 
 // New creates a new tunnel server
 func New(domain, secret string, database *db.DB) *Server {
-	return &Server{
+	s := &Server{
 		domain:  domain,
 		secret:  secret,
 		db:      database,
@@ -43,6 +50,14 @@ func New(domain, secret string, database *db.DB) *Server {
 			WriteBufferSize: 1024 * 64,
 		},
 	}
+
+	// Initialize auth handlers if database is available
+	if database != nil {
+		s.authMiddleware = NewAuthMiddleware(database, WithDefaultDeny(true))
+		s.oidcHandler = auth.NewOIDCAuthHandler(database, domain)
+	}
+
+	return s
 }
 
 // ServeHTTP handles all incoming HTTP requests
@@ -65,7 +80,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Authentication endpoints
+	// Authentication endpoints (admin dashboard auth)
 	if strings.HasPrefix(r.URL.Path, "/auth/") {
 		s.handleAuth(w, r)
 		return
@@ -87,6 +102,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Extract subdomain from Host header
 	subdomain := s.extractSubdomain(r.Host)
 
+	// Handle tunnel-level auth endpoints (mounted on subdomain)
+	if strings.HasPrefix(r.URL.Path, "/__auth/") {
+		s.handleTunnelAuth(w, r, subdomain)
+		return
+	}
+
 	// Find tunnel for subdomain
 	s.mu.RLock()
 	tunnel, ok := s.tunnels[subdomain]
@@ -95,6 +116,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		http.Error(w, fmt.Sprintf("Tunnel '%s' not found", subdomain), http.StatusNotFound)
 		return
+	}
+
+	// Apply tunnel-level authentication if middleware is configured
+	if s.authMiddleware != nil {
+		result, authCtx := s.authMiddleware.AuthenticateRequest(w, r, subdomain)
+
+		// Get the effective policy from context for challenge handling
+		effectivePolicy := GetEffectivePolicyFromContext(r)
+
+		if !s.authMiddleware.HandleAuthResult(w, r, result, effectivePolicy, authCtx) {
+			// Auth failed, response already sent
+			return
+		}
 	}
 
 	// Forward request through tunnel
@@ -585,4 +619,272 @@ func GetPort() int {
 		}
 	}
 	return 8080
+}
+
+// handleTunnelAuth handles tunnel-level authentication endpoints
+// These are mounted on subdomain paths like /__auth/login, /__auth/callback, etc.
+func (s *Server) handleTunnelAuth(w http.ResponseWriter, r *http.Request, subdomain string) {
+	// Set security headers for auth endpoints
+	auth.SetAuthSecurityHeaders(w)
+	auth.NoCacheHeaders(w)
+
+	path := strings.TrimPrefix(r.URL.Path, "/__auth")
+
+	switch path {
+	case "/login":
+		s.handleTunnelAuthLogin(w, r, subdomain)
+	case "/callback":
+		s.handleTunnelAuthCallback(w, r, subdomain)
+	case "/logout":
+		s.handleTunnelAuthLogout(w, r, subdomain)
+	case "/health":
+		s.handleTunnelAuthHealth(w, r, subdomain)
+	default:
+		http.Error(w, "Not found", http.StatusNotFound)
+	}
+}
+
+// handleTunnelAuthLogin handles the OIDC login flow
+func (s *Server) handleTunnelAuthLogin(w http.ResponseWriter, r *http.Request, subdomain string) {
+	if s.db == nil {
+		http.Error(w, "Authentication not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Look up the application and its auth policy
+	app, err := s.db.GetApplicationBySubdomain(subdomain)
+	if err != nil {
+		log.Printf("Error looking up application for auth: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	var orgID string
+	if app != nil {
+		orgID = app.OrgID
+	}
+
+	// Build auth context
+	authCtx := &policy.AuthContext{
+		Subdomain: subdomain,
+	}
+	if app != nil {
+		authCtx.AppID = app.ID
+		authCtx.OrgID = app.OrgID
+		authCtx.App = app
+		authCtx.IsPersistentApp = true
+	}
+
+	// Get effective policy
+	var effectivePolicy *policy.EffectivePolicy
+	if s.authMiddleware != nil && s.authMiddleware.policyLoader != nil {
+		effectivePolicy, _, err = s.authMiddleware.policyLoader.LoadForSubdomain(subdomain)
+		if err != nil {
+			log.Printf("Error loading policy for subdomain %s: %v", subdomain, err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if effectivePolicy == nil {
+		// Try to get org policy directly
+		var oidcPolicy *db.OrgAuthPolicy
+		if orgID != "" {
+			oidcPolicy, err = s.db.GetOrgAuthPolicy(orgID)
+			if err != nil {
+				log.Printf("Error getting org auth policy: %v", err)
+				http.Error(w, "Internal server error", http.StatusInternalServerError)
+				return
+			}
+		}
+
+		if oidcPolicy == nil || oidcPolicy.AuthType != db.AuthTypeOIDC {
+			http.Error(w, "OIDC authentication not configured for this application", http.StatusNotImplemented)
+			return
+		}
+
+		// Build effective policy from org policy
+		effectivePolicy = &policy.EffectivePolicy{
+			Type:  policy.AuthTypeOIDC,
+			OrgID: orgID,
+			OIDC: &policy.OIDCConfig{
+				IssuerURL:      oidcPolicy.OIDCIssuerURL,
+				ClientID:       oidcPolicy.OIDCClientID,
+				ClientSecret:   oidcPolicy.OIDCClientSecretEnc, // Note: may need decryption
+				Scopes:         oidcPolicy.OIDCScopes,
+				AllowedDomains: oidcPolicy.OIDCAllowedDomains,
+				RequiredClaims: oidcPolicy.OIDCRequiredClaims,
+			},
+		}
+	}
+
+	if effectivePolicy.Type != policy.AuthTypeOIDC || effectivePolicy.OIDC == nil {
+		http.Error(w, "OIDC authentication not configured for this application", http.StatusNotImplemented)
+		return
+	}
+
+	// Update redirect URL for this subdomain
+	if s.oidcHandler != nil {
+		s.oidcHandler.UpdateProviderRedirectURL(effectivePolicy.OIDC.IssuerURL, subdomain)
+		s.oidcHandler.HandleLogin(w, r, effectivePolicy, authCtx)
+	} else {
+		http.Error(w, "OIDC handler not initialized", http.StatusInternalServerError)
+	}
+}
+
+// handleTunnelAuthCallback handles the OIDC callback
+func (s *Server) handleTunnelAuthCallback(w http.ResponseWriter, r *http.Request, subdomain string) {
+	if s.db == nil || s.oidcHandler == nil {
+		http.Error(w, "Authentication not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Look up the application
+	app, err := s.db.GetApplicationBySubdomain(subdomain)
+	if err != nil {
+		log.Printf("Error looking up application for auth callback: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	var orgID string
+	if app != nil {
+		orgID = app.OrgID
+	}
+
+	// Build auth context
+	authCtx := &policy.AuthContext{
+		Subdomain: subdomain,
+	}
+	if app != nil {
+		authCtx.AppID = app.ID
+		authCtx.OrgID = app.OrgID
+		authCtx.App = app
+		authCtx.IsPersistentApp = true
+	}
+
+	// Get effective policy
+	var effectivePolicy *policy.EffectivePolicy
+	if s.authMiddleware != nil && s.authMiddleware.policyLoader != nil {
+		effectivePolicy, _, err = s.authMiddleware.policyLoader.LoadForSubdomain(subdomain)
+		if err != nil {
+			log.Printf("Error loading policy for subdomain %s: %v", subdomain, err)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if effectivePolicy == nil {
+		// Try to get org policy directly
+		var oidcPolicy *db.OrgAuthPolicy
+		if orgID != "" {
+			oidcPolicy, err = s.db.GetOrgAuthPolicy(orgID)
+			if err != nil {
+				log.Printf("Error getting org auth policy: %v", err)
+				http.Error(w, "Internal server error", http.StatusInternalServerError)
+				return
+			}
+		}
+
+		if oidcPolicy == nil || oidcPolicy.AuthType != db.AuthTypeOIDC {
+			http.Error(w, "OIDC authentication not configured", http.StatusNotImplemented)
+			return
+		}
+
+		effectivePolicy = &policy.EffectivePolicy{
+			Type:  policy.AuthTypeOIDC,
+			OrgID: orgID,
+			OIDC: &policy.OIDCConfig{
+				IssuerURL:      oidcPolicy.OIDCIssuerURL,
+				ClientID:       oidcPolicy.OIDCClientID,
+				ClientSecret:   oidcPolicy.OIDCClientSecretEnc,
+				Scopes:         oidcPolicy.OIDCScopes,
+				AllowedDomains: oidcPolicy.OIDCAllowedDomains,
+				RequiredClaims: oidcPolicy.OIDCRequiredClaims,
+			},
+		}
+	}
+
+	if effectivePolicy.Type != policy.AuthTypeOIDC || effectivePolicy.OIDC == nil {
+		http.Error(w, "OIDC authentication not configured", http.StatusNotImplemented)
+		return
+	}
+
+	s.oidcHandler.HandleCallback(w, r, effectivePolicy, authCtx)
+}
+
+// handleTunnelAuthLogout handles logout (clears session)
+func (s *Server) handleTunnelAuthLogout(w http.ResponseWriter, r *http.Request, subdomain string) {
+	if s.oidcHandler != nil {
+		s.oidcHandler.HandleLogout(w, r)
+	} else {
+		// Fallback: Clear the session cookie
+		http.SetCookie(w, &http.Cookie{
+			Name:     "digit_link_session",
+			Value:    "",
+			Path:     "/",
+			MaxAge:   -1,
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteLaxMode,
+		})
+
+		// Get redirect URL
+		redirectURL := r.URL.Query().Get("redirect")
+		if redirectURL == "" {
+			redirectURL = "/"
+		}
+
+		http.Redirect(w, r, redirectURL, http.StatusFound)
+	}
+}
+
+// handleTunnelAuthHealth returns the health status of the auth system
+func (s *Server) handleTunnelAuthHealth(w http.ResponseWriter, r *http.Request, subdomain string) {
+	response := map[string]interface{}{
+		"status":    "ok",
+		"subdomain": subdomain,
+	}
+
+	if s.db != nil {
+		// Check if auth is configured for this subdomain
+		app, err := s.db.GetApplicationBySubdomain(subdomain)
+		if err == nil && app != nil {
+			response["appId"] = app.ID
+			response["authMode"] = app.AuthMode
+
+			// Check if policy exists
+			if app.AuthMode == db.AuthModeCustom {
+				hasPolicy, _ := s.db.HasAppAuthPolicy(app.ID)
+				response["hasCustomPolicy"] = hasPolicy
+			} else if app.AuthMode == db.AuthModeInherit {
+				hasPolicy, _ := s.db.HasOrgAuthPolicy(app.OrgID)
+				response["hasOrgPolicy"] = hasPolicy
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// GetTunnelAuthContext returns the auth context for a tunnel
+// This is used by the tunnel to know what org it belongs to
+func (s *Server) GetTunnelAuthContext(subdomain string) *policy.AuthContext {
+	if s.db == nil {
+		return &policy.AuthContext{Subdomain: subdomain}
+	}
+
+	app, err := s.db.GetApplicationBySubdomain(subdomain)
+	if err != nil || app == nil {
+		return &policy.AuthContext{Subdomain: subdomain}
+	}
+
+	return &policy.AuthContext{
+		Subdomain:       subdomain,
+		AppID:           app.ID,
+		OrgID:           app.OrgID,
+		App:             app,
+		IsPersistentApp: true,
+	}
 }

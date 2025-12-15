@@ -5,6 +5,7 @@ A lightweight ngrok-like tunnel system for exposing local services to the intern
 ## Features
 
 - **Token-based Authentication**: Secure API tokens for client connections
+- **Tunnel-Level Auth**: Protect public access to tunnels with Basic, API Key, or OIDC
 - **IP Whitelisting**: Strict control over which IPs can connect
 - **Admin Dashboard**: Web-based management interface
 - **SQLite Storage**: Persistent account and tunnel data
@@ -15,6 +16,13 @@ A lightweight ngrok-like tunnel system for exposing local services to the intern
 - **Server**: Runs on k3s, handles WebSocket connections from clients and routes HTTP traffic
 - **Client**: CLI tool that connects to the server and forwards requests to local ports
 - **Admin Dashboard**: Web UI for managing accounts, IP whitelist, and monitoring tunnels
+
+## Documentation
+
+- [Tunnel-Level Authentication](docs/tunnel-auth.md) - Protect public access to tunnels
+- [Database Schema](docs/database-schema.md) - Complete database table reference
+- [API Reference](docs/api-reference.md) - Programmatic API for auth management
+- [OIDC Configuration](docs/oidc-configuration.md) - Configure OIDC providers
 
 ## Quick Start
 
@@ -91,6 +99,7 @@ Features:
 | `SECRET` | Legacy shared secret (deprecated) | (none) |
 | `DB_PATH` | SQLite database path | `data/digit-link.db` |
 | `ADMIN_TOKEN` | Auto-create admin with this token on startup | (none) |
+| `JWT_SECRET` | Secret for signing JWT tokens (auto-generated if not set) | (auto) |
 
 ### Client
 
@@ -133,6 +142,9 @@ tunnel      A    <K3S_INGRESS_IP>
 - **IP Whitelisting**: Only whitelisted IPs can establish tunnels
 - **HTTPS**: All traffic should be served over HTTPS (via ingress)
 - **Admin API**: Protected by admin token header (`X-Admin-Token`)
+- **Tunnel Auth**: Optional authentication on public tunnel traffic (Basic/API Key/OIDC)
+- **Rate Limiting**: Protection against brute-force attacks on auth endpoints
+- **Audit Logging**: All authentication events are logged
 
 ## How It Works
 
@@ -165,6 +177,15 @@ tunnel      A    <K3S_INGRESS_IP>
 |----------|-------------|
 | `/health` | Health check (returns JSON) |
 | `/_tunnel` | WebSocket endpoint for tunnel clients |
+
+### Tunnel Auth Endpoints (on subdomains)
+
+| Endpoint | Description |
+|----------|-------------|
+| `/__auth/login` | Start OIDC login flow |
+| `/__auth/callback` | OIDC callback |
+| `/__auth/logout` | Clear session |
+| `/__auth/health` | Auth system health check |
 
 ## License
 

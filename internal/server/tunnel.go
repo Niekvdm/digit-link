@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/niekvdm/digit-link/internal/db"
 )
 
 // Tunnel represents a connected client tunnel
@@ -14,6 +15,12 @@ type Tunnel struct {
 	CreatedAt  time.Time
 	ResponseCh map[string]chan []byte // Request ID -> response channel
 	mu         sync.RWMutex
+
+	// Auth context for this tunnel
+	AccountID string          // The account that owns this tunnel
+	OrgID     string          // The organization this tunnel belongs to
+	AppID     string          // The application ID (if persistent app)
+	App       *db.Application // The application record (if persistent app)
 }
 
 // NewTunnel creates a new tunnel instance
@@ -23,6 +30,20 @@ func NewTunnel(subdomain string, conn *websocket.Conn) *Tunnel {
 		Conn:       conn,
 		CreatedAt:  time.Now(),
 		ResponseCh: make(map[string]chan []byte),
+	}
+}
+
+// NewTunnelWithContext creates a new tunnel with auth context
+func NewTunnelWithContext(subdomain string, conn *websocket.Conn, accountID, orgID, appID string, app *db.Application) *Tunnel {
+	return &Tunnel{
+		Subdomain:  subdomain,
+		Conn:       conn,
+		CreatedAt:  time.Now(),
+		ResponseCh: make(map[string]chan []byte),
+		AccountID:  accountID,
+		OrgID:      orgID,
+		AppID:      appID,
+		App:        app,
 	}
 }
 

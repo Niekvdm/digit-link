@@ -52,6 +52,13 @@ func (db *DB) Conn() *sql.DB {
 // initSchema creates the database tables if they don't exist
 func (db *DB) initSchema() error {
 	schema := `
+	-- Organizations (new layer above accounts)
+	CREATE TABLE IF NOT EXISTS organizations (
+		id TEXT PRIMARY KEY,
+		name TEXT UNIQUE NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
+
 	CREATE TABLE IF NOT EXISTS accounts (
 		id TEXT PRIMARY KEY,
 		username TEXT UNIQUE NOT NULL,
@@ -60,6 +67,7 @@ func (db *DB) initSchema() error {
 		totp_secret TEXT,
 		totp_enabled BOOLEAN DEFAULT FALSE,
 		is_admin BOOLEAN DEFAULT FALSE,
+		org_id TEXT REFERENCES organizations(id),
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		last_used TIMESTAMP,
 		active BOOLEAN DEFAULT TRUE
@@ -88,6 +96,7 @@ func (db *DB) initSchema() error {
 		account_id TEXT NOT NULL,
 		subdomain TEXT NOT NULL,
 		client_ip TEXT,
+		app_id TEXT,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 		closed_at TIMESTAMP,
 		bytes_sent INTEGER DEFAULT 0,
@@ -95,11 +104,107 @@ func (db *DB) initSchema() error {
 		FOREIGN KEY(account_id) REFERENCES accounts(id)
 	);
 
+	-- Persistent applications with auth policies
+	CREATE TABLE IF NOT EXISTS applications (
+		id TEXT PRIMARY KEY,
+		org_id TEXT NOT NULL REFERENCES organizations(id),
+		subdomain TEXT UNIQUE NOT NULL,
+		name TEXT,
+		auth_mode TEXT DEFAULT 'inherit',
+		auth_type TEXT,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
+
+	-- Organization-level auth policy (default for org)
+	CREATE TABLE IF NOT EXISTS org_auth_policies (
+		org_id TEXT PRIMARY KEY REFERENCES organizations(id),
+		auth_type TEXT NOT NULL,
+		basic_user_hash TEXT,
+		basic_pass_hash TEXT,
+		oidc_issuer_url TEXT,
+		oidc_client_id TEXT,
+		oidc_client_secret_enc TEXT,
+		oidc_scopes TEXT,
+		oidc_allowed_domains TEXT,
+		oidc_required_claims TEXT
+	);
+
+	-- App-level auth policy (when mode=custom)
+	CREATE TABLE IF NOT EXISTS app_auth_policies (
+		app_id TEXT PRIMARY KEY REFERENCES applications(id),
+		auth_type TEXT NOT NULL,
+		basic_user_hash TEXT,
+		basic_pass_hash TEXT,
+		oidc_issuer_url TEXT,
+		oidc_client_id TEXT,
+		oidc_client_secret_enc TEXT,
+		oidc_scopes TEXT,
+		oidc_allowed_domains TEXT,
+		oidc_required_claims TEXT
+	);
+
+	-- API keys (hashed, with metadata)
+	CREATE TABLE IF NOT EXISTS api_keys (
+		id TEXT PRIMARY KEY,
+		org_id TEXT REFERENCES organizations(id),
+		app_id TEXT REFERENCES applications(id),
+		key_hash TEXT NOT NULL,
+		key_prefix TEXT NOT NULL,
+		description TEXT,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		last_used TIMESTAMP,
+		expires_at TIMESTAMP
+	);
+
+	-- OIDC sessions (SQLite-backed)
+	CREATE TABLE IF NOT EXISTS auth_sessions (
+		id TEXT PRIMARY KEY,
+		app_id TEXT,
+		org_id TEXT,
+		user_email TEXT,
+		user_claims TEXT,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		expires_at TIMESTAMP NOT NULL
+	);
+
+	-- Rate limiting state
+	CREATE TABLE IF NOT EXISTS rate_limit_state (
+		key TEXT PRIMARY KEY,
+		count INTEGER DEFAULT 0,
+		window_start TIMESTAMP,
+		blocked_until TIMESTAMP
+	);
+
+	-- Audit log
+	CREATE TABLE IF NOT EXISTS auth_audit_log (
+		id TEXT PRIMARY KEY,
+		timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		org_id TEXT,
+		app_id TEXT,
+		auth_type TEXT,
+		success BOOLEAN,
+		failure_reason TEXT,
+		source_ip TEXT,
+		user_identity TEXT,
+		key_id TEXT
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_accounts_username ON accounts(username);
 	CREATE INDEX IF NOT EXISTS idx_accounts_token_hash ON accounts(token_hash);
+	CREATE INDEX IF NOT EXISTS idx_accounts_org_id ON accounts(org_id);
 	CREATE INDEX IF NOT EXISTS idx_tunnels_account_id ON tunnels(account_id);
 	CREATE INDEX IF NOT EXISTS idx_tunnels_subdomain ON tunnels(subdomain);
+	CREATE INDEX IF NOT EXISTS idx_tunnels_app_id ON tunnels(app_id);
 	CREATE INDEX IF NOT EXISTS idx_global_whitelist_ip ON global_whitelist(ip_range);
+	CREATE INDEX IF NOT EXISTS idx_applications_subdomain ON applications(subdomain);
+	CREATE INDEX IF NOT EXISTS idx_applications_org_id ON applications(org_id);
+	CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash);
+	CREATE INDEX IF NOT EXISTS idx_api_keys_org_id ON api_keys(org_id);
+	CREATE INDEX IF NOT EXISTS idx_api_keys_app_id ON api_keys(app_id);
+	CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires ON auth_sessions(expires_at);
+	CREATE INDEX IF NOT EXISTS idx_auth_audit_log_timestamp ON auth_audit_log(timestamp);
+	CREATE INDEX IF NOT EXISTS idx_auth_audit_log_org_id ON auth_audit_log(org_id);
+	CREATE INDEX IF NOT EXISTS idx_auth_audit_log_app_id ON auth_audit_log(app_id);
 	`
 
 	_, err := db.conn.Exec(schema)
@@ -113,27 +218,35 @@ func (db *DB) initSchema() error {
 
 // runMigrations adds new columns to existing databases
 func (db *DB) runMigrations() error {
-	// Check if password_hash column exists
-	var count int
-	err := db.conn.QueryRow(`
-		SELECT COUNT(*) FROM pragma_table_info('accounts') WHERE name='password_hash'
-	`).Scan(&count)
-	if err != nil {
-		return err
+	// List of column migrations to run (table, column, definition)
+	columnMigrations := []struct {
+		table  string
+		column string
+		def    string
+	}{
+		{"accounts", "password_hash", "TEXT"},
+		{"accounts", "totp_secret", "TEXT"},
+		{"accounts", "totp_enabled", "BOOLEAN DEFAULT FALSE"},
+		{"accounts", "org_id", "TEXT REFERENCES organizations(id)"},
+		{"tunnels", "app_id", "TEXT"},
 	}
 
-	if count == 0 {
-		// Add new columns for TOTP authentication
-		migrations := []string{
-			`ALTER TABLE accounts ADD COLUMN password_hash TEXT`,
-			`ALTER TABLE accounts ADD COLUMN totp_secret TEXT`,
-			`ALTER TABLE accounts ADD COLUMN totp_enabled BOOLEAN DEFAULT FALSE`,
+	for _, m := range columnMigrations {
+		var count int
+		err := db.conn.QueryRow(
+			`SELECT COUNT(*) FROM pragma_table_info(?) WHERE name=?`,
+			m.table, m.column,
+		).Scan(&count)
+		if err != nil {
+			return fmt.Errorf("failed to check column %s.%s: %w", m.table, m.column, err)
 		}
-		for _, migration := range migrations {
-			if _, err := db.conn.Exec(migration); err != nil {
+
+		if count == 0 {
+			query := fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, m.table, m.column, m.def)
+			if _, err := db.conn.Exec(query); err != nil {
 				// Ignore "duplicate column" errors
 				if !strings.Contains(err.Error(), "duplicate column") {
-					return fmt.Errorf("migration failed: %w", err)
+					return fmt.Errorf("migration failed for %s.%s: %w", m.table, m.column, err)
 				}
 			}
 		}
