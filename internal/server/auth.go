@@ -18,9 +18,12 @@ type LoginRequest struct {
 // LoginResponse contains the login result
 type LoginResponse struct {
 	Success      bool   `json:"success"`
-	PendingToken string `json:"pendingToken,omitempty"`
+	Token        string `json:"token,omitempty"`        // Final JWT token (when no TOTP required)
+	PendingToken string `json:"pendingToken,omitempty"` // Pending token for TOTP step
 	NeedsTOTP    bool   `json:"needsTotp,omitempty"`
 	NeedsSetup   bool   `json:"needsSetup,omitempty"`
+	AccountType  string `json:"accountType,omitempty"` // "admin" or "org"
+	OrgID        string `json:"orgId,omitempty"`       // For org accounts
 	Error        string `json:"error,omitempty"`
 }
 
@@ -32,11 +35,13 @@ type TOTPSetupRequest struct {
 
 // TOTPSetupResponse contains the TOTP setup result
 type TOTPSetupResponse struct {
-	Success bool   `json:"success"`
-	Secret  string `json:"secret,omitempty"`
-	URL     string `json:"url,omitempty"`
-	Token   string `json:"token,omitempty"`
-	Error   string `json:"error,omitempty"`
+	Success     bool   `json:"success"`
+	Secret      string `json:"secret,omitempty"`
+	URL         string `json:"url,omitempty"`
+	Token       string `json:"token,omitempty"`
+	AccountType string `json:"accountType,omitempty"`
+	OrgID       string `json:"orgId,omitempty"`
+	Error       string `json:"error,omitempty"`
 }
 
 // TOTPVerifyRequest contains the TOTP verification
@@ -47,9 +52,24 @@ type TOTPVerifyRequest struct {
 
 // TOTPVerifyResponse contains the TOTP verification result
 type TOTPVerifyResponse struct {
-	Success bool   `json:"success"`
-	Token   string `json:"token,omitempty"`
-	Error   string `json:"error,omitempty"`
+	Success     bool   `json:"success"`
+	Token       string `json:"token,omitempty"`
+	AccountType string `json:"accountType,omitempty"`
+	OrgID       string `json:"orgId,omitempty"`
+	Error       string `json:"error,omitempty"`
+}
+
+// CheckAccountRequest contains the username to check
+type CheckAccountRequest struct {
+	Username string `json:"username"`
+}
+
+// CheckAccountResponse contains account metadata for login flow
+type CheckAccountResponse struct {
+	Exists       bool   `json:"exists"`
+	AccountType  string `json:"accountType,omitempty"`  // "admin" or "org"
+	RequiresTOTP bool   `json:"requiresTotp,omitempty"` // Based on account + org policy
+	OrgName      string `json:"orgName,omitempty"`      // For org accounts
 }
 
 // handleAuth routes authentication endpoints
@@ -59,6 +79,8 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/auth")
 
 	switch {
+	case path == "/check-account" && r.Method == http.MethodPost:
+		s.handleCheckAccount(w, r)
 	case path == "/login" && r.Method == http.MethodPost:
 		s.handleLogin(w, r)
 	case path == "/org/login" && r.Method == http.MethodPost:
@@ -74,7 +96,79 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleLogin handles username/password authentication
+// handleCheckAccount validates username and returns account metadata for login flow
+func (s *Server) handleCheckAccount(w http.ResponseWriter, r *http.Request) {
+	var req CheckAccountRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(CheckAccountResponse{Exists: false})
+		return
+	}
+
+	if req.Username == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(CheckAccountResponse{Exists: false})
+		return
+	}
+
+	if s.db == nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(CheckAccountResponse{Exists: false})
+		return
+	}
+
+	// Get account by username
+	account, err := s.db.GetAccountByUsername(req.Username)
+	if err != nil {
+		log.Printf("Check account error: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(CheckAccountResponse{Exists: false})
+		return
+	}
+
+	if account == nil || !account.Active {
+		// Don't reveal if account exists but is inactive
+		json.NewEncoder(w).Encode(CheckAccountResponse{Exists: false})
+		return
+	}
+
+	// Check if account has password set (required for login flow)
+	if account.PasswordHash == "" {
+		json.NewEncoder(w).Encode(CheckAccountResponse{Exists: false})
+		return
+	}
+
+	// Determine account type and TOTP requirements
+	resp := CheckAccountResponse{
+		Exists: true,
+	}
+
+	if account.IsAdmin {
+		resp.AccountType = "admin"
+		// Admins always require TOTP (either setup or verify)
+		resp.RequiresTOTP = true
+	} else if account.OrgID != "" {
+		resp.AccountType = "org"
+		// Check if TOTP is enabled on the account
+		resp.RequiresTOTP = account.TOTPEnabled
+
+		// Check org-level TOTP requirement
+		if org, err := s.db.GetOrganizationByID(account.OrgID); err == nil && org != nil {
+			resp.OrgName = org.Name
+			if org.RequireTOTP {
+				resp.RequiresTOTP = true
+			}
+		}
+	} else {
+		// Account without org - treat as regular user
+		resp.AccountType = "user"
+		resp.RequiresTOTP = account.TOTPEnabled
+	}
+
+	json.NewEncoder(w).Encode(resp)
+}
+
+// handleLogin handles username/password authentication for both admin and org accounts
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -104,7 +198,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if account == nil || !account.Active || !account.IsAdmin {
+	if account == nil || !account.Active {
 		// Use same error message to prevent username enumeration
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(LoginResponse{Error: "Invalid credentials"})
@@ -126,7 +220,50 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate pending token for TOTP step
+	// Determine account type
+	accountType := "user"
+	if account.IsAdmin {
+		accountType = "admin"
+	} else if account.OrgID != "" {
+		accountType = "org"
+	}
+
+	// Determine if TOTP is required
+	requiresTOTP := account.TOTPEnabled
+	if account.IsAdmin {
+		// Admins always require TOTP
+		requiresTOTP = true
+	} else if account.OrgID != "" {
+		// Check org-level TOTP requirement
+		if org, err := s.db.GetOrganizationByID(account.OrgID); err == nil && org != nil && org.RequireTOTP {
+			requiresTOTP = true
+		}
+	}
+
+	// If TOTP not required and not enabled, issue token directly
+	if !requiresTOTP && !account.TOTPEnabled {
+		// Generate JWT token directly (no TOTP step)
+		token, err := auth.GenerateJWTWithOrg(account.ID, account.Username, account.IsAdmin, account.OrgID)
+		if err != nil {
+			log.Printf("Failed to generate JWT: %v", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(LoginResponse{Error: "Internal error"})
+			return
+		}
+
+		log.Printf("Successful login for user: %s (type: %s, no TOTP)", account.Username, accountType)
+		s.db.UpdateAccountLastUsed(account.ID)
+
+		json.NewEncoder(w).Encode(LoginResponse{
+			Success:     true,
+			Token:       token,
+			AccountType: accountType,
+			OrgID:       account.OrgID,
+		})
+		return
+	}
+
+	// TOTP is required - generate pending token for TOTP step
 	pendingToken, err := auth.GeneratePendingToken(account.ID, account.Username)
 	if err != nil {
 		log.Printf("Failed to generate pending token: %v", err)
@@ -142,15 +279,19 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			Success:      true,
 			PendingToken: pendingToken,
 			NeedsSetup:   true,
+			AccountType:  accountType,
+			OrgID:        account.OrgID,
 		})
 		return
 	}
 
-	// User has TOTP, needs to verify
+	// User has TOTP enabled, needs to verify
 	json.NewEncoder(w).Encode(LoginResponse{
 		Success:      true,
 		PendingToken: pendingToken,
 		NeedsTOTP:    true,
+		AccountType:  accountType,
+		OrgID:        account.OrgID,
 	})
 }
 
@@ -267,8 +408,8 @@ func (s *Server) handleTOTPSetupPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate JWT token
-	token, err := auth.GenerateJWT(account.ID, account.Username, account.IsAdmin)
+	// Generate JWT token with org context
+	token, err := auth.GenerateJWTWithOrg(account.ID, account.Username, account.IsAdmin, account.OrgID)
 	if err != nil {
 		log.Printf("Failed to generate JWT: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -276,14 +417,24 @@ func (s *Server) handleTOTPSetupPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("TOTP enabled for user: %s", account.Username)
+	// Determine account type
+	accountType := "user"
+	if account.IsAdmin {
+		accountType = "admin"
+	} else if account.OrgID != "" {
+		accountType = "org"
+	}
+
+	log.Printf("TOTP enabled for user: %s (type: %s)", account.Username, accountType)
 
 	// Update last used
 	s.db.UpdateAccountLastUsed(accountID)
 
 	json.NewEncoder(w).Encode(TOTPSetupResponse{
-		Success: true,
-		Token:   token,
+		Success:     true,
+		Token:       token,
+		AccountType: accountType,
+		OrgID:       account.OrgID,
 	})
 }
 
@@ -341,8 +492,8 @@ func (s *Server) handleTOTPVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Generate JWT token
-	token, err := auth.GenerateJWT(account.ID, account.Username, account.IsAdmin)
+	// Generate JWT token with org context
+	token, err := auth.GenerateJWTWithOrg(account.ID, account.Username, account.IsAdmin, account.OrgID)
 	if err != nil {
 		log.Printf("Failed to generate JWT: %v", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -350,14 +501,24 @@ func (s *Server) handleTOTPVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Successful login for user: %s", account.Username)
+	// Determine account type
+	accountType := "user"
+	if account.IsAdmin {
+		accountType = "admin"
+	} else if account.OrgID != "" {
+		accountType = "org"
+	}
+
+	log.Printf("Successful login for user: %s (type: %s)", account.Username, accountType)
 
 	// Update last used
 	s.db.UpdateAccountLastUsed(accountID)
 
 	json.NewEncoder(w).Encode(TOTPVerifyResponse{
-		Success: true,
-		Token:   token,
+		Success:     true,
+		Token:       token,
+		AccountType: accountType,
+		OrgID:       account.OrgID,
 	})
 }
 

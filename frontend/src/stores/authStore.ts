@@ -27,6 +27,9 @@ export const useAuthStore = defineStore('auth', () => {
     if (organizationId) {
       orgId.value = organizationId
       localStorage.setItem(ORG_ID_KEY, organizationId)
+    } else {
+      orgId.value = null
+      localStorage.removeItem(ORG_ID_KEY)
     }
   }
 

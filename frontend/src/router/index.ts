@@ -2,16 +2,11 @@ import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 
 const routes: RouteRecordRaw[] = [
+  // Unified login - handles both admin and org authentication
   {
     path: '/',
     name: 'login',
-    component: () => import('@/views/LoginView.vue'),
-    meta: { requiresAuth: false }
-  },
-  {
-    path: '/org-login',
-    name: 'org-login',
-    component: () => import('@/views/OrgLoginView.vue'),
+    component: () => import('@/views/UnifiedLoginView.vue'),
     meta: { requiresAuth: false }
   },
   {
@@ -112,6 +107,11 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/org/OrgSettingsView.vue'),
     meta: { requiresAuth: true, userType: 'org' }
   },
+  // Legacy route redirect (for backwards compatibility)
+  {
+    path: '/org-login',
+    redirect: '/'
+  },
   {
     path: '/:pathMatch(.*)*',
     redirect: '/'
@@ -130,12 +130,8 @@ router.beforeEach(async (to, _from, next) => {
   const requiredUserType = to.meta.userType as string | undefined
 
   if (requiresAuth && !authStore.isAuthenticated) {
-    // Redirect to appropriate login based on where user was trying to go
-    if (requiredUserType === 'org') {
-      next({ name: 'org-login' })
-    } else {
-      next({ name: 'login' })
-    }
+    // Redirect to unified login
+    next({ name: 'login' })
   } else if (requiresAuth && requiredUserType) {
     // Check user type matches
     if (requiredUserType === 'admin' && !authStore.isAdmin) {
@@ -147,7 +143,7 @@ router.beforeEach(async (to, _from, next) => {
     } else {
       next()
     }
-  } else if ((to.name === 'login' || to.name === 'org-login') && authStore.isAuthenticated) {
+  } else if (to.name === 'login' && authStore.isAuthenticated) {
     // Redirect to appropriate dashboard if already authenticated
     const isValid = await authStore.validateToken()
     if (isValid) {

@@ -259,6 +259,7 @@ func (db *DB) runMigrations() error {
 		{"accounts", "org_id", "TEXT REFERENCES organizations(id)"},
 		{"tunnels", "app_id", "TEXT"},
 		{"api_keys", "key_type", "TEXT DEFAULT 'account'"},
+		{"organizations", "require_totp", "BOOLEAN DEFAULT FALSE"},
 	}
 
 	for _, m := range columnMigrations {

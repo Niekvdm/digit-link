@@ -2,25 +2,65 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
-import type { SetupStatusResponse, SetupInitResponse } from '@/types/api'
+import { User, Lock, Key, Eye, EyeOff, Check, AlertCircle, Loader2, ArrowRight, Shield } from 'lucide-vue-next'
 
 const router = useRouter()
 const authStore = useAuthStore()
 
-const currentStep = ref(1)
-const username = ref('admin')
-const autoWhitelist = ref(true)
-const generatedToken = ref('')
-const tokenSaved = ref(false)
-const error = ref('')
-const loading = ref(false)
+// Current step in wizard
+const currentStep = ref(1) // 1 = credentials, 2 = TOTP setup, 3 = complete
 
+// Form state
+const username = ref('admin')
+const password = ref('')
+const confirmPassword = ref('')
+const showPassword = ref(false)
+const autoWhitelist = ref(true)
+const totpCode = ref('')
+
+// TOTP setup state
+const pendingToken = ref('')
+const totpSecret = ref('')
+const totpUrl = ref('')
+
+// UI state
+const loading = ref(false)
+const error = ref('')
+
+// Computed
 const stepDots = computed(() => [1, 2, 3].map(step => ({
   step,
   isActive: step === currentStep.value,
   isCompleted: step < currentStep.value
 })))
 
+const passwordsMatch = computed(() => {
+  return password.value === confirmPassword.value
+})
+
+const passwordStrength = computed(() => {
+  const p = password.value
+  if (p.length < 8) return { level: 0, text: 'Too short', color: 'red' }
+  
+  let score = 0
+  if (p.length >= 12) score++
+  if (/[a-z]/.test(p) && /[A-Z]/.test(p)) score++
+  if (/\d/.test(p)) score++
+  if (/[^a-zA-Z0-9]/.test(p)) score++
+  
+  if (score <= 1) return { level: 1, text: 'Weak', color: 'red' }
+  if (score === 2) return { level: 2, text: 'Fair', color: 'amber' }
+  if (score === 3) return { level: 3, text: 'Good', color: 'emerald' }
+  return { level: 4, text: 'Strong', color: 'emerald' }
+})
+
+const canProceedStep1 = computed(() => {
+  return username.value.trim().length > 0 && 
+         password.value.length >= 8 && 
+         passwordsMatch.value
+})
+
+// Check setup status on mount
 onMounted(async () => {
   await checkSetupStatus()
 })
@@ -28,7 +68,7 @@ onMounted(async () => {
 async function checkSetupStatus() {
   try {
     const response = await fetch('/setup/status')
-    const data: SetupStatusResponse = await response.json()
+    const data = await response.json()
     
     if (!data.needsSetup) {
       router.push({ name: 'login' })
@@ -38,7 +78,10 @@ async function checkSetupStatus() {
   }
 }
 
-async function createAdmin() {
+// Step 1: Create account with credentials
+async function handleCreateAccount() {
+  if (!canProceedStep1.value) return
+
   loading.value = true
   error.value = ''
 
@@ -47,19 +90,22 @@ async function createAdmin() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        username: username.value.trim() || 'admin',
+        username: username.value.trim(),
+        password: password.value,
         autoWhitelist: autoWhitelist.value
       })
     })
 
-    const data: SetupInitResponse = await response.json()
+    const data = await response.json()
 
-    if (!response.ok || !data.token) {
+    if (!response.ok || !data.success) {
       throw new Error(data.error || 'Setup failed')
     }
 
-    generatedToken.value = data.token
-    authStore.setToken(data.token)
+    pendingToken.value = data.pendingToken
+
+    // Fetch TOTP setup info
+    await fetchTOTPSetup()
     currentStep.value = 2
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Setup failed'
@@ -68,45 +114,68 @@ async function createAdmin() {
   }
 }
 
-function copyToken() {
-  navigator.clipboard.writeText(generatedToken.value)
-  showToast()
-}
+// Fetch TOTP secret for setup
+async function fetchTOTPSetup() {
+  const response = await fetch('/setup/totp', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pendingToken: pendingToken.value })
+  })
 
-function downloadToken() {
-  const content = `digit-link Admin Token
-=======================
-
-Token: ${generatedToken.value}
-
-Generated: ${new Date().toISOString()}
-
-IMPORTANT: Keep this token secure. It provides full administrative
-access to your digit-link server.
-
-Usage:
-  - Dashboard: Enter at the login page
-  - API: Set X-Admin-Token header
-  - Client: Use --token flag or DIGIT_LINK_TOKEN env var
-`
+  const data = await response.json()
   
-  const blob = new Blob([content], { type: 'text/plain' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'digit-link-admin-token.txt'
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  if (data.success) {
+    totpSecret.value = data.secret
+    totpUrl.value = data.url
+  } else {
+    error.value = data.error || 'Failed to initialize TOTP setup'
+  }
 }
 
-function goToStep(step: number) {
-  currentStep.value = step
+// Step 2: Complete TOTP setup
+async function handleCompleteTOTP() {
+  if (!totpCode.value || totpCode.value.length !== 6) {
+    error.value = 'Please enter a valid 6-digit code'
+    return
+  }
+
+  loading.value = true
+  error.value = ''
+
+  try {
+    const response = await fetch('/setup/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        pendingToken: pendingToken.value,
+        code: totpCode.value
+      })
+    })
+
+    const data = await response.json()
+
+    if (!response.ok || !data.success) {
+      throw new Error(data.error || 'Failed to verify code')
+    }
+
+    // Store the JWT token
+    authStore.setToken(data.token, 'admin')
+    currentStep.value = 3
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Verification failed'
+    totpCode.value = ''
+  } finally {
+    loading.value = false
+  }
 }
 
 function goToDashboard() {
   router.push({ name: 'dashboard' })
+}
+
+function copySecret() {
+  navigator.clipboard.writeText(totpSecret.value)
+  showToast()
 }
 
 const showingToast = ref(false)
@@ -161,148 +230,273 @@ function showToast() {
         <div class="absolute top-0 left-8 right-8 h-0.5 bg-gradient-to-r from-transparent via-[var(--accent-copper)] to-transparent" />
 
         <!-- Error message -->
-        <div v-if="error" class="error-message mb-6 animate-shake">
-          {{ error }}
-        </div>
+        <Transition name="shake">
+          <div v-if="error" class="error-box mb-6">
+            <AlertCircle class="w-4 h-4 flex-shrink-0" />
+            <span>{{ error }}</span>
+          </div>
+        </Transition>
 
-        <!-- Step 1: Welcome -->
-        <div v-if="currentStep === 1" class="animate-fade-in-slide">
-          <div class="inline-flex items-center gap-2 px-4 py-2 bg-[rgba(201,149,108,0.1)] border border-[rgba(201,149,108,0.3)] rounded-full text-xs font-medium text-[var(--accent-copper)] uppercase tracking-widest mb-6">
-            <span class="text-[0.625rem]">✦</span>
-            First-Time Setup
+        <!-- Step 1: Credentials -->
+        <Transition name="slide" mode="out-in">
+          <div v-if="currentStep === 1" key="credentials" class="animate-fade-in-slide">
+            <div class="inline-flex items-center gap-2 px-4 py-2 bg-[rgba(201,149,108,0.1)] border border-[rgba(201,149,108,0.3)] rounded-full text-xs font-medium text-[var(--accent-copper)] uppercase tracking-widest mb-6">
+              <Shield class="w-3.5 h-3.5" />
+              Administrator Setup
+            </div>
+
+            <h2 class="font-[var(--font-display)] text-2xl font-semibold mb-3">
+              Create Admin Account
+            </h2>
+            <p class="text-sm text-[var(--text-secondary)] leading-relaxed mb-8">
+              Set up your administrator credentials. You'll use these to sign in to the management dashboard.
+            </p>
+
+            <form @submit.prevent="handleCreateAccount" class="space-y-5">
+              <!-- Username -->
+              <div>
+                <label class="form-label" for="username">Username</label>
+                <div class="relative">
+                  <User class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+                  <input
+                    id="username"
+                    v-model="username"
+                    type="text"
+                    class="form-input pl-10"
+                    placeholder="Enter admin username"
+                    autocomplete="username"
+                  />
+                </div>
+              </div>
+
+              <!-- Password -->
+              <div>
+                <label class="form-label" for="password">Password</label>
+                <div class="relative">
+                  <Lock class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+                  <input
+                    id="password"
+                    v-model="password"
+                    :type="showPassword ? 'text' : 'password'"
+                    class="form-input pl-10 pr-10"
+                    placeholder="Enter a strong password"
+                    autocomplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    class="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                    @click="showPassword = !showPassword"
+                  >
+                    <EyeOff v-if="showPassword" class="w-4 h-4" />
+                    <Eye v-else class="w-4 h-4" />
+                  </button>
+                </div>
+                <!-- Password strength indicator -->
+                <div v-if="password.length > 0" class="mt-2">
+                  <div class="flex items-center gap-2">
+                    <div class="flex-1 h-1 bg-[var(--bg-deep)] rounded overflow-hidden">
+                      <div 
+                        class="h-full transition-all duration-300"
+                        :class="{
+                          'bg-[var(--accent-red)]': passwordStrength.color === 'red',
+                          'bg-[var(--accent-amber)]': passwordStrength.color === 'amber',
+                          'bg-[var(--accent-emerald)]': passwordStrength.color === 'emerald'
+                        }"
+                        :style="{ width: `${passwordStrength.level * 25}%` }"
+                      />
+                    </div>
+                    <span 
+                      class="text-xs font-medium"
+                      :class="{
+                        'text-[var(--accent-red)]': passwordStrength.color === 'red',
+                        'text-[var(--accent-amber)]': passwordStrength.color === 'amber',
+                        'text-[var(--accent-emerald)]': passwordStrength.color === 'emerald'
+                      }"
+                    >
+                      {{ passwordStrength.text }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Confirm Password -->
+              <div>
+                <label class="form-label" for="confirm-password">Confirm Password</label>
+                <div class="relative">
+                  <Lock class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+                  <input
+                    id="confirm-password"
+                    v-model="confirmPassword"
+                    :type="showPassword ? 'text' : 'password'"
+                    class="form-input pl-10"
+                    placeholder="Confirm your password"
+                    autocomplete="new-password"
+                  />
+                </div>
+                <p 
+                  v-if="confirmPassword.length > 0 && !passwordsMatch"
+                  class="text-xs text-[var(--accent-red)] mt-1"
+                >
+                  Passwords do not match
+                </p>
+              </div>
+
+              <!-- Auto-whitelist -->
+              <label class="flex items-start gap-3 p-4 bg-[var(--bg-deep)] border border-[var(--border-subtle)] rounded-lg cursor-pointer hover:border-[var(--border-accent)] transition-colors">
+                <input v-model="autoWhitelist" type="checkbox" class="hidden" />
+                <div 
+                  class="w-5 h-5 border-2 rounded flex items-center justify-center flex-shrink-0 transition-all mt-0.5"
+                  :class="autoWhitelist 
+                    ? 'bg-[var(--accent-copper)] border-[var(--accent-copper)]' 
+                    : 'border-[var(--border-accent)]'"
+                >
+                  <Check v-if="autoWhitelist" class="w-3 h-3 text-[var(--bg-deep)]" />
+                </div>
+                <div class="flex-1">
+                  <strong class="block text-sm mb-1">Auto-whitelist my current IP</strong>
+                  <span class="text-xs text-[var(--text-muted)]">Allow tunnel connections from your current location</span>
+                </div>
+              </label>
+
+              <button
+                type="submit"
+                class="btn btn-primary w-full"
+                :class="{ 'btn-loading': loading }"
+                :disabled="loading || !canProceedStep1"
+              >
+                <span class="btn-text flex items-center justify-center gap-2">
+                  <template v-if="loading">
+                    <Loader2 class="w-4 h-4 animate-spin" />
+                    Creating account...
+                  </template>
+                  <template v-else>
+                    Continue to Security Setup
+                    <ArrowRight class="w-4 h-4" />
+                  </template>
+                </span>
+              </button>
+            </form>
           </div>
 
-          <h2 class="font-[var(--font-display)] text-2xl font-semibold mb-3">
-            Welcome to digit-link
-          </h2>
-          <p class="text-sm text-[var(--text-secondary)] leading-relaxed mb-8">
-            This is the initial configuration wizard. You'll create the first administrator account 
-            that will be used to manage tunnels, accounts, and IP whitelisting.
-          </p>
+          <!-- Step 2: TOTP Setup -->
+          <div v-else-if="currentStep === 2" key="totp" class="animate-fade-in-slide">
+            <div class="inline-flex items-center gap-2 px-4 py-2 bg-[rgba(74,159,126,0.1)] border border-[rgba(74,159,126,0.3)] rounded-full text-xs font-medium text-[var(--accent-emerald)] uppercase tracking-widest mb-6">
+              <Key class="w-3.5 h-3.5" />
+              Two-Factor Authentication
+            </div>
 
-          <div class="mb-6">
-            <label class="form-label" for="username">Admin Username</label>
-            <input
-              id="username"
-              v-model="username"
-              type="text"
-              class="form-input"
-              placeholder="Enter admin username"
-              autocomplete="off"
-            />
-            <p class="form-hint">This username identifies the admin account.</p>
+            <h2 class="font-[var(--font-display)] text-2xl font-semibold mb-3">
+              Setup Authenticator
+            </h2>
+            <p class="text-sm text-[var(--text-secondary)] leading-relaxed mb-6">
+              Scan the QR code with your authenticator app (Google Authenticator, Authy, etc.) to enable two-factor authentication.
+            </p>
+
+            <!-- QR Code -->
+            <div class="flex justify-center mb-6">
+              <div class="w-[180px] h-[180px] bg-white rounded-xl flex items-center justify-center overflow-hidden">
+                <img 
+                  v-if="totpUrl"
+                  :src="`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(totpUrl)}`"
+                  alt="TOTP QR Code"
+                  class="w-[160px] h-[160px]"
+                />
+                <Loader2 v-else class="w-8 h-8 text-[var(--text-muted)] animate-spin" />
+              </div>
+            </div>
+
+            <!-- Manual entry secret -->
+            <div v-if="totpSecret" class="mb-6">
+              <p class="text-xs text-[var(--text-muted)] text-center mb-2">Can't scan? Enter this code manually:</p>
+              <div class="flex items-center gap-2 p-3 bg-[var(--bg-deep)] border border-dashed border-[var(--border-accent)] rounded-lg">
+                <code class="flex-1 font-mono text-sm text-[var(--accent-amber)] text-center tracking-wider">
+                  {{ totpSecret }}
+                </code>
+                <button 
+                  class="p-1.5 text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+                  @click="copySecret"
+                  title="Copy secret"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2" stroke-width="2"/>
+                    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke-width="2"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <!-- TOTP code input -->
+            <form @submit.prevent="handleCompleteTOTP">
+              <div class="mb-6">
+                <label class="form-label" for="totp-code">Verification Code</label>
+                <input
+                  id="totp-code"
+                  v-model="totpCode"
+                  type="text"
+                  inputmode="numeric"
+                  pattern="[0-9]*"
+                  maxlength="6"
+                  class="form-input text-center font-mono text-2xl tracking-[0.5em] py-4"
+                  placeholder="000000"
+                  autocomplete="one-time-code"
+                  autofocus
+                />
+                <p class="form-hint text-center">Enter the 6-digit code from your authenticator app</p>
+              </div>
+
+              <button
+                type="submit"
+                class="btn btn-success w-full"
+                :class="{ 'btn-loading': loading }"
+                :disabled="loading || totpCode.length !== 6"
+              >
+                <span class="btn-text flex items-center justify-center gap-2">
+                  <template v-if="loading">
+                    <Loader2 class="w-4 h-4 animate-spin" />
+                    Verifying...
+                  </template>
+                  <template v-else>
+                    Complete Setup
+                    <Check class="w-4 h-4" />
+                  </template>
+                </span>
+              </button>
+            </form>
           </div>
 
-          <label class="flex items-start gap-3 p-4 bg-[var(--bg-deep)] border border-[var(--border-subtle)] rounded-lg cursor-pointer hover:border-[var(--border-accent)] transition-colors">
-            <input v-model="autoWhitelist" type="checkbox" class="hidden" />
+          <!-- Step 3: Complete -->
+          <div v-else-if="currentStep === 3" key="complete" class="animate-fade-in-slide text-center">
             <div 
-              class="w-5 h-5 border-2 rounded flex items-center justify-center flex-shrink-0 transition-all"
-              :class="autoWhitelist 
-                ? 'bg-[var(--accent-copper)] border-[var(--accent-copper)]' 
-                : 'border-[var(--border-accent)]'"
+              class="w-20 h-20 mx-auto mb-6 bg-[rgba(74,159,126,0.15)] border-2 border-[var(--accent-emerald)] rounded-full flex items-center justify-center"
+              style="animation: successPop 0.5s ease-out;"
             >
-              <span 
-                v-if="autoWhitelist" 
-                class="text-xs text-[var(--bg-deep)]"
-              >✓</span>
+              <Check class="w-10 h-10 text-[var(--accent-emerald)]" />
             </div>
-            <div class="flex-1">
-              <strong class="block text-sm mb-1">Auto-whitelist my current IP</strong>
-              <span class="text-xs text-[var(--text-muted)]">Allow immediate access from your current location</span>
-            </div>
-          </label>
 
-          <button
-            class="btn btn-primary w-full mt-6"
-            :class="{ 'btn-loading': loading }"
-            :disabled="loading"
-            @click="createAdmin"
-          >
-            <span class="btn-text">Create Admin Account</span>
-          </button>
-        </div>
+            <h2 class="font-[var(--font-display)] text-2xl font-semibold mb-3">
+              Setup Complete!
+            </h2>
+            <p class="text-sm text-[var(--text-secondary)] leading-relaxed mb-6">
+              Your digit-link server is ready. Your admin account is secured with two-factor authentication.
+            </p>
 
-        <!-- Step 2: Token Display -->
-        <div v-if="currentStep === 2" class="animate-fade-in-slide">
-          <h2 class="font-[var(--font-display)] text-2xl font-semibold mb-3">
-            Your Admin Token
-          </h2>
-          <p class="text-sm text-[var(--text-secondary)] leading-relaxed mb-6">
-            Your administrator token has been generated. This is the only time it will be displayed.
-          </p>
+            <div class="bg-[var(--bg-deep)] rounded-lg p-5 mb-6 text-left">
+              <p class="text-[0.8rem] text-[var(--text-secondary)] mb-4">Quick start guide:</p>
+              <ol class="text-[0.8rem] text-[var(--text-muted)] pl-5 leading-loose list-decimal">
+                <li>Add IP addresses to the whitelist</li>
+                <li>Create organizations and applications</li>
+                <li>Generate API keys for tunnel clients</li>
+              </ol>
+            </div>
 
-          <!-- Warning -->
-          <div class="warning-box mb-6">
-            <div class="w-5 h-5 bg-[var(--accent-red)] rounded-full flex items-center justify-center flex-shrink-0 text-xs text-[var(--bg-deep)] font-bold">
-              !
-            </div>
-            <div class="text-[0.8rem] leading-relaxed text-[var(--accent-red)]">
-              <strong class="block mb-1">Save this token now!</strong>
-              This token cannot be recovered if lost. Store it in a secure password manager.
-            </div>
+            <button class="btn btn-primary w-full" @click="goToDashboard">
+              <span class="btn-text flex items-center justify-center gap-2">
+                Open Dashboard
+                <ArrowRight class="w-4 h-4" />
+              </span>
+            </button>
           </div>
-
-          <!-- Token box -->
-          <div class="mb-6">
-            <div class="token-box">
-              <div class="token-value">{{ generatedToken }}</div>
-            </div>
-            <div class="flex gap-3 mt-4">
-              <button class="btn btn-secondary flex-1" @click="copyToken">
-                Copy Token
-              </button>
-              <button class="btn btn-secondary flex-1" @click="downloadToken">
-                Download
-              </button>
-            </div>
-          </div>
-
-          <!-- Confirmation -->
-          <label class="flex items-center gap-3 p-4 bg-[var(--bg-deep)] border border-[var(--border-subtle)] rounded-lg cursor-pointer hover:border-[var(--accent-emerald)] transition-colors mb-6">
-            <input v-model="tokenSaved" type="checkbox" class="w-4 h-4 accent-[var(--accent-copper)]" />
-            <span class="flex-1" :class="tokenSaved ? 'text-[var(--accent-emerald)]' : ''">
-              I have saved my token securely
-            </span>
-          </label>
-
-          <button
-            class="btn btn-success w-full"
-            :disabled="!tokenSaved"
-            @click="goToStep(3)"
-          >
-            <span class="btn-text">Continue to Dashboard</span>
-          </button>
-        </div>
-
-        <!-- Step 3: Complete -->
-        <div v-if="currentStep === 3" class="animate-fade-in-slide text-center">
-          <div 
-            class="w-20 h-20 mx-auto mb-6 bg-[rgba(74,159,126,0.15)] border-2 border-[var(--accent-emerald)] rounded-full flex items-center justify-center"
-            style="animation: successPop 0.5s ease-out;"
-          >
-            <span class="text-3xl text-[var(--accent-emerald)]">✓</span>
-          </div>
-
-          <h2 class="font-[var(--font-display)] text-2xl font-semibold mb-3">
-            Setup Complete!
-          </h2>
-          <p class="text-sm text-[var(--text-secondary)] leading-relaxed mb-6">
-            Your digit-link server is ready. You'll now be redirected to the admin dashboard.
-          </p>
-
-          <div class="bg-[var(--bg-deep)] rounded-lg p-5 mb-6 text-left">
-            <p class="text-[0.8rem] text-[var(--text-secondary)] mb-4">Quick start guide:</p>
-            <ol class="text-[0.8rem] text-[var(--text-muted)] pl-5 leading-loose list-decimal">
-              <li>Add IP addresses to the whitelist</li>
-              <li>Create user accounts as needed</li>
-              <li>Share tokens securely with users</li>
-            </ol>
-          </div>
-
-          <button class="btn btn-primary w-full" @click="goToDashboard">
-            <span class="btn-text">Open Dashboard</span>
-          </button>
-        </div>
+        </Transition>
       </div>
 
       <!-- Footer -->
@@ -325,7 +519,46 @@ function showToast() {
       class="toast"
       :class="{ visible: showingToast }"
     >
-      Token copied to clipboard
+      Secret copied to clipboard
     </div>
   </div>
 </template>
+
+<style scoped>
+.error-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.625rem;
+  padding: 0.875rem 1rem;
+  background: rgba(201, 108, 108, 0.1);
+  border: 1px solid rgba(201, 108, 108, 0.3);
+  border-radius: 10px;
+  font-size: 0.875rem;
+  color: var(--accent-red);
+}
+
+.slide-enter-active,
+.slide-leave-active {
+  transition: all 0.25s ease;
+}
+
+.slide-enter-from {
+  opacity: 0;
+  transform: translateX(20px);
+}
+
+.slide-leave-to {
+  opacity: 0;
+  transform: translateX(-20px);
+}
+
+.shake-enter-active {
+  animation: shake 0.4s ease;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  75% { transform: translateX(6px); }
+}
+</style>

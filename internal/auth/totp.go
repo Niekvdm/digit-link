@@ -45,17 +45,21 @@ func GenerateTOTPSecret(username string) (*TOTPKey, error) {
 	}, nil
 }
 
-// ValidateTOTP validates a TOTP code against the secret
+// ValidateTOTP validates a TOTP code against the secret with a 3-frame time window
+// This checks the previous, current, and next time periods to account for clock drift
 func ValidateTOTP(secret, code string) bool {
-	return totp.Validate(code, secret)
+	return ValidateTOTPWithWindow(secret, code)
 }
 
-// ValidateTOTPWithWindow validates a TOTP code with a time window for clock drift
+// ValidateTOTPWithWindow validates a TOTP code with a 3-frame time window for clock drift
+// Supports 3 time frames: previous period (-1), current period (0), and next period (+1)
+// This accounts for clock synchronization issues between client and server
 func ValidateTOTPWithWindow(secret, code string) bool {
-	// Allow 1 period before and after for clock drift
+	// Skew: 1 means 1 period before and 1 period after the current time
+	// This results in 3 total time frames: [-1, 0, +1]
 	valid, _ := totp.ValidateCustom(code, secret, time.Now(), totp.ValidateOpts{
 		Period:    30,
-		Skew:      1,
+		Skew:      1, // 3 time frames: previous, current, next
 		Digits:    otp.DigitsSix,
 		Algorithm: otp.AlgorithmSHA1,
 	})

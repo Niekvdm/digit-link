@@ -79,8 +79,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Setup API endpoints (only /setup/status and /setup/init)
-	if r.URL.Path == "/setup/status" || r.URL.Path == "/setup/init" {
+	// Setup API endpoints
+	if strings.HasPrefix(r.URL.Path, "/setup/") {
 		s.handleSetup(w, r)
 		return
 	}

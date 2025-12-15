@@ -10,9 +10,10 @@ import (
 
 // Organization represents an organization that owns accounts and applications
 type Organization struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	RequireTOTP bool      `json:"requireTotp"`
+	CreatedAt   time.Time `json:"createdAt"`
 }
 
 // CreateOrganization creates a new organization
@@ -21,17 +22,18 @@ func (db *DB) CreateOrganization(name string) (*Organization, error) {
 	now := time.Now()
 
 	_, err := db.conn.Exec(`
-		INSERT INTO organizations (id, name, created_at)
-		VALUES (?, ?, ?)
-	`, id, name, now)
+		INSERT INTO organizations (id, name, require_totp, created_at)
+		VALUES (?, ?, ?, ?)
+	`, id, name, false, now)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create organization: %w", err)
 	}
 
 	return &Organization{
-		ID:        id,
-		Name:      name,
-		CreatedAt: now,
+		ID:          id,
+		Name:        name,
+		RequireTOTP: false,
+		CreatedAt:   now,
 	}, nil
 }
 
@@ -40,9 +42,9 @@ func (db *DB) GetOrganizationByID(id string) (*Organization, error) {
 	org := &Organization{}
 
 	err := db.conn.QueryRow(`
-		SELECT id, name, created_at
+		SELECT id, name, COALESCE(require_totp, 0), created_at
 		FROM organizations WHERE id = ?
-	`, id).Scan(&org.ID, &org.Name, &org.CreatedAt)
+	`, id).Scan(&org.ID, &org.Name, &org.RequireTOTP, &org.CreatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -59,9 +61,9 @@ func (db *DB) GetOrganizationByName(name string) (*Organization, error) {
 	org := &Organization{}
 
 	err := db.conn.QueryRow(`
-		SELECT id, name, created_at
+		SELECT id, name, COALESCE(require_totp, 0), created_at
 		FROM organizations WHERE name = ?
-	`, name).Scan(&org.ID, &org.Name, &org.CreatedAt)
+	`, name).Scan(&org.ID, &org.Name, &org.RequireTOTP, &org.CreatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -76,7 +78,7 @@ func (db *DB) GetOrganizationByName(name string) (*Organization, error) {
 // ListOrganizations returns all organizations
 func (db *DB) ListOrganizations() ([]*Organization, error) {
 	rows, err := db.conn.Query(`
-		SELECT id, name, created_at
+		SELECT id, name, COALESCE(require_totp, 0), created_at
 		FROM organizations ORDER BY created_at DESC
 	`)
 	if err != nil {
@@ -87,7 +89,7 @@ func (db *DB) ListOrganizations() ([]*Organization, error) {
 	var orgs []*Organization
 	for rows.Next() {
 		org := &Organization{}
-		err := rows.Scan(&org.ID, &org.Name, &org.CreatedAt)
+		err := rows.Scan(&org.ID, &org.Name, &org.RequireTOTP, &org.CreatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan organization: %w", err)
 		}
@@ -105,6 +107,14 @@ func (db *DB) UpdateOrganization(id, name string) error {
 	return err
 }
 
+// UpdateOrganizationTOTPRequirement updates the TOTP requirement for an organization
+func (db *DB) UpdateOrganizationTOTPRequirement(id string, requireTOTP bool) error {
+	_, err := db.conn.Exec(`
+		UPDATE organizations SET require_totp = ? WHERE id = ?
+	`, requireTOTP, id)
+	return err
+}
+
 // DeleteOrganization deletes an organization
 func (db *DB) DeleteOrganization(id string) error {
 	_, err := db.conn.Exec(`DELETE FROM organizations WHERE id = ?`, id)
@@ -116,11 +126,11 @@ func (db *DB) GetOrganizationByAccountID(accountID string) (*Organization, error
 	org := &Organization{}
 
 	err := db.conn.QueryRow(`
-		SELECT o.id, o.name, o.created_at
+		SELECT o.id, o.name, COALESCE(o.require_totp, 0), o.created_at
 		FROM organizations o
 		JOIN accounts a ON a.org_id = o.id
 		WHERE a.id = ?
-	`, accountID).Scan(&org.ID, &org.Name, &org.CreatedAt)
+	`, accountID).Scan(&org.ID, &org.Name, &org.RequireTOTP, &org.CreatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil

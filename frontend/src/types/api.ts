@@ -108,11 +108,32 @@ export interface SetupStatusResponse {
 
 export interface SetupInitRequest {
   username: string
+  password: string
   autoWhitelist: boolean
 }
 
 export interface SetupInitResponse {
-  success?: boolean
+  success: boolean
+  pendingToken?: string
+  accountId?: string
+  username?: string
+  error?: string
+}
+
+export interface SetupTOTPResponse {
+  success: boolean
+  secret?: string
+  url?: string
+  error?: string
+}
+
+export interface SetupCompleteRequest {
+  pendingToken: string
+  code: string
+}
+
+export interface SetupCompleteResponse {
+  success: boolean
   token?: string
   error?: string
 }
