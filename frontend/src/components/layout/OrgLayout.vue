@@ -4,14 +4,12 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import { 
   LayoutDashboard, 
-  Users, 
   ShieldCheck, 
-  Cable, 
   LogOut,
-  Building2,
   AppWindow,
   KeyRound,
-  ScrollText
+  Building2,
+  Settings
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -19,21 +17,18 @@ const router = useRouter()
 const authStore = useAuthStore()
 
 const navLinks = [
-  { name: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { name: 'organizations', label: 'Orgs', icon: Building2 },
-  { name: 'applications', label: 'Apps', icon: AppWindow },
-  { name: 'api-keys', label: 'API Keys', icon: KeyRound },
-  { name: 'accounts', label: 'Accounts', icon: Users },
-  { name: 'whitelist', label: 'Whitelist', icon: ShieldCheck },
-  { name: 'tunnels', label: 'Tunnels', icon: Cable },
-  { name: 'audit', label: 'Audit', icon: ScrollText },
+  { name: 'org-dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { name: 'org-applications', label: 'Applications', icon: AppWindow },
+  { name: 'org-api-keys', label: 'API Keys', icon: KeyRound },
+  { name: 'org-whitelist', label: 'Whitelist', icon: ShieldCheck },
+  { name: 'org-settings', label: 'Settings', icon: Settings },
 ]
 
 const currentRoute = computed(() => route.name)
 
 function logout() {
   authStore.clearToken()
-  router.push({ name: 'login' })
+  router.push({ name: 'org-login' })
 }
 </script>
 
@@ -44,13 +39,13 @@ function logout() {
       <div class="h-[60px] px-8 flex items-center">
         <!-- Brand -->
         <RouterLink 
-          to="/dashboard" 
+          to="/portal" 
           class="flex items-center gap-3 text-[var(--text-primary)] no-underline"
         >
-          <div class="w-7 h-7 border-2 border-[var(--accent-copper)] rounded-md flex items-center justify-center">
-            <div class="w-3 h-3 bg-[var(--accent-copper)] rounded-sm rotate-45" />
+          <div class="w-7 h-7 border-2 border-[var(--accent-emerald)] rounded-md flex items-center justify-center">
+            <Building2 class="w-4 h-4 text-[var(--accent-emerald)]" />
           </div>
-          <span class="font-[var(--font-display)] text-xl font-semibold hidden lg:inline">digit-link</span>
+          <span class="font-[var(--font-display)] text-xl font-semibold hidden lg:inline">Organization Portal</span>
         </RouterLink>
 
         <!-- Nav Links -->
@@ -61,8 +56,8 @@ function logout() {
             :to="{ name: link.name }"
             class="flex items-center gap-1.5 px-3 py-2 rounded-md text-sm transition-all whitespace-nowrap"
             :class="[
-              currentRoute === link.name 
-                ? 'text-[var(--accent-copper)] bg-[rgba(201,149,108,0.1)]' 
+              currentRoute === link.name || (currentRoute === 'org-application-detail' && link.name === 'org-applications')
+                ? 'text-[var(--accent-emerald)] bg-[rgba(74,159,126,0.1)]' 
                 : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]'
             ]"
           >

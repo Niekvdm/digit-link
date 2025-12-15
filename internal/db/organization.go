@@ -132,11 +132,17 @@ func (db *DB) GetOrganizationByAccountID(accountID string) (*Organization, error
 	return org, nil
 }
 
-// SetAccountOrganization sets the organization for an account
+// SetAccountOrganization sets the organization for an account (empty string to unlink)
 func (db *DB) SetAccountOrganization(accountID, orgID string) error {
+	var orgPtr interface{}
+	if orgID == "" {
+		orgPtr = nil // Set to NULL when unlinking
+	} else {
+		orgPtr = orgID
+	}
 	_, err := db.conn.Exec(`
 		UPDATE accounts SET org_id = ? WHERE id = ?
-	`, orgID, accountID)
+	`, orgPtr, accountID)
 	return err
 }
 

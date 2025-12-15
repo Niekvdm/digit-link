@@ -20,6 +20,7 @@ type JWTClaims struct {
 	AccountID string `json:"accountId"`
 	Username  string `json:"username"`
 	IsAdmin   bool   `json:"isAdmin"`
+	OrgID     string `json:"orgId,omitempty"` // Set for org accounts
 	jwt.RegisteredClaims
 }
 
@@ -50,6 +51,11 @@ func getJWTSecret() ([]byte, error) {
 
 // GenerateJWT creates a new JWT token for an authenticated user
 func GenerateJWT(accountID, username string, isAdmin bool) (string, error) {
+	return GenerateJWTWithOrg(accountID, username, isAdmin, "")
+}
+
+// GenerateJWTWithOrg creates a new JWT token for an authenticated user with optional org context
+func GenerateJWTWithOrg(accountID, username string, isAdmin bool, orgID string) (string, error) {
 	secret, err := getJWTSecret()
 	if err != nil {
 		return "", err
@@ -60,6 +66,7 @@ func GenerateJWT(accountID, username string, isAdmin bool) (string, error) {
 		AccountID: accountID,
 		Username:  username,
 		IsAdmin:   isAdmin,
+		OrgID:     orgID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(JWTExpiration)),
 			IssuedAt:  jwt.NewNumericDate(now),

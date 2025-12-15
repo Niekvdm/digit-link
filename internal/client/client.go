@@ -43,12 +43,17 @@ type Config struct {
 	MaxRetries     int
 	InitialBackoff time.Duration
 	MaxBackoff     time.Duration
+	Insecure       bool // Use ws:// instead of wss://
 }
 
 // New creates a new tunnel client
 func New(cfg Config) *Client {
 	// Build WebSocket URL
-	wsURL := fmt.Sprintf("wss://%s/_tunnel", cfg.Server)
+	scheme := "wss"
+	if cfg.Insecure {
+		scheme = "ws"
+	}
+	wsURL := fmt.Sprintf("%s://%s/_tunnel", scheme, cfg.Server)
 
 	// Set defaults for reconnection
 	if cfg.MaxRetries == 0 {

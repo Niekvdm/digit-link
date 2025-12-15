@@ -232,3 +232,65 @@ func (db *DB) CountApplicationsByOrg(orgID string) (int, error) {
 	`, orgID).Scan(&count)
 	return count, err
 }
+
+// UpdateApplicationSubdomain updates an application's subdomain
+// Returns error if the new subdomain is already in use by another application
+func (db *DB) UpdateApplicationSubdomain(id, newSubdomain string) error {
+	// Check if subdomain is available (excluding the current app)
+	var count int
+	err := db.conn.QueryRow(`
+		SELECT COUNT(*) FROM applications WHERE subdomain = ? AND id != ?
+	`, newSubdomain, id).Scan(&count)
+	if err != nil {
+		return fmt.Errorf("failed to check subdomain availability: %w", err)
+	}
+	if count > 0 {
+		return fmt.Errorf("subdomain '%s' is already in use", newSubdomain)
+	}
+
+	_, err = db.conn.Exec(`
+		UPDATE applications SET subdomain = ? WHERE id = ?
+	`, newSubdomain, id)
+	if err != nil {
+		return fmt.Errorf("failed to update subdomain: %w", err)
+	}
+	return nil
+}
+
+// UpdateApplicationFull updates all editable fields of an application
+func (db *DB) UpdateApplicationFull(id, name, subdomain string, authMode AuthMode, authType AuthType) error {
+	// First check subdomain availability if it's being changed
+	app, err := db.GetApplicationByID(id)
+	if err != nil {
+		return err
+	}
+	if app == nil {
+		return fmt.Errorf("application not found")
+	}
+
+	if subdomain != app.Subdomain {
+		var count int
+		err := db.conn.QueryRow(`
+			SELECT COUNT(*) FROM applications WHERE subdomain = ? AND id != ?
+		`, subdomain, id).Scan(&count)
+		if err != nil {
+			return fmt.Errorf("failed to check subdomain availability: %w", err)
+		}
+		if count > 0 {
+			return fmt.Errorf("subdomain '%s' is already in use", subdomain)
+		}
+	}
+
+	var authTypeStr *string
+	if authType != "" {
+		s := string(authType)
+		authTypeStr = &s
+	}
+
+	_, err = db.conn.Exec(`
+		UPDATE applications 
+		SET name = ?, subdomain = ?, auth_mode = ?, auth_type = ?
+		WHERE id = ?
+	`, name, subdomain, authMode, authTypeStr, id)
+	return err
+}

@@ -15,20 +15,15 @@ import (
 func main() {
 	// Parse flags
 	serverAddr := flag.String("server", "tunnel.digit.zone", "Tunnel server address")
-	subdomain := flag.String("subdomain", "", "Subdomain to register")
+	subdomain := flag.String("subdomain", "", "Subdomain to register (optional, random if not specified)")
 	port := flag.Int("port", 0, "Local port to forward to")
 	token := flag.String("token", "", "Authentication token (required)")
 	secret := flag.String("secret", "", "Server secret (deprecated, use --token)")
 	timeout := flag.Duration("timeout", 5*time.Minute, "Request timeout for forwarding (e.g., 5m, 10m, 1h)")
+	insecure := flag.Bool("insecure", false, "Use ws:// instead of wss:// (for local testing)")
 	flag.Parse()
 
 	// Validate required flags
-	if *subdomain == "" {
-		fmt.Println("Error: --subdomain is required")
-		flag.Usage()
-		os.Exit(1)
-	}
-
 	if *port == 0 {
 		fmt.Println("Error: --port is required")
 		flag.Usage()
@@ -58,6 +53,7 @@ func main() {
 		MaxRetries:     -1, // Infinite retries
 		InitialBackoff: 1 * time.Second,
 		MaxBackoff:     30 * time.Second,
+		Insecure:       *insecure,
 	})
 
 	// Handle graceful shutdown

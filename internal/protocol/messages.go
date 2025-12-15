@@ -20,7 +20,8 @@ type Message struct {
 type RegisterRequest struct {
 	Subdomain string `json:"subdomain"`
 	Secret    string `json:"secret,omitempty"` // Deprecated: use Token instead
-	Token     string `json:"token,omitempty"`  // Authentication token
+	Token     string `json:"token,omitempty"`  // Authentication token (account token or API key)
+	AppID     string `json:"appId,omitempty"`  // App ID when using app-specific API key
 }
 
 // RegisterResponse is sent by the server to confirm or reject registration

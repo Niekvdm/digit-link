@@ -61,6 +61,8 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case path == "/login" && r.Method == http.MethodPost:
 		s.handleLogin(w, r)
+	case path == "/org/login" && r.Method == http.MethodPost:
+		s.handleOrgLogin(w, r)
 	case path == "/totp/setup" && r.Method == http.MethodGet:
 		s.handleTOTPSetupGet(w, r)
 	case path == "/totp/setup" && r.Method == http.MethodPost:
@@ -356,5 +358,94 @@ func (s *Server) handleTOTPVerify(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(TOTPVerifyResponse{
 		Success: true,
 		Token:   token,
+	})
+}
+
+// OrgLoginRequest contains the org account login credentials
+type OrgLoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+// OrgLoginResponse contains the org login result
+type OrgLoginResponse struct {
+	Success bool   `json:"success"`
+	Token   string `json:"token,omitempty"`
+	OrgID   string `json:"orgId,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+// handleOrgLogin handles organization account username/password authentication
+// Org accounts don't require TOTP - they use simpler password-only authentication
+func (s *Server) handleOrgLogin(w http.ResponseWriter, r *http.Request) {
+	var req OrgLoginRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(OrgLoginResponse{Error: "Invalid request"})
+		return
+	}
+
+	if req.Username == "" || req.Password == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(OrgLoginResponse{Error: "Username and password required"})
+		return
+	}
+
+	if s.db == nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(OrgLoginResponse{Error: "Database not configured"})
+		return
+	}
+
+	// Get account by username
+	account, err := s.db.GetAccountByUsername(req.Username)
+	if err != nil {
+		log.Printf("Org login error: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(OrgLoginResponse{Error: "Internal error"})
+		return
+	}
+
+	// Org accounts must NOT be admin and MUST have org_id
+	if account == nil || !account.Active || account.IsAdmin || account.OrgID == "" {
+		// Use same error message to prevent username enumeration
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(OrgLoginResponse{Error: "Invalid credentials"})
+		return
+	}
+
+	// Check if account has password set
+	if account.PasswordHash == "" {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(OrgLoginResponse{Error: "Account not configured for password login"})
+		return
+	}
+
+	// Verify password
+	if !auth.VerifyPassword(req.Password, account.PasswordHash) {
+		log.Printf("Failed org login attempt for user: %s", req.Username)
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(OrgLoginResponse{Error: "Invalid credentials"})
+		return
+	}
+
+	// Generate JWT token with org context (no TOTP required for org accounts)
+	token, err := auth.GenerateJWTWithOrg(account.ID, account.Username, false, account.OrgID)
+	if err != nil {
+		log.Printf("Failed to generate JWT: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(OrgLoginResponse{Error: "Internal error"})
+		return
+	}
+
+	log.Printf("Successful org login for user: %s (org: %s)", account.Username, account.OrgID)
+
+	// Update last used
+	s.db.UpdateAccountLastUsed(account.ID)
+
+	json.NewEncoder(w).Encode(OrgLoginResponse{
+		Success: true,
+		Token:   token,
+		OrgID:   account.OrgID,
 	})
 }

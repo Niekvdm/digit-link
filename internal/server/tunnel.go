@@ -21,6 +21,9 @@ type Tunnel struct {
 	OrgID     string          // The organization this tunnel belongs to
 	AppID     string          // The application ID (if persistent app)
 	App       *db.Application // The application record (if persistent app)
+
+	// Database record tracking
+	RecordID string // The tunnel record ID in the database for stats tracking
 }
 
 // NewTunnel creates a new tunnel instance

@@ -17,6 +17,7 @@ type Account struct {
 	TOTPSecret   string     `json:"-"` // Never expose secret
 	TOTPEnabled  bool       `json:"totpEnabled"`
 	IsAdmin      bool       `json:"isAdmin"`
+	OrgID        string     `json:"orgId,omitempty"`
 	CreatedAt    time.Time  `json:"createdAt"`
 	LastUsed     *time.Time `json:"lastUsed,omitempty"`
 	Active       bool       `json:"active"`
@@ -49,15 +50,15 @@ func (db *DB) CreateAccount(username, tokenHash string, isAdmin bool) (*Account,
 func (db *DB) GetAccountByID(id string) (*Account, error) {
 	account := &Account{}
 	var lastUsed sql.NullTime
-	var passwordHash, totpSecret sql.NullString
+	var passwordHash, totpSecret, orgID sql.NullString
 
 	err := db.conn.QueryRow(`
-		SELECT id, username, token_hash, password_hash, totp_secret, totp_enabled, is_admin, created_at, last_used, active
+		SELECT id, username, token_hash, password_hash, totp_secret, totp_enabled, is_admin, org_id, created_at, last_used, active
 		FROM accounts WHERE id = ?
 	`, id).Scan(
 		&account.ID, &account.Username, &account.TokenHash,
 		&passwordHash, &totpSecret, &account.TOTPEnabled,
-		&account.IsAdmin, &account.CreatedAt, &lastUsed, &account.Active,
+		&account.IsAdmin, &orgID, &account.CreatedAt, &lastUsed, &account.Active,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -74,6 +75,9 @@ func (db *DB) GetAccountByID(id string) (*Account, error) {
 	}
 	if totpSecret.Valid {
 		account.TOTPSecret = totpSecret.String
+	}
+	if orgID.Valid {
+		account.OrgID = orgID.String
 	}
 
 	return account, nil
@@ -83,15 +87,15 @@ func (db *DB) GetAccountByID(id string) (*Account, error) {
 func (db *DB) GetAccountByTokenHash(tokenHash string) (*Account, error) {
 	account := &Account{}
 	var lastUsed sql.NullTime
-	var passwordHash, totpSecret sql.NullString
+	var passwordHash, totpSecret, orgID sql.NullString
 
 	err := db.conn.QueryRow(`
-		SELECT id, username, token_hash, password_hash, totp_secret, totp_enabled, is_admin, created_at, last_used, active
+		SELECT id, username, token_hash, password_hash, totp_secret, totp_enabled, is_admin, org_id, created_at, last_used, active
 		FROM accounts WHERE token_hash = ? AND active = TRUE
 	`, tokenHash).Scan(
 		&account.ID, &account.Username, &account.TokenHash,
 		&passwordHash, &totpSecret, &account.TOTPEnabled,
-		&account.IsAdmin, &account.CreatedAt, &lastUsed, &account.Active,
+		&account.IsAdmin, &orgID, &account.CreatedAt, &lastUsed, &account.Active,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -108,6 +112,9 @@ func (db *DB) GetAccountByTokenHash(tokenHash string) (*Account, error) {
 	}
 	if totpSecret.Valid {
 		account.TOTPSecret = totpSecret.String
+	}
+	if orgID.Valid {
+		account.OrgID = orgID.String
 	}
 
 	return account, nil
@@ -117,15 +124,15 @@ func (db *DB) GetAccountByTokenHash(tokenHash string) (*Account, error) {
 func (db *DB) GetAccountByUsername(username string) (*Account, error) {
 	account := &Account{}
 	var lastUsed sql.NullTime
-	var passwordHash, totpSecret sql.NullString
+	var passwordHash, totpSecret, orgID sql.NullString
 
 	err := db.conn.QueryRow(`
-		SELECT id, username, token_hash, password_hash, totp_secret, totp_enabled, is_admin, created_at, last_used, active
+		SELECT id, username, token_hash, password_hash, totp_secret, totp_enabled, is_admin, org_id, created_at, last_used, active
 		FROM accounts WHERE username = ?
 	`, username).Scan(
 		&account.ID, &account.Username, &account.TokenHash,
 		&passwordHash, &totpSecret, &account.TOTPEnabled,
-		&account.IsAdmin, &account.CreatedAt, &lastUsed, &account.Active,
+		&account.IsAdmin, &orgID, &account.CreatedAt, &lastUsed, &account.Active,
 	)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -143,6 +150,9 @@ func (db *DB) GetAccountByUsername(username string) (*Account, error) {
 	if totpSecret.Valid {
 		account.TOTPSecret = totpSecret.String
 	}
+	if orgID.Valid {
+		account.OrgID = orgID.String
+	}
 
 	return account, nil
 }
@@ -150,7 +160,7 @@ func (db *DB) GetAccountByUsername(username string) (*Account, error) {
 // ListAccounts returns all accounts
 func (db *DB) ListAccounts() ([]*Account, error) {
 	rows, err := db.conn.Query(`
-		SELECT id, username, token_hash, password_hash, totp_secret, totp_enabled, is_admin, created_at, last_used, active
+		SELECT id, username, token_hash, password_hash, totp_secret, totp_enabled, is_admin, org_id, created_at, last_used, active
 		FROM accounts ORDER BY created_at DESC
 	`)
 	if err != nil {
@@ -162,12 +172,12 @@ func (db *DB) ListAccounts() ([]*Account, error) {
 	for rows.Next() {
 		account := &Account{}
 		var lastUsed sql.NullTime
-		var passwordHash, totpSecret sql.NullString
+		var passwordHash, totpSecret, orgID sql.NullString
 
 		err := rows.Scan(
 			&account.ID, &account.Username, &account.TokenHash,
 			&passwordHash, &totpSecret, &account.TOTPEnabled,
-			&account.IsAdmin, &account.CreatedAt, &lastUsed, &account.Active,
+			&account.IsAdmin, &orgID, &account.CreatedAt, &lastUsed, &account.Active,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan account: %w", err)
@@ -181,6 +191,9 @@ func (db *DB) ListAccounts() ([]*Account, error) {
 		}
 		if totpSecret.Valid {
 			account.TOTPSecret = totpSecret.String
+		}
+		if orgID.Valid {
+			account.OrgID = orgID.String
 		}
 
 		accounts = append(accounts, account)
@@ -286,4 +299,141 @@ func (db *DB) HasAdminAccount() (bool, error) {
 	var count int
 	err := db.conn.QueryRow(`SELECT COUNT(*) FROM accounts WHERE is_admin = TRUE AND active = TRUE`).Scan(&count)
 	return count > 0, err
+}
+
+// ============================================
+// Organization Account Methods
+// ============================================
+
+// CreateOrgAccount creates a new account associated with an organization
+func (db *DB) CreateOrgAccount(username, tokenHash, passwordHash, orgID string) (*Account, error) {
+	id := uuid.New().String()
+	now := time.Now()
+
+	_, err := db.conn.Exec(`
+		INSERT INTO accounts (id, username, token_hash, password_hash, is_admin, org_id, created_at, active)
+		VALUES (?, ?, ?, ?, FALSE, ?, ?, TRUE)
+	`, id, username, tokenHash, passwordHash, orgID, now)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create org account: %w", err)
+	}
+
+	return &Account{
+		ID:           id,
+		Username:     username,
+		TokenHash:    tokenHash,
+		PasswordHash: passwordHash,
+		IsAdmin:      false,
+		OrgID:        orgID,
+		CreatedAt:    now,
+		Active:       true,
+	}, nil
+}
+
+// ListAccountsByOrg returns all accounts for an organization
+func (db *DB) ListAccountsByOrg(orgID string) ([]*Account, error) {
+	rows, err := db.conn.Query(`
+		SELECT id, username, token_hash, password_hash, totp_secret, totp_enabled, is_admin, org_id, created_at, last_used, active
+		FROM accounts WHERE org_id = ? ORDER BY created_at DESC
+	`, orgID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list accounts by org: %w", err)
+	}
+	defer rows.Close()
+
+	var accounts []*Account
+	for rows.Next() {
+		account := &Account{}
+		var lastUsed sql.NullTime
+		var passwordHash, totpSecret, orgIDVal sql.NullString
+
+		err := rows.Scan(
+			&account.ID, &account.Username, &account.TokenHash,
+			&passwordHash, &totpSecret, &account.TOTPEnabled,
+			&account.IsAdmin, &orgIDVal, &account.CreatedAt, &lastUsed, &account.Active,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan account: %w", err)
+		}
+
+		if lastUsed.Valid {
+			account.LastUsed = &lastUsed.Time
+		}
+		if passwordHash.Valid {
+			account.PasswordHash = passwordHash.String
+		}
+		if totpSecret.Valid {
+			account.TOTPSecret = totpSecret.String
+		}
+		if orgIDVal.Valid {
+			account.OrgID = orgIDVal.String
+		}
+
+		accounts = append(accounts, account)
+	}
+
+	return accounts, rows.Err()
+}
+
+// CountAccountsByOrg returns the number of accounts for an organization
+func (db *DB) CountAccountsByOrg(orgID string) (int, error) {
+	var count int
+	err := db.conn.QueryRow(`SELECT COUNT(*) FROM accounts WHERE org_id = ?`, orgID).Scan(&count)
+	return count, err
+}
+
+// UpdateAccountOrg updates the organization for an account
+func (db *DB) UpdateAccountOrg(accountID, orgID string) error {
+	var orgPtr *string
+	if orgID != "" {
+		orgPtr = &orgID
+	}
+	_, err := db.conn.Exec(`UPDATE accounts SET org_id = ? WHERE id = ?`, orgPtr, accountID)
+	return err
+}
+
+// GetAccountsByOrgWithPassword returns accounts for an org that have passwords set (for login)
+func (db *DB) GetAccountsByOrgWithPassword(orgID string) ([]*Account, error) {
+	rows, err := db.conn.Query(`
+		SELECT id, username, token_hash, password_hash, totp_secret, totp_enabled, is_admin, org_id, created_at, last_used, active
+		FROM accounts WHERE org_id = ? AND password_hash IS NOT NULL AND active = TRUE
+		ORDER BY created_at DESC
+	`, orgID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list org accounts with password: %w", err)
+	}
+	defer rows.Close()
+
+	var accounts []*Account
+	for rows.Next() {
+		account := &Account{}
+		var lastUsed sql.NullTime
+		var passwordHash, totpSecret, orgIDVal sql.NullString
+
+		err := rows.Scan(
+			&account.ID, &account.Username, &account.TokenHash,
+			&passwordHash, &totpSecret, &account.TOTPEnabled,
+			&account.IsAdmin, &orgIDVal, &account.CreatedAt, &lastUsed, &account.Active,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan account: %w", err)
+		}
+
+		if lastUsed.Valid {
+			account.LastUsed = &lastUsed.Time
+		}
+		if passwordHash.Valid {
+			account.PasswordHash = passwordHash.String
+		}
+		if totpSecret.Valid {
+			account.TOTPSecret = totpSecret.String
+		}
+		if orgIDVal.Valid {
+			account.OrgID = orgIDVal.String
+		}
+
+		accounts = append(accounts, account)
+	}
+
+	return accounts, rows.Err()
 }

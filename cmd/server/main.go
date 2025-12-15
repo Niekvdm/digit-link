@@ -19,6 +19,7 @@ func main() {
 
 	// Get configuration from environment
 	domain := server.GetDomain()
+	scheme := server.GetScheme()
 	secret := server.GetSecret()
 	port := server.GetPort()
 	dbPath := db.GetDBPath()
@@ -60,7 +61,7 @@ func main() {
 	}
 
 	// Start server
-	srv := server.New(domain, secret, database)
+	srv := server.New(domain, scheme, secret, database)
 	log.Fatal(srv.Run(port))
 }
 

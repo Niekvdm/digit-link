@@ -22,6 +22,7 @@ import (
 // Server manages tunnel connections and HTTP routing
 type Server struct {
 	domain   string
+	scheme   string // URL scheme (http or https)
 	secret   string // Legacy secret for backward compatibility
 	db       *db.DB
 	tunnels  map[string]*Tunnel
@@ -36,9 +37,13 @@ type Server struct {
 }
 
 // New creates a new tunnel server
-func New(domain, secret string, database *db.DB) *Server {
+func New(domain, scheme, secret string, database *db.DB) *Server {
+	if scheme == "" {
+		scheme = "https"
+	}
 	s := &Server{
 		domain:  domain,
+		scheme:  scheme,
 		secret:  secret,
 		db:      database,
 		tunnels: make(map[string]*Tunnel),
@@ -89,6 +94,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Admin API endpoints
 	if strings.HasPrefix(r.URL.Path, "/admin/") {
 		s.handleAdmin(w, r)
+		return
+	}
+
+	// Org portal API endpoints
+	if strings.HasPrefix(r.URL.Path, "/org/") {
+		s.handleOrg(w, r)
 		return
 	}
 
@@ -224,7 +235,7 @@ func (s *Server) GetActiveTunnels() []map[string]interface{} {
 	for subdomain, tunnel := range s.tunnels {
 		tunnels = append(tunnels, map[string]interface{}{
 			"subdomain": subdomain,
-			"url":       fmt.Sprintf("https://%s.%s", subdomain, s.domain),
+			"url":       fmt.Sprintf("%s://%s.%s", s.scheme, subdomain, s.domain),
 			"createdAt": tunnel.CreatedAt,
 		})
 	}
@@ -243,13 +254,19 @@ func (s *Server) extractSubdomain(host string) string {
 		host = host[:idx]
 	}
 
+	// Also remove port from domain for comparison
+	domain := s.domain
+	if idx := strings.LastIndex(domain, ":"); idx != -1 {
+		domain = domain[:idx]
+	}
+
 	// Check if it's a subdomain of our domain
-	if !strings.HasSuffix(host, s.domain) {
+	if !strings.HasSuffix(host, domain) {
 		return ""
 	}
 
 	// Extract subdomain
-	subdomain := strings.TrimSuffix(host, "."+s.domain)
+	subdomain := strings.TrimSuffix(host, "."+domain)
 	if subdomain == host || subdomain == "" {
 		return ""
 	}
@@ -300,10 +317,14 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Authenticate using token-based auth (preferred) or legacy secret
+	// Authentication result tracking
 	var account *db.Account
+	var apiKey *db.APIKey
+	var app *db.Application
+	var orgID string
+
 	if s.db != nil {
-		// Token-based authentication
+		// Try token-based authentication first
 		if regReq.Token == "" {
 			// Fallback to legacy secret if no token provided
 			if s.secret != "" && regReq.Secret != s.secret {
@@ -320,39 +341,121 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		} else {
-			// Validate token
-			tokenHash := auth.HashToken(regReq.Token)
-			account, err = s.db.GetAccountByTokenHash(tokenHash)
+			// Try to validate as API key first
+			apiKeyHash := db.HashAPIKey(regReq.Token)
+			apiKey, err = s.db.GetAPIKeyByHash(apiKeyHash)
 			if err != nil {
-				log.Printf("Database error during auth: %v", err)
+				log.Printf("Database error during API key lookup: %v", err)
 				s.sendRegisterResponse(conn, false, "", "", "Internal server error")
 				conn.Close()
 				return
 			}
-			if account == nil {
-				log.Printf("Authentication failed for subdomain %s from %s: invalid token", regReq.Subdomain, clientIP)
-				s.sendRegisterResponse(conn, false, "", "", "Invalid token")
-				conn.Close()
-				return
-			}
 
-			// Check IP whitelist
-			whitelisted, err := s.db.IsIPWhitelistedForAccount(clientIP, account.ID)
-			if err != nil {
-				log.Printf("Whitelist check error: %v", err)
-				s.sendRegisterResponse(conn, false, "", "", "Internal server error")
-				conn.Close()
-				return
-			}
-			if !whitelisted {
-				log.Printf("Connection rejected for %s (%s): IP %s not whitelisted", account.Username, regReq.Subdomain, clientIP)
-				s.sendRegisterResponse(conn, false, "", "", "IP address not whitelisted")
-				conn.Close()
-				return
-			}
+			if apiKey != nil {
+				// Check if key is expired
+				if apiKey.ExpiresAt != nil && apiKey.ExpiresAt.Before(time.Now()) {
+					log.Printf("Authentication failed for subdomain %s from %s: API key expired", regReq.Subdomain, clientIP)
+					s.sendRegisterResponse(conn, false, "", "", "API key has expired")
+					conn.Close()
+					return
+				}
 
-			// Update last used timestamp
-			s.db.UpdateAccountLastUsed(account.ID)
+				// Handle app-specific API key
+				if apiKey.KeyType == db.KeyTypeApp && apiKey.AppID != nil {
+					// Get the app for this key
+					app, err = s.db.GetApplicationByID(*apiKey.AppID)
+					if err != nil || app == nil {
+						log.Printf("Authentication failed for subdomain %s from %s: app not found for API key", regReq.Subdomain, clientIP)
+						s.sendRegisterResponse(conn, false, "", "", "Application not found for API key")
+						conn.Close()
+						return
+					}
+
+					// For app API keys, enforce the subdomain must match the app's subdomain
+					if regReq.Subdomain != "" && strings.ToLower(regReq.Subdomain) != app.Subdomain {
+						log.Printf("Authentication failed for subdomain %s from %s: app API key can only connect to %s", regReq.Subdomain, clientIP, app.Subdomain)
+						s.sendRegisterResponse(conn, false, "", "", fmt.Sprintf("This API key can only connect to subdomain '%s'", app.Subdomain))
+						conn.Close()
+						return
+					}
+
+					// Set subdomain to the app's subdomain
+					regReq.Subdomain = app.Subdomain
+					orgID = app.OrgID
+
+					// Check app-level whitelist
+					whitelisted, err := s.db.IsIPWhitelistedForApp(clientIP, app.ID)
+					if err != nil {
+						log.Printf("Whitelist check error: %v", err)
+						s.sendRegisterResponse(conn, false, "", "", "Internal server error")
+						conn.Close()
+						return
+					}
+					if !whitelisted {
+						log.Printf("Connection rejected for app %s (%s): IP %s not whitelisted", app.Name, regReq.Subdomain, clientIP)
+						s.sendRegisterResponse(conn, false, "", "", "IP address not whitelisted")
+						conn.Close()
+						return
+					}
+				} else if apiKey.OrgID != nil {
+					// Account-level API key (for random subdomains)
+					orgID = *apiKey.OrgID
+
+					// Check org-level whitelist
+					whitelisted, err := s.db.IsIPWhitelistedForOrg(clientIP, orgID)
+					if err != nil {
+						log.Printf("Whitelist check error: %v", err)
+						s.sendRegisterResponse(conn, false, "", "", "Internal server error")
+						conn.Close()
+						return
+					}
+					if !whitelisted {
+						log.Printf("Connection rejected for org %s (%s): IP %s not whitelisted", orgID, regReq.Subdomain, clientIP)
+						s.sendRegisterResponse(conn, false, "", "", "IP address not whitelisted")
+						conn.Close()
+						return
+					}
+				}
+
+				// Update API key last used timestamp
+				s.db.UpdateAPIKeyLastUsed(apiKey.ID)
+			} else {
+				// Not an API key, try account token
+				tokenHash := auth.HashToken(regReq.Token)
+				account, err = s.db.GetAccountByTokenHash(tokenHash)
+				if err != nil {
+					log.Printf("Database error during auth: %v", err)
+					s.sendRegisterResponse(conn, false, "", "", "Internal server error")
+					conn.Close()
+					return
+				}
+				if account == nil {
+					log.Printf("Authentication failed for subdomain %s from %s: invalid token", regReq.Subdomain, clientIP)
+					s.sendRegisterResponse(conn, false, "", "", "Invalid token")
+					conn.Close()
+					return
+				}
+
+				orgID = account.OrgID
+
+				// Check IP whitelist
+				whitelisted, err := s.db.IsIPWhitelistedForAccount(clientIP, account.ID)
+				if err != nil {
+					log.Printf("Whitelist check error: %v", err)
+					s.sendRegisterResponse(conn, false, "", "", "Internal server error")
+					conn.Close()
+					return
+				}
+				if !whitelisted {
+					log.Printf("Connection rejected for %s (%s): IP %s not whitelisted", account.Username, regReq.Subdomain, clientIP)
+					s.sendRegisterResponse(conn, false, "", "", "IP address not whitelisted")
+					conn.Close()
+					return
+				}
+
+				// Update last used timestamp
+				s.db.UpdateAccountLastUsed(account.ID)
+			}
 		}
 	} else {
 		// No database - legacy mode with secret only
@@ -363,9 +466,13 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Validate subdomain
+	// Validate or generate subdomain
 	subdomain := strings.ToLower(regReq.Subdomain)
-	if subdomain == "" || !isValidSubdomain(subdomain) {
+	if subdomain == "" {
+		// Generate a random subdomain
+		subdomain = generateRandomSubdomain()
+		log.Printf("Generated random subdomain: %s", subdomain)
+	} else if !isValidSubdomain(subdomain) {
 		s.sendRegisterResponse(conn, false, "", "", "Invalid subdomain")
 		conn.Close()
 		return
@@ -380,25 +487,48 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Register tunnel
-	tunnel := NewTunnel(subdomain, conn)
+	// Register tunnel with context
+	var appID string
+	if app != nil {
+		appID = app.ID
+	}
+	tunnel := NewTunnelWithContext(subdomain, conn, "", orgID, appID, app)
+	if account != nil {
+		tunnel.AccountID = account.ID
+	}
 	s.tunnels[subdomain] = tunnel
 	s.mu.Unlock()
 
-	// Record tunnel in database if we have an authenticated account
+	// Record tunnel in database
 	var tunnelRecordID string
-	if s.db != nil && account != nil {
-		tunnelRecord, err := s.db.CreateTunnel(account.ID, subdomain, clientIP)
+	if s.db != nil {
+		var accountIDForRecord string
+		if account != nil {
+			accountIDForRecord = account.ID
+		}
+		// Always create tunnel record (accountID can be empty for API key auth)
+		tunnelRecord, err := s.db.CreateTunnel(accountIDForRecord, subdomain, clientIP)
 		if err != nil {
 			log.Printf("Failed to record tunnel: %v", err)
 		} else {
 			tunnelRecordID = tunnelRecord.ID
+			tunnel.RecordID = tunnelRecordID // Store in tunnel for stats tracking
+			// Update with app_id if applicable
+			if appID != "" {
+				s.db.UpdateTunnelAppID(tunnelRecordID, appID)
+			}
 		}
 	}
 
-	url := fmt.Sprintf("https://%s.%s", subdomain, s.domain)
+	url := fmt.Sprintf("%s://%s.%s", s.scheme, subdomain, s.domain)
 	if account != nil {
 		log.Printf("Tunnel registered: %s -> %s (user: %s, ip: %s)", subdomain, url, account.Username, clientIP)
+	} else if apiKey != nil {
+		keyType := "account"
+		if apiKey.KeyType == db.KeyTypeApp {
+			keyType = "app"
+		}
+		log.Printf("Tunnel registered: %s -> %s (api_key: %s..., type: %s, ip: %s)", subdomain, url, apiKey.KeyPrefix, keyType, clientIP)
 	} else {
 		log.Printf("Tunnel registered: %s -> %s (legacy auth, ip: %s)", subdomain, url, clientIP)
 	}
@@ -511,6 +641,9 @@ func (s *Server) forwardRequest(w http.ResponseWriter, r *http.Request, tunnel *
 		return
 	}
 
+	// Track bytes sent (request size)
+	bytesSent := int64(len(data))
+
 	// Create response channel
 	responseCh := tunnel.AddResponseChannel(requestID)
 	defer tunnel.RemoveResponseChannel(requestID)
@@ -524,6 +657,14 @@ func (s *Server) forwardRequest(w http.ResponseWriter, r *http.Request, tunnel *
 	// Wait for response with timeout
 	select {
 	case responseData := <-responseCh:
+		// Track bytes received (response size)
+		bytesReceived := int64(len(responseData))
+
+		// Update tunnel stats in database
+		if s.db != nil && tunnel.RecordID != "" {
+			go s.db.UpdateTunnelStats(tunnel.RecordID, bytesSent, bytesReceived)
+		}
+
 		var respMsg protocol.Message
 		if err := json.Unmarshal(responseData, &respMsg); err != nil {
 			http.Error(w, "Invalid response", http.StatusBadGateway)
@@ -565,6 +706,13 @@ func isValidSubdomain(s string) bool {
 	return s[0] != '-' && s[len(s)-1] != '-'
 }
 
+// generateRandomSubdomain creates a random subdomain using UUID
+func generateRandomSubdomain() string {
+	id := uuid.New().String()
+	// Use first 8 characters of UUID for a short, unique subdomain
+	return id[:8]
+}
+
 // Run starts the server on the specified port
 func (s *Server) Run(port int) error {
 	addr := fmt.Sprintf(":%d", port)
@@ -602,6 +750,14 @@ func GetDomain() string {
 		return domain
 	}
 	return "tunnel.digit.zone"
+}
+
+// GetScheme returns the URL scheme from environment or default (https)
+func GetScheme() string {
+	if scheme := os.Getenv("SCHEME"); scheme != "" {
+		return scheme
+	}
+	return "https"
 }
 
 // GetSecret returns the server secret from environment

@@ -5,7 +5,7 @@ WORKDIR /app/frontend
 
 # Copy frontend package files
 COPY frontend/package.json frontend/yarn.lock ./
-RUN yarn install --frozen-lockfile
+RUN yarn install
 
 # Copy frontend source and build
 COPY frontend/ ./

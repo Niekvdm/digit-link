@@ -1,0 +1,1037 @@
+package server
+
+import (
+	"encoding/json"
+	"log"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/niekvdm/digit-link/internal/auth"
+	"github.com/niekvdm/digit-link/internal/db"
+)
+
+// handleOrg routes org portal API requests
+func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
+	// Verify org account authentication
+	orgCtx, err := s.authenticateOrgAccount(r)
+	if err != nil || orgCtx == nil {
+		jsonError(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Route org endpoints
+	path := strings.TrimPrefix(r.URL.Path, "/org")
+
+	switch {
+	// Dashboard stats
+	case path == "/stats" && r.Method == http.MethodGet:
+		s.handleOrgStats(w, r, orgCtx)
+
+	// Organization policy management
+	case path == "/policy" && r.Method == http.MethodGet:
+		s.handleOrgGetOrgPolicy(w, r, orgCtx)
+	case path == "/policy" && r.Method == http.MethodPut:
+		s.handleOrgSetOrgPolicy(w, r, orgCtx)
+
+	// Application management
+	case path == "/applications" && r.Method == http.MethodGet:
+		s.handleOrgListApplications(w, r, orgCtx)
+	case path == "/applications" && r.Method == http.MethodPost:
+		s.handleOrgCreateApplication(w, r, orgCtx)
+	case strings.HasPrefix(path, "/applications/") && strings.HasSuffix(path, "/stats") && r.Method == http.MethodGet:
+		appID := strings.TrimSuffix(strings.TrimPrefix(path, "/applications/"), "/stats")
+		s.handleOrgAppStats(w, r, orgCtx, appID)
+	case strings.HasPrefix(path, "/applications/") && strings.HasSuffix(path, "/policy") && r.Method == http.MethodGet:
+		appID := strings.TrimSuffix(strings.TrimPrefix(path, "/applications/"), "/policy")
+		s.handleOrgGetAppPolicy(w, r, orgCtx, appID)
+	case strings.HasPrefix(path, "/applications/") && strings.HasSuffix(path, "/policy") && r.Method == http.MethodPut:
+		appID := strings.TrimSuffix(strings.TrimPrefix(path, "/applications/"), "/policy")
+		s.handleOrgSetAppPolicy(w, r, orgCtx, appID)
+	case strings.HasPrefix(path, "/applications/") && r.Method == http.MethodGet:
+		appID := strings.TrimPrefix(path, "/applications/")
+		s.handleOrgGetApplication(w, r, orgCtx, appID)
+	case strings.HasPrefix(path, "/applications/") && r.Method == http.MethodPut:
+		appID := strings.TrimPrefix(path, "/applications/")
+		s.handleOrgUpdateApplication(w, r, orgCtx, appID)
+	case strings.HasPrefix(path, "/applications/") && r.Method == http.MethodDelete:
+		appID := strings.TrimPrefix(path, "/applications/")
+		s.handleOrgDeleteApplication(w, r, orgCtx, appID)
+
+	// Whitelist management
+	case path == "/whitelist" && r.Method == http.MethodGet:
+		s.handleOrgListWhitelist(w, r, orgCtx)
+	case path == "/whitelist" && r.Method == http.MethodPost:
+		s.handleOrgAddWhitelist(w, r, orgCtx)
+	case strings.HasPrefix(path, "/whitelist/") && r.Method == http.MethodDelete:
+		entryID := strings.TrimPrefix(path, "/whitelist/")
+		s.handleOrgDeleteWhitelist(w, r, orgCtx, entryID)
+	case path == "/app-whitelist" && r.Method == http.MethodPost:
+		s.handleOrgAddAppWhitelist(w, r, orgCtx)
+	case strings.HasPrefix(path, "/app-whitelist/") && r.Method == http.MethodDelete:
+		entryID := strings.TrimPrefix(path, "/app-whitelist/")
+		s.handleOrgDeleteAppWhitelist(w, r, orgCtx, entryID)
+
+	// API Key management
+	case path == "/api-keys" && r.Method == http.MethodGet:
+		s.handleOrgListAPIKeys(w, r, orgCtx)
+	case path == "/api-keys" && r.Method == http.MethodPost:
+		s.handleOrgCreateAPIKey(w, r, orgCtx)
+	case strings.HasPrefix(path, "/api-keys/") && r.Method == http.MethodDelete:
+		keyID := strings.TrimPrefix(path, "/api-keys/")
+		s.handleOrgDeleteAPIKey(w, r, orgCtx, keyID)
+
+	// Tunnel monitoring
+	case path == "/tunnels" && r.Method == http.MethodGet:
+		s.handleOrgListTunnels(w, r, orgCtx)
+
+	default:
+		http.Error(w, "Not found", http.StatusNotFound)
+	}
+}
+
+// OrgContext holds authenticated org user context
+type OrgContext struct {
+	AccountID string
+	Username  string
+	OrgID     string
+}
+
+// authenticateOrgAccount verifies org account authentication from the request
+func (s *Server) authenticateOrgAccount(r *http.Request) (*OrgContext, error) {
+	if s.db == nil {
+		return nil, nil
+	}
+
+	// Get token from header
+	token := r.Header.Get("Authorization")
+	if strings.HasPrefix(token, "Bearer ") {
+		token = strings.TrimPrefix(token, "Bearer ")
+	}
+
+	if token == "" {
+		return nil, nil
+	}
+
+	// Validate as JWT token
+	claims, err := auth.ValidateJWT(token)
+	if err != nil {
+		return nil, err
+	}
+	if claims == nil {
+		return nil, nil
+	}
+
+	// Org accounts must NOT be admin and MUST have org_id
+	if claims.IsAdmin || claims.OrgID == "" {
+		return nil, nil
+	}
+
+	return &OrgContext{
+		AccountID: claims.AccountID,
+		Username:  claims.Username,
+		OrgID:     claims.OrgID,
+	}, nil
+}
+
+// verifyOrgOwnership checks if an app belongs to the authenticated org
+func (s *Server) verifyOrgOwnership(orgCtx *OrgContext, appID string) (*db.Application, error) {
+	app, err := s.db.GetApplicationByID(appID)
+	if err != nil {
+		return nil, err
+	}
+	if app == nil || app.OrgID != orgCtx.OrgID {
+		return nil, nil
+	}
+	return app, nil
+}
+
+// ============================================
+// Stats
+// ============================================
+
+func (s *Server) handleOrgStats(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	stats := map[string]interface{}{
+		"orgId": orgCtx.OrgID,
+	}
+
+	// Get application count
+	if count, err := s.db.CountApplicationsByOrg(orgCtx.OrgID); err == nil {
+		stats["applicationCount"] = count
+	}
+
+	// Get whitelist count
+	if count, err := s.db.CountOrgWhitelist(orgCtx.OrgID); err == nil {
+		stats["whitelistEntries"] = count
+	}
+
+	// Get tunnel stats
+	if tunnelStats, err := s.db.GetTunnelStatsByOrg(orgCtx.OrgID); err == nil {
+		stats["activeTunnels"] = tunnelStats.ActiveCount
+		stats["totalConnections"] = tunnelStats.TotalConnections
+		stats["totalBytesSent"] = tunnelStats.BytesSent
+		stats["totalBytesReceived"] = tunnelStats.BytesReceived
+	}
+
+	// Get active tunnels from memory
+	activeTunnels := s.GetActiveTunnelsByOrg(orgCtx.OrgID)
+	stats["liveTunnels"] = len(activeTunnels)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
+}
+
+// ============================================
+// Organization Policy
+// ============================================
+
+func (s *Server) handleOrgGetOrgPolicy(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	policy, err := s.db.GetOrgAuthPolicy(orgCtx.OrgID)
+	if err != nil {
+		log.Printf("Failed to get org policy: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"policy": policy,
+	})
+}
+
+func (s *Server) handleOrgSetOrgPolicy(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	var req struct {
+		AuthType           string            `json:"authType"`
+		BasicUsername      string            `json:"basicUsername,omitempty"`
+		BasicPassword      string            `json:"basicPassword,omitempty"`
+		OIDCIssuerURL      string            `json:"oidcIssuerUrl,omitempty"`
+		OIDCClientID       string            `json:"oidcClientId,omitempty"`
+		OIDCClientSecret   string            `json:"oidcClientSecret,omitempty"`
+		OIDCScopes         []string          `json:"oidcScopes,omitempty"`
+		OIDCAllowedDomains []string          `json:"oidcAllowedDomains,omitempty"`
+		OIDCRequiredClaims map[string]string `json:"oidcRequiredClaims,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate auth type
+	authType := db.AuthType(req.AuthType)
+	if authType != db.AuthTypeBasic && authType != db.AuthTypeAPIKey && authType != db.AuthTypeOIDC {
+		jsonError(w, "Invalid auth type", http.StatusBadRequest)
+		return
+	}
+
+	policy := &db.OrgAuthPolicy{
+		OrgID:    orgCtx.OrgID,
+		AuthType: authType,
+	}
+
+	switch authType {
+	case db.AuthTypeBasic:
+		if req.BasicUsername == "" || req.BasicPassword == "" {
+			jsonError(w, "Basic auth requires username and password", http.StatusBadRequest)
+			return
+		}
+		if len(req.BasicUsername) < 8 {
+			jsonError(w, "Username must be at least 8 characters", http.StatusBadRequest)
+			return
+		}
+		if len(req.BasicPassword) < 8 {
+			jsonError(w, "Password must be at least 8 characters", http.StatusBadRequest)
+			return
+		}
+		userHash, err := auth.HashPassword(req.BasicUsername)
+		if err != nil {
+			log.Printf("Failed to hash username: %v", err)
+			jsonError(w, "Failed to hash username", http.StatusInternalServerError)
+			return
+		}
+		passHash, err := auth.HashPassword(req.BasicPassword)
+		if err != nil {
+			log.Printf("Failed to hash password: %v", err)
+			jsonError(w, "Failed to hash password", http.StatusInternalServerError)
+			return
+		}
+		policy.BasicUserHash = userHash
+		policy.BasicPassHash = passHash
+
+	case db.AuthTypeOIDC:
+		if req.OIDCIssuerURL == "" || req.OIDCClientID == "" {
+			jsonError(w, "OIDC requires issuer URL and client ID", http.StatusBadRequest)
+			return
+		}
+		policy.OIDCIssuerURL = req.OIDCIssuerURL
+		policy.OIDCClientID = req.OIDCClientID
+		policy.OIDCClientSecretEnc = req.OIDCClientSecret
+		policy.OIDCScopes = req.OIDCScopes
+		policy.OIDCAllowedDomains = req.OIDCAllowedDomains
+		policy.OIDCRequiredClaims = req.OIDCRequiredClaims
+	}
+
+	if err := s.db.CreateOrgAuthPolicy(policy); err != nil {
+		log.Printf("Failed to set org policy: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Org auth policy set by user: %s (%s) for org %s", orgCtx.Username, authType, orgCtx.OrgID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
+}
+
+// ============================================
+// Applications
+// ============================================
+
+func (s *Server) handleOrgListApplications(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	apps, err := s.db.ListApplicationsByOrg(orgCtx.OrgID)
+	if err != nil {
+		log.Printf("Failed to list org applications: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Enrich with active status
+	result := make([]map[string]interface{}, len(apps))
+	for i, app := range apps {
+		hasPolicy, _ := s.db.HasAppAuthPolicy(app.ID)
+		activeCount := s.GetActiveTunnelCountByApp(app.ID)
+		tunnelStats, _ := s.db.GetTunnelStatsByApp(app.ID)
+
+		result[i] = map[string]interface{}{
+			"id":                app.ID,
+			"subdomain":         app.Subdomain,
+			"name":              app.Name,
+			"authMode":          app.AuthMode,
+			"authType":          app.AuthType,
+			"createdAt":         app.CreatedAt,
+			"hasPolicy":         hasPolicy,
+			"isActive":          activeCount > 0,
+			"activeTunnelCount": activeCount,
+		}
+		if tunnelStats != nil {
+			result[i]["stats"] = tunnelStats
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"applications": result,
+	})
+}
+
+func (s *Server) handleOrgGetApplication(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext, appID string) {
+	app, err := s.verifyOrgOwnership(orgCtx, appID)
+	if err != nil {
+		log.Printf("Failed to get application: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if app == nil {
+		jsonError(w, "Application not found", http.StatusNotFound)
+		return
+	}
+
+	hasPolicy, _ := s.db.HasAppAuthPolicy(app.ID)
+	activeCount := s.GetActiveTunnelCountByApp(app.ID)
+	tunnelStats, _ := s.db.GetTunnelStatsByApp(app.ID)
+
+	result := map[string]interface{}{
+		"id":                app.ID,
+		"subdomain":         app.Subdomain,
+		"name":              app.Name,
+		"authMode":          app.AuthMode,
+		"authType":          app.AuthType,
+		"createdAt":         app.CreatedAt,
+		"hasPolicy":         hasPolicy,
+		"isActive":          activeCount > 0,
+		"activeTunnelCount": activeCount,
+	}
+	if tunnelStats != nil {
+		result["stats"] = tunnelStats
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"application": result,
+	})
+}
+
+func (s *Server) handleOrgCreateApplication(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	var req struct {
+		Subdomain string `json:"subdomain"`
+		Name      string `json:"name"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Subdomain == "" {
+		jsonError(w, "Subdomain is required", http.StatusBadRequest)
+		return
+	}
+
+	// Check subdomain availability
+	available, err := s.db.IsSubdomainAvailable(req.Subdomain)
+	if err != nil {
+		log.Printf("Failed to check subdomain: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if !available {
+		jsonError(w, "Subdomain already in use", http.StatusConflict)
+		return
+	}
+
+	app, err := s.db.CreateApplication(orgCtx.OrgID, req.Subdomain, req.Name)
+	if err != nil {
+		log.Printf("Failed to create application: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Org application created: %s (%s) by %s", req.Subdomain, req.Name, orgCtx.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":     true,
+		"application": app,
+	})
+}
+
+func (s *Server) handleOrgUpdateApplication(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext, appID string) {
+	app, err := s.verifyOrgOwnership(orgCtx, appID)
+	if err != nil {
+		log.Printf("Failed to get application: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if app == nil {
+		jsonError(w, "Application not found", http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		Name      string `json:"name"`
+		Subdomain string `json:"subdomain"`
+		AuthMode  string `json:"authMode"`
+		AuthType  string `json:"authType,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate auth mode
+	authMode := db.AuthMode(req.AuthMode)
+	if authMode != db.AuthModeInherit && authMode != db.AuthModeDisabled && authMode != db.AuthModeCustom {
+		jsonError(w, "Invalid auth mode", http.StatusBadRequest)
+		return
+	}
+
+	// If subdomain is provided and different, use UpdateApplicationFull
+	subdomain := req.Subdomain
+	if subdomain == "" {
+		subdomain = app.Subdomain
+	}
+
+	authType := db.AuthType(req.AuthType)
+	if err := s.db.UpdateApplicationFull(appID, req.Name, subdomain, authMode, authType); err != nil {
+		log.Printf("Failed to update application: %v", err)
+		if strings.Contains(err.Error(), "already in use") {
+			jsonError(w, err.Error(), http.StatusConflict)
+		} else {
+			jsonError(w, "Internal server error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	log.Printf("Org application updated: %s by %s", appID, orgCtx.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
+}
+
+func (s *Server) handleOrgDeleteApplication(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext, appID string) {
+	app, err := s.verifyOrgOwnership(orgCtx, appID)
+	if err != nil {
+		log.Printf("Failed to get application: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if app == nil {
+		jsonError(w, "Application not found", http.StatusNotFound)
+		return
+	}
+
+	// Delete app policy first
+	s.db.DeleteAppAuthPolicy(appID)
+
+	if err := s.db.DeleteApplication(appID); err != nil {
+		log.Printf("Failed to delete application: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Org application deleted: %s by %s", appID, orgCtx.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
+}
+
+func (s *Server) handleOrgAppStats(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext, appID string) {
+	app, err := s.verifyOrgOwnership(orgCtx, appID)
+	if err != nil {
+		log.Printf("Failed to get application: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if app == nil {
+		jsonError(w, "Application not found", http.StatusNotFound)
+		return
+	}
+
+	stats, err := s.db.GetTunnelStatsByApp(appID)
+	if err != nil {
+		log.Printf("Failed to get app stats: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Get live active count
+	activeCount := s.GetActiveTunnelCountByApp(appID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"appId":             appID,
+		"subdomain":         app.Subdomain,
+		"activeTunnelCount": activeCount,
+		"stats":             stats,
+	})
+}
+
+func (s *Server) handleOrgGetAppPolicy(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext, appID string) {
+	app, err := s.verifyOrgOwnership(orgCtx, appID)
+	if err != nil {
+		log.Printf("Failed to get application: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if app == nil {
+		jsonError(w, "Application not found", http.StatusNotFound)
+		return
+	}
+
+	policy, err := s.db.GetAppAuthPolicy(appID)
+	if err != nil {
+		log.Printf("Failed to get app policy: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"policy": policy,
+	})
+}
+
+func (s *Server) handleOrgSetAppPolicy(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext, appID string) {
+	app, err := s.verifyOrgOwnership(orgCtx, appID)
+	if err != nil {
+		log.Printf("Failed to get application: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if app == nil {
+		jsonError(w, "Application not found", http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		AuthType           string            `json:"authType"`
+		BasicUsername      string            `json:"basicUsername,omitempty"`
+		BasicPassword      string            `json:"basicPassword,omitempty"`
+		OIDCIssuerURL      string            `json:"oidcIssuerUrl,omitempty"`
+		OIDCClientID       string            `json:"oidcClientId,omitempty"`
+		OIDCClientSecret   string            `json:"oidcClientSecret,omitempty"`
+		OIDCScopes         []string          `json:"oidcScopes,omitempty"`
+		OIDCAllowedDomains []string          `json:"oidcAllowedDomains,omitempty"`
+		OIDCRequiredClaims map[string]string `json:"oidcRequiredClaims,omitempty"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate auth type
+	authType := db.AuthType(req.AuthType)
+	if authType != db.AuthTypeBasic && authType != db.AuthTypeAPIKey && authType != db.AuthTypeOIDC {
+		jsonError(w, "Invalid auth type", http.StatusBadRequest)
+		return
+	}
+
+	policy := &db.AppAuthPolicy{
+		AppID:    appID,
+		AuthType: authType,
+	}
+
+	switch authType {
+	case db.AuthTypeBasic:
+		if req.BasicUsername == "" || req.BasicPassword == "" {
+			jsonError(w, "Basic auth requires username and password", http.StatusBadRequest)
+			return
+		}
+		if len(req.BasicUsername) < 8 {
+			jsonError(w, "Username must be at least 8 characters", http.StatusBadRequest)
+			return
+		}
+		if len(req.BasicPassword) < 8 {
+			jsonError(w, "Password must be at least 8 characters", http.StatusBadRequest)
+			return
+		}
+		userHash, err := auth.HashPassword(req.BasicUsername)
+		if err != nil {
+			log.Printf("Failed to hash username: %v", err)
+			jsonError(w, "Failed to hash username", http.StatusInternalServerError)
+			return
+		}
+		passHash, err := auth.HashPassword(req.BasicPassword)
+		if err != nil {
+			log.Printf("Failed to hash password: %v", err)
+			jsonError(w, "Failed to hash password", http.StatusInternalServerError)
+			return
+		}
+		policy.BasicUserHash = userHash
+		policy.BasicPassHash = passHash
+
+	case db.AuthTypeOIDC:
+		if req.OIDCIssuerURL == "" || req.OIDCClientID == "" {
+			jsonError(w, "OIDC requires issuer URL and client ID", http.StatusBadRequest)
+			return
+		}
+		policy.OIDCIssuerURL = req.OIDCIssuerURL
+		policy.OIDCClientID = req.OIDCClientID
+		policy.OIDCClientSecretEnc = req.OIDCClientSecret
+		policy.OIDCScopes = req.OIDCScopes
+		policy.OIDCAllowedDomains = req.OIDCAllowedDomains
+		policy.OIDCRequiredClaims = req.OIDCRequiredClaims
+	}
+
+	if err := s.db.CreateAppAuthPolicy(policy); err != nil {
+		log.Printf("Failed to set app policy: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Update app auth mode to custom
+	s.db.UpdateApplicationAuthMode(appID, db.AuthModeCustom)
+
+	log.Printf("Org app auth policy set: %s (%s) by %s", appID, authType, orgCtx.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
+}
+
+// ============================================
+// Whitelist
+// ============================================
+
+func (s *Server) handleOrgListWhitelist(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	// Get org whitelist
+	orgEntries, err := s.db.ListOrgWhitelist(orgCtx.OrgID)
+	if err != nil {
+		log.Printf("Failed to list org whitelist: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Get app whitelists for all apps in org
+	apps, err := s.db.ListApplicationsByOrg(orgCtx.OrgID)
+	if err != nil {
+		log.Printf("Failed to list org apps: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	appWhitelists := make(map[string][]*db.AppWhitelistEntry)
+	for _, app := range apps {
+		entries, err := s.db.ListAppWhitelist(app.ID)
+		if err != nil {
+			continue
+		}
+		if len(entries) > 0 {
+			appWhitelists[app.ID] = entries
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"orgWhitelist":  orgEntries,
+		"appWhitelists": appWhitelists,
+	})
+}
+
+func (s *Server) handleOrgAddWhitelist(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	var req struct {
+		IPRange     string `json:"ipRange"`
+		Description string `json:"description"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.IPRange == "" {
+		jsonError(w, "IP range is required", http.StatusBadRequest)
+		return
+	}
+
+	entry, err := s.db.AddOrgWhitelist(orgCtx.OrgID, req.IPRange, req.Description, orgCtx.AccountID)
+	if err != nil {
+		log.Printf("Failed to add org whitelist entry: %v", err)
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("Org whitelist entry added: %s (%s) by %s", req.IPRange, req.Description, orgCtx.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"entry":   entry,
+	})
+}
+
+func (s *Server) handleOrgDeleteWhitelist(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext, entryID string) {
+	// Verify ownership
+	entry, err := s.db.GetOrgWhitelistEntry(entryID)
+	if err != nil {
+		log.Printf("Failed to get org whitelist entry: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if entry == nil || entry.OrgID != orgCtx.OrgID {
+		jsonError(w, "Whitelist entry not found", http.StatusNotFound)
+		return
+	}
+
+	if err := s.db.DeleteOrgWhitelist(entryID); err != nil {
+		log.Printf("Failed to delete org whitelist entry: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Org whitelist entry deleted: %s by %s", entryID, orgCtx.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
+}
+
+func (s *Server) handleOrgAddAppWhitelist(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	var req struct {
+		AppID       string `json:"appId"`
+		IPRange     string `json:"ipRange"`
+		Description string `json:"description"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.AppID == "" || req.IPRange == "" {
+		jsonError(w, "App ID and IP range are required", http.StatusBadRequest)
+		return
+	}
+
+	// Verify app ownership
+	app, err := s.verifyOrgOwnership(orgCtx, req.AppID)
+	if err != nil || app == nil {
+		jsonError(w, "Application not found", http.StatusNotFound)
+		return
+	}
+
+	entry, err := s.db.AddAppWhitelist(req.AppID, req.IPRange, req.Description, orgCtx.AccountID)
+	if err != nil {
+		log.Printf("Failed to add app whitelist entry: %v", err)
+		jsonError(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("App whitelist entry added: %s for %s (%s) by %s", req.IPRange, app.Subdomain, req.Description, orgCtx.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"entry":   entry,
+	})
+}
+
+func (s *Server) handleOrgDeleteAppWhitelist(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext, entryID string) {
+	// Get entry to verify ownership
+	entry, err := s.db.GetAppWhitelistEntry(entryID)
+	if err != nil {
+		log.Printf("Failed to get app whitelist entry: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if entry == nil {
+		jsonError(w, "Whitelist entry not found", http.StatusNotFound)
+		return
+	}
+
+	// Verify app ownership
+	app, err := s.verifyOrgOwnership(orgCtx, entry.AppID)
+	if err != nil || app == nil {
+		jsonError(w, "Whitelist entry not found", http.StatusNotFound)
+		return
+	}
+
+	if err := s.db.DeleteAppWhitelist(entryID); err != nil {
+		log.Printf("Failed to delete app whitelist entry: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("App whitelist entry deleted: %s by %s", entryID, orgCtx.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
+}
+
+// ============================================
+// API Keys
+// ============================================
+
+func (s *Server) handleOrgListAPIKeys(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	appID := r.URL.Query().Get("app")
+
+	var keys []*db.APIKey
+	var err error
+
+	if appID != "" {
+		// Verify app ownership
+		app, err := s.verifyOrgOwnership(orgCtx, appID)
+		if err != nil || app == nil {
+			jsonError(w, "Application not found", http.StatusNotFound)
+			return
+		}
+		keys, err = s.db.ListAPIKeysByApp(appID)
+	} else {
+		keys, err = s.db.ListAPIKeysByOrg(orgCtx.OrgID)
+	}
+
+	if err != nil {
+		log.Printf("Failed to list API keys: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"keys": keys,
+	})
+}
+
+func (s *Server) handleOrgCreateAPIKey(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	var req struct {
+		AppID       string `json:"appId,omitempty"`
+		Description string `json:"description"`
+		ExpiresIn   *int   `json:"expiresIn,omitempty"` // days
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	var expiresAt *time.Time
+	if req.ExpiresIn != nil && *req.ExpiresIn > 0 {
+		exp := time.Now().Add(time.Duration(*req.ExpiresIn) * 24 * time.Hour)
+		expiresAt = &exp
+	}
+
+	var rawKey string
+	var key *db.APIKey
+	var err error
+
+	if req.AppID != "" {
+		// Verify app ownership
+		app, err := s.verifyOrgOwnership(orgCtx, req.AppID)
+		if err != nil || app == nil {
+			jsonError(w, "Application not found", http.StatusNotFound)
+			return
+		}
+		// Create app-specific API key
+		rawKey, key, err = db.GenerateAppAPIKey(orgCtx.OrgID, req.AppID, req.Description, expiresAt)
+	} else {
+		// Create org-level API key
+		orgID := orgCtx.OrgID
+		rawKey, key, err = db.GenerateAPIKey(&orgID, nil, req.Description, expiresAt)
+	}
+
+	if err != nil {
+		log.Printf("Failed to generate API key: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := s.db.CreateAPIKey(key); err != nil {
+		log.Printf("Failed to create API key: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Org API key created: %s... by %s", key.KeyPrefix, orgCtx.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"key":     key,
+		"rawKey":  rawKey,
+	})
+}
+
+func (s *Server) handleOrgDeleteAPIKey(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext, keyID string) {
+	// Get key to verify ownership
+	key, err := s.db.GetAPIKeyByID(keyID)
+	if err != nil {
+		log.Printf("Failed to get API key: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if key == nil {
+		jsonError(w, "API key not found", http.StatusNotFound)
+		return
+	}
+
+	// Verify ownership - key must belong to this org
+	if key.OrgID == nil || *key.OrgID != orgCtx.OrgID {
+		jsonError(w, "API key not found", http.StatusNotFound)
+		return
+	}
+
+	if err := s.db.DeleteAPIKey(keyID); err != nil {
+		log.Printf("Failed to delete API key: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Org API key deleted: %s by %s", keyID, orgCtx.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
+}
+
+// ============================================
+// Tunnels
+// ============================================
+
+func (s *Server) handleOrgListTunnels(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	// Get live active tunnels from memory
+	activeTunnels := s.GetActiveTunnelsByOrg(orgCtx.OrgID)
+
+	// Get database tunnel records
+	var dbTunnels interface{}
+	if tunnels, err := s.db.ListActiveTunnelsByOrg(orgCtx.OrgID); err == nil {
+		dbTunnels = tunnels
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"active":  activeTunnels,
+		"records": dbTunnels,
+	})
+}
+
+// ============================================
+// Helper methods on Server
+// ============================================
+
+// GetActiveTunnelsByOrg returns active tunnels for a specific organization
+func (s *Server) GetActiveTunnelsByOrg(orgID string) []map[string]interface{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	tunnels := make([]map[string]interface{}, 0)
+	for subdomain, tunnel := range s.tunnels {
+		if tunnel.OrgID == orgID {
+			tunnels = append(tunnels, map[string]interface{}{
+				"subdomain": subdomain,
+				"url":       strings.Join([]string{s.scheme, "://", subdomain, ".", s.domain}, ""),
+				"createdAt": tunnel.CreatedAt,
+				"appId":     tunnel.AppID,
+			})
+		}
+	}
+	return tunnels
+}
+
+// GetActiveTunnelsByApp returns active tunnels for a specific application
+func (s *Server) GetActiveTunnelsByApp(appID string) []map[string]interface{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	tunnels := make([]map[string]interface{}, 0)
+	for subdomain, tunnel := range s.tunnels {
+		if tunnel.AppID == appID {
+			tunnels = append(tunnels, map[string]interface{}{
+				"subdomain": subdomain,
+				"url":       strings.Join([]string{s.scheme, "://", subdomain, ".", s.domain}, ""),
+				"createdAt": tunnel.CreatedAt,
+			})
+		}
+	}
+	return tunnels
+}
+
+// GetActiveTunnelCountByApp returns count of active tunnels for an app
+func (s *Server) GetActiveTunnelCountByApp(appID string) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	count := 0
+	for _, tunnel := range s.tunnels {
+		if tunnel.AppID == appID {
+			count++
+		}
+	}
+	return count
+}
+
+// GetActiveTunnelCountByOrg returns count of active tunnels for an org
+func (s *Server) GetActiveTunnelCountByOrg(orgID string) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	count := 0
+	for _, tunnel := range s.tunnels {
+		if tunnel.OrgID == orgID {
+			count++
+		}
+	}
+	return count
+}

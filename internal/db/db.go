@@ -73,8 +73,31 @@ func (db *DB) initSchema() error {
 		active BOOLEAN DEFAULT TRUE
 	);
 
+	-- Legacy global whitelist (deprecated, kept for migration)
 	CREATE TABLE IF NOT EXISTS global_whitelist (
 		id TEXT PRIMARY KEY,
+		ip_range TEXT NOT NULL,
+		description TEXT,
+		created_by TEXT,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY(created_by) REFERENCES accounts(id)
+	);
+
+	-- Organization-level whitelist (replaces global_whitelist)
+	CREATE TABLE IF NOT EXISTS org_whitelist (
+		id TEXT PRIMARY KEY,
+		org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+		ip_range TEXT NOT NULL,
+		description TEXT,
+		created_by TEXT,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY(created_by) REFERENCES accounts(id)
+	);
+
+	-- Application-level whitelist
+	CREATE TABLE IF NOT EXISTS app_whitelist (
+		id TEXT PRIMARY KEY,
+		app_id TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
 		ip_range TEXT NOT NULL,
 		description TEXT,
 		created_by TEXT,
@@ -93,7 +116,7 @@ func (db *DB) initSchema() error {
 
 	CREATE TABLE IF NOT EXISTS tunnels (
 		id TEXT PRIMARY KEY,
-		account_id TEXT NOT NULL,
+		account_id TEXT,
 		subdomain TEXT NOT NULL,
 		client_ip TEXT,
 		app_id TEXT,
@@ -144,10 +167,12 @@ func (db *DB) initSchema() error {
 	);
 
 	-- API keys (hashed, with metadata)
+	-- key_type: 'account' for random subdomain access, 'app' for specific app access
 	CREATE TABLE IF NOT EXISTS api_keys (
 		id TEXT PRIMARY KEY,
 		org_id TEXT REFERENCES organizations(id),
 		app_id TEXT REFERENCES applications(id),
+		key_type TEXT DEFAULT 'account',
 		key_hash TEXT NOT NULL,
 		key_prefix TEXT NOT NULL,
 		description TEXT,
@@ -196,6 +221,10 @@ func (db *DB) initSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_tunnels_subdomain ON tunnels(subdomain);
 	CREATE INDEX IF NOT EXISTS idx_tunnels_app_id ON tunnels(app_id);
 	CREATE INDEX IF NOT EXISTS idx_global_whitelist_ip ON global_whitelist(ip_range);
+	CREATE INDEX IF NOT EXISTS idx_org_whitelist_org_id ON org_whitelist(org_id);
+	CREATE INDEX IF NOT EXISTS idx_org_whitelist_ip ON org_whitelist(ip_range);
+	CREATE INDEX IF NOT EXISTS idx_app_whitelist_app_id ON app_whitelist(app_id);
+	CREATE INDEX IF NOT EXISTS idx_app_whitelist_ip ON app_whitelist(ip_range);
 	CREATE INDEX IF NOT EXISTS idx_applications_subdomain ON applications(subdomain);
 	CREATE INDEX IF NOT EXISTS idx_applications_org_id ON applications(org_id);
 	CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash);
@@ -229,6 +258,7 @@ func (db *DB) runMigrations() error {
 		{"accounts", "totp_enabled", "BOOLEAN DEFAULT FALSE"},
 		{"accounts", "org_id", "TEXT REFERENCES organizations(id)"},
 		{"tunnels", "app_id", "TEXT"},
+		{"api_keys", "key_type", "TEXT DEFAULT 'account'"},
 	}
 
 	for _, m := range columnMigrations {

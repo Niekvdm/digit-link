@@ -6,11 +6,15 @@ import type {
   CreateAccountRequest, 
   CreateAccountResponse,
   RegenerateTokenResponse,
+  SetAccountOrgRequest,
+  SetAccountOrgResponse,
+  SetAccountPasswordRequest,
+  SetAccountPasswordResponse,
   DeleteResponse 
 } from '@/types/api'
 
 export function useAccounts() {
-  const { get, post, del } = useApi()
+  const { get, post, put, del } = useApi()
   
   const accounts = ref<Account[]>([])
   const loading = ref(false)
@@ -59,6 +63,42 @@ export function useAccounts() {
     }
   }
 
+  async function setAccountOrganization(accountId: string, orgId: string): Promise<SetAccountOrgResponse> {
+    try {
+      const response = await put<SetAccountOrgResponse>(
+        `/admin/accounts/${accountId}/organization`,
+        { orgId } as SetAccountOrgRequest
+      )
+      if (response.success) {
+        await loadAccounts()
+      }
+      return response
+    } catch (err) {
+      return { 
+        success: false, 
+        error: err instanceof Error ? err.message : 'Failed to update account organization' 
+      }
+    }
+  }
+
+  async function setAccountPassword(accountId: string, password: string): Promise<SetAccountPasswordResponse> {
+    try {
+      const response = await put<SetAccountPasswordResponse>(
+        `/admin/accounts/${accountId}/password`,
+        { password } as SetAccountPasswordRequest
+      )
+      if (response.success) {
+        await loadAccounts()
+      }
+      return response
+    } catch (err) {
+      return { 
+        success: false, 
+        error: err instanceof Error ? err.message : 'Failed to set account password' 
+      }
+    }
+  }
+
   async function deactivateAccount(accountId: string): Promise<DeleteResponse> {
     try {
       const response = await del<DeleteResponse>(`/admin/accounts/${accountId}`)
@@ -74,6 +114,21 @@ export function useAccounts() {
     }
   }
 
+  async function activateAccount(accountId: string): Promise<DeleteResponse> {
+    try {
+      const response = await post<DeleteResponse>(`/admin/accounts/${accountId}/activate`)
+      if (response.success) {
+        await loadAccounts()
+      }
+      return response
+    } catch (err) {
+      return { 
+        success: false, 
+        error: err instanceof Error ? err.message : 'Failed to activate account' 
+      }
+    }
+  }
+
   onMounted(() => {
     loadAccounts()
   })
@@ -85,6 +140,9 @@ export function useAccounts() {
     refresh: loadAccounts,
     createAccount,
     regenerateToken,
-    deactivateAccount
+    setAccountOrganization,
+    setAccountPassword,
+    deactivateAccount,
+    activateAccount
   }
 }

@@ -18,11 +18,22 @@ const (
 	APIKeyPrefixLength = 8
 )
 
+// KeyType represents the type of API key
+type KeyType string
+
+const (
+	// KeyTypeAccount is for account-level keys that allow random subdomain connections
+	KeyTypeAccount KeyType = "account"
+	// KeyTypeApp is for app-specific keys that only allow connection to a specific app's subdomain
+	KeyTypeApp KeyType = "app"
+)
+
 // APIKey represents an API key for authentication
 type APIKey struct {
 	ID          string     `json:"id"`
 	OrgID       *string    `json:"orgId,omitempty"`
 	AppID       *string    `json:"appId,omitempty"`
+	KeyType     KeyType    `json:"keyType"`
 	KeyHash     string     `json:"-"`
 	KeyPrefix   string     `json:"keyPrefix"`
 	Description string     `json:"description,omitempty"`
@@ -43,10 +54,44 @@ func GenerateAPIKey(orgID, appID *string, description string, expiresAt *time.Ti
 	keyHash := HashAPIKey(rawKey)
 	keyPrefix := rawKey[:APIKeyPrefixLength]
 
+	// Determine key type based on whether app_id is set
+	keyType := KeyTypeAccount
+	if appID != nil && *appID != "" {
+		keyType = KeyTypeApp
+	}
+
 	key = &APIKey{
 		ID:          uuid.New().String(),
 		OrgID:       orgID,
 		AppID:       appID,
+		KeyType:     keyType,
+		KeyHash:     keyHash,
+		KeyPrefix:   keyPrefix,
+		Description: description,
+		CreatedAt:   time.Now(),
+		ExpiresAt:   expiresAt,
+	}
+
+	return rawKey, key, nil
+}
+
+// GenerateAppAPIKey generates a new API key specifically for an application
+// This key can ONLY be used to connect to the specific app's subdomain
+func GenerateAppAPIKey(orgID, appID, description string, expiresAt *time.Time) (rawKey string, key *APIKey, err error) {
+	bytes := make([]byte, APIKeyLength)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", nil, fmt.Errorf("failed to generate API key: %w", err)
+	}
+
+	rawKey = hex.EncodeToString(bytes)
+	keyHash := HashAPIKey(rawKey)
+	keyPrefix := rawKey[:APIKeyPrefixLength]
+
+	key = &APIKey{
+		ID:          uuid.New().String(),
+		OrgID:       &orgID,
+		AppID:       &appID,
+		KeyType:     KeyTypeApp,
 		KeyHash:     keyHash,
 		KeyPrefix:   keyPrefix,
 		Description: description,
@@ -66,9 +111,9 @@ func HashAPIKey(key string) string {
 // CreateAPIKey stores a new API key in the database
 func (db *DB) CreateAPIKey(key *APIKey) error {
 	_, err := db.conn.Exec(`
-		INSERT INTO api_keys (id, org_id, app_id, key_hash, key_prefix, description, created_at, expires_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, key.ID, key.OrgID, key.AppID, key.KeyHash, key.KeyPrefix, key.Description, key.CreatedAt, key.ExpiresAt)
+		INSERT INTO api_keys (id, org_id, app_id, key_type, key_hash, key_prefix, description, created_at, expires_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, key.ID, key.OrgID, key.AppID, key.KeyType, key.KeyHash, key.KeyPrefix, key.Description, key.CreatedAt, key.ExpiresAt)
 	if err != nil {
 		return fmt.Errorf("failed to create API key: %w", err)
 	}
@@ -78,14 +123,14 @@ func (db *DB) CreateAPIKey(key *APIKey) error {
 // GetAPIKeyByID retrieves an API key by its ID
 func (db *DB) GetAPIKeyByID(id string) (*APIKey, error) {
 	key := &APIKey{}
-	var orgID, appID, description sql.NullString
+	var orgID, appID, description, keyType sql.NullString
 	var lastUsed, expiresAt sql.NullTime
 
 	err := db.conn.QueryRow(`
-		SELECT id, org_id, app_id, key_hash, key_prefix, description, created_at, last_used, expires_at
+		SELECT id, org_id, app_id, key_type, key_hash, key_prefix, description, created_at, last_used, expires_at
 		FROM api_keys WHERE id = ?
 	`, id).Scan(
-		&key.ID, &orgID, &appID, &key.KeyHash, &key.KeyPrefix, &description,
+		&key.ID, &orgID, &appID, &keyType, &key.KeyHash, &key.KeyPrefix, &description,
 		&key.CreatedAt, &lastUsed, &expiresAt,
 	)
 
@@ -101,6 +146,11 @@ func (db *DB) GetAPIKeyByID(id string) (*APIKey, error) {
 	}
 	if appID.Valid {
 		key.AppID = &appID.String
+	}
+	if keyType.Valid {
+		key.KeyType = KeyType(keyType.String)
+	} else {
+		key.KeyType = KeyTypeAccount
 	}
 	if description.Valid {
 		key.Description = description.String
@@ -118,14 +168,14 @@ func (db *DB) GetAPIKeyByID(id string) (*APIKey, error) {
 // GetAPIKeyByHash retrieves an API key by its hash
 func (db *DB) GetAPIKeyByHash(keyHash string) (*APIKey, error) {
 	key := &APIKey{}
-	var orgID, appID, description sql.NullString
+	var orgID, appID, description, keyType sql.NullString
 	var lastUsed, expiresAt sql.NullTime
 
 	err := db.conn.QueryRow(`
-		SELECT id, org_id, app_id, key_hash, key_prefix, description, created_at, last_used, expires_at
+		SELECT id, org_id, app_id, key_type, key_hash, key_prefix, description, created_at, last_used, expires_at
 		FROM api_keys WHERE key_hash = ?
 	`, keyHash).Scan(
-		&key.ID, &orgID, &appID, &key.KeyHash, &key.KeyPrefix, &description,
+		&key.ID, &orgID, &appID, &keyType, &key.KeyHash, &key.KeyPrefix, &description,
 		&key.CreatedAt, &lastUsed, &expiresAt,
 	)
 
@@ -141,6 +191,11 @@ func (db *DB) GetAPIKeyByHash(keyHash string) (*APIKey, error) {
 	}
 	if appID.Valid {
 		key.AppID = &appID.String
+	}
+	if keyType.Valid {
+		key.KeyType = KeyType(keyType.String)
+	} else {
+		key.KeyType = KeyTypeAccount
 	}
 	if description.Valid {
 		key.Description = description.String
@@ -177,7 +232,7 @@ func (db *DB) ValidateAPIKey(rawKey string) (*APIKey, error) {
 // ListAPIKeysByOrg returns all API keys for an organization
 func (db *DB) ListAPIKeysByOrg(orgID string) ([]*APIKey, error) {
 	rows, err := db.conn.Query(`
-		SELECT id, org_id, app_id, key_hash, key_prefix, description, created_at, last_used, expires_at
+		SELECT id, org_id, app_id, key_type, key_hash, key_prefix, description, created_at, last_used, expires_at
 		FROM api_keys WHERE org_id = ? ORDER BY created_at DESC
 	`, orgID)
 	if err != nil {
@@ -191,7 +246,7 @@ func (db *DB) ListAPIKeysByOrg(orgID string) ([]*APIKey, error) {
 // ListAPIKeysByApp returns all API keys for an application
 func (db *DB) ListAPIKeysByApp(appID string) ([]*APIKey, error) {
 	rows, err := db.conn.Query(`
-		SELECT id, org_id, app_id, key_hash, key_prefix, description, created_at, last_used, expires_at
+		SELECT id, org_id, app_id, key_type, key_hash, key_prefix, description, created_at, last_used, expires_at
 		FROM api_keys WHERE app_id = ? ORDER BY created_at DESC
 	`, appID)
 	if err != nil {
@@ -210,7 +265,7 @@ func (db *DB) ListAPIKeysForAuth(orgID, appID *string) ([]*APIKey, error) {
 	if appID != nil {
 		// First try app-specific keys, then fall back to org keys
 		rows, err = db.conn.Query(`
-			SELECT id, org_id, app_id, key_hash, key_prefix, description, created_at, last_used, expires_at
+			SELECT id, org_id, app_id, key_type, key_hash, key_prefix, description, created_at, last_used, expires_at
 			FROM api_keys 
 			WHERE (app_id = ? OR (app_id IS NULL AND org_id = ?))
 			AND (expires_at IS NULL OR expires_at > ?)
@@ -218,7 +273,7 @@ func (db *DB) ListAPIKeysForAuth(orgID, appID *string) ([]*APIKey, error) {
 		`, *appID, orgID, time.Now())
 	} else if orgID != nil {
 		rows, err = db.conn.Query(`
-			SELECT id, org_id, app_id, key_hash, key_prefix, description, created_at, last_used, expires_at
+			SELECT id, org_id, app_id, key_type, key_hash, key_prefix, description, created_at, last_used, expires_at
 			FROM api_keys 
 			WHERE org_id = ? AND app_id IS NULL
 			AND (expires_at IS NULL OR expires_at > ?)
@@ -240,11 +295,11 @@ func scanAPIKeys(rows *sql.Rows) ([]*APIKey, error) {
 	var keys []*APIKey
 	for rows.Next() {
 		key := &APIKey{}
-		var orgID, appID, description sql.NullString
+		var orgID, appID, description, keyType sql.NullString
 		var lastUsed, expiresAt sql.NullTime
 
 		err := rows.Scan(
-			&key.ID, &orgID, &appID, &key.KeyHash, &key.KeyPrefix, &description,
+			&key.ID, &orgID, &appID, &keyType, &key.KeyHash, &key.KeyPrefix, &description,
 			&key.CreatedAt, &lastUsed, &expiresAt,
 		)
 		if err != nil {
@@ -256,6 +311,11 @@ func scanAPIKeys(rows *sql.Rows) ([]*APIKey, error) {
 		}
 		if appID.Valid {
 			key.AppID = &appID.String
+		}
+		if keyType.Valid {
+			key.KeyType = KeyType(keyType.String)
+		} else {
+			key.KeyType = KeyTypeAccount
 		}
 		if description.Valid {
 			key.Description = description.String
