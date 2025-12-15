@@ -59,8 +59,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Setup endpoints (always available for status check)
-	if strings.HasPrefix(r.URL.Path, "/setup") {
+	// Setup API endpoints (only /setup/status and /setup/init)
+	if r.URL.Path == "/setup/status" || r.URL.Path == "/setup/init" {
 		s.handleSetup(w, r)
 		return
 	}
@@ -125,40 +125,45 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-// serveDashboard serves the static dashboard files or the default page
+// serveDashboard serves the Vue SPA - all routes return index.html except static assets
 func (s *Server) serveDashboard(w http.ResponseWriter, r *http.Request) {
-	// Check if initial setup is needed
+	path := r.URL.Path
+
+	// Check if initial setup is needed - redirect to /setup route
 	if s.NeedsSetup() {
-		path := r.URL.Path
-		// If requesting root or index, redirect to setup
-		if path == "/" || path == "/index.html" {
-			content, contentType, found := getStaticFile("/setup.html")
-			if found {
-				w.Header().Set("Content-Type", contentType)
-				w.Write(content)
-				return
-			}
-			// Fallback redirect
-			http.Redirect(w, r, "/setup.html", http.StatusTemporaryRedirect)
+		if path == "/" {
+			http.Redirect(w, r, "/setup", http.StatusTemporaryRedirect)
 			return
 		}
 	}
 
-	// Try to serve static files from embedded public directory
-	path := r.URL.Path
-	if path == "/" {
-		path = "/index.html"
+	// Try to serve static assets (JS, CSS, images, etc.)
+	if strings.HasPrefix(path, "/assets/") ||
+		strings.HasSuffix(path, ".js") ||
+		strings.HasSuffix(path, ".css") ||
+		strings.HasSuffix(path, ".svg") ||
+		strings.HasSuffix(path, ".png") ||
+		strings.HasSuffix(path, ".ico") ||
+		strings.HasSuffix(path, ".woff") ||
+		strings.HasSuffix(path, ".woff2") {
+		content, contentType, found := getStaticFile(path)
+		if found {
+			w.Header().Set("Content-Type", contentType)
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			w.Write(content)
+			return
+		}
 	}
 
-	// Check if file exists in public directory
-	content, contentType, found := getStaticFile(path)
+	// For all other routes, serve index.html (Vue Router will handle routing)
+	content, contentType, found := getStaticFile("/index.html")
 	if found {
 		w.Header().Set("Content-Type", contentType)
 		w.Write(content)
 		return
 	}
 
-	// Fallback to basic status page
+	// Fallback to basic status page if index.html not found
 	s.mu.RLock()
 	tunnelCount := len(s.tunnels)
 	s.mu.RUnlock()
