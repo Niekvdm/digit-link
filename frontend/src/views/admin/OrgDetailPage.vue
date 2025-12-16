@@ -22,22 +22,26 @@ import {
   Package,
   BarChart3,
   Settings,
-  Calendar
+  Calendar,
+  RotateCcw
 } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
 const { fetchOne, loading: orgLoading, error: orgError } = useOrganizations()
 const { plans, fetchAll: fetchPlans, setOrganizationPlan } = usePlans()
-const { getOrgUsage, loading: usageLoading } = useUsage()
+const { getOrgUsage, resetOrgUsage, loading: usageLoading } = useUsage()
 const { formatDate } = useFormatters()
 
 const org = ref<Organization | null>(null)
 const usage = ref<OrgUsageResponse | null>(null)
 const showPlanModal = ref(false)
+const showResetModal = ref(false)
 const formPlanId = ref<string | null>(null)
 const formLoading = ref(false)
 const formError = ref('')
+const resetLoading = ref(false)
+const resetError = ref('')
 
 const orgId = computed(() => route.params.orgId as string)
 
@@ -82,6 +86,32 @@ async function handleSetPlan() {
     formError.value = e instanceof Error ? e.message : 'Failed to update plan'
   } finally {
     formLoading.value = false
+  }
+}
+
+function openResetModal() {
+  resetError.value = ''
+  showResetModal.value = true
+}
+
+async function handleResetUsage() {
+  if (!org.value) return
+  
+  resetLoading.value = true
+  resetError.value = ''
+  
+  try {
+    const success = await resetOrgUsage(org.value.id)
+    if (success) {
+      await loadUsage()
+      showResetModal.value = false
+    } else {
+      resetError.value = 'Failed to reset usage'
+    }
+  } catch (e) {
+    resetError.value = e instanceof Error ? e.message : 'Failed to reset usage'
+  } finally {
+    resetLoading.value = false
   }
 }
 
@@ -211,9 +241,19 @@ function navigateToSettings() {
               <BarChart3 class="w-5 h-5 text-accent-secondary" />
               Usage This Period
             </h2>
-            <span v-if="usage" class="text-xs text-text-muted">
-              {{ formatDate(usage.periodStart) }} - {{ formatDate(usage.periodEnd) }}
-            </span>
+            <div class="flex items-center gap-3">
+              <button 
+                class="text-sm text-accent-red hover:underline flex items-center gap-1"
+                @click="openResetModal"
+                :disabled="!usage"
+              >
+                <RotateCcw class="w-3.5 h-3.5" />
+                Reset
+              </button>
+              <span v-if="usage" class="text-xs text-text-muted">
+                {{ formatDate(usage.periodStart) }} - {{ formatDate(usage.periodEnd) }}
+              </span>
+            </div>
           </div>
           <div class="p-5 space-y-5">
             <template v-if="usageLoading">
@@ -349,6 +389,49 @@ function navigateToSettings() {
         </button>
         <button class="btn btn-primary" @click="handleSetPlan" :disabled="formLoading">
           {{ formLoading ? 'Updating...' : 'Update Plan' }}
+        </button>
+      </template>
+    </Modal>
+
+    <!-- Reset Usage Confirmation Modal -->
+    <Modal v-model="showResetModal" title="Reset Usage">
+      <div class="flex flex-col gap-4">
+        <div v-if="resetError" class="error-message">{{ resetError }}</div>
+        
+        <div class="p-4 bg-[rgba(var(--accent-red-rgb),0.1)] border border-accent-red/30 rounded-xs">
+          <p class="text-sm text-text-primary">
+            Are you sure you want to reset all usage counters for <strong>{{ org?.name }}</strong>?
+          </p>
+          <p class="text-sm text-text-secondary mt-2">
+            This will clear bandwidth, requests, and tunnel hours for the current billing period. This action cannot be undone.
+          </p>
+        </div>
+
+        <div v-if="usage" class="p-4 bg-bg-elevated rounded-xs border border-border-subtle">
+          <h4 class="text-sm font-semibold text-text-primary mb-2">Current Usage</h4>
+          <div class="space-y-1.5 text-sm">
+            <div class="flex justify-between">
+              <span class="text-text-secondary">Bandwidth</span>
+              <span class="text-text-primary font-mono">{{ (usage.usage.bandwidthBytes / 1048576).toFixed(2) }} MB</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-text-secondary">Tunnel Hours</span>
+              <span class="text-text-primary font-mono">{{ (usage.usage.tunnelSeconds / 3600).toFixed(2) }} hrs</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-text-secondary">Requests</span>
+              <span class="text-text-primary font-mono">{{ usage.usage.requestCount.toLocaleString() }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <template #footer>
+        <button class="btn btn-secondary" @click="showResetModal = false" :disabled="resetLoading">
+          Cancel
+        </button>
+        <button class="btn btn-danger" @click="handleResetUsage" :disabled="resetLoading">
+          {{ resetLoading ? 'Resetting...' : 'Reset Usage' }}
         </button>
       </template>
     </Modal>

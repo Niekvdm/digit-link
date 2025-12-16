@@ -269,6 +269,22 @@ func (db *DB) CleanupOldDailySnapshots(olderThan time.Duration) (int64, error) {
 	return result.RowsAffected()
 }
 
+// ResetOrgUsageForPeriod deletes all usage snapshots for an org in the current month
+func (db *DB) ResetOrgUsageForPeriod(orgID string) error {
+	now := time.Now()
+	periodStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	periodEnd := periodStart.AddDate(0, 1, 0)
+
+	_, err := db.conn.Exec(`
+		DELETE FROM usage_snapshots
+		WHERE org_id = ? AND period_start >= ? AND period_start < ?
+	`, orgID, periodStart, periodEnd)
+	if err != nil {
+		return fmt.Errorf("failed to reset org usage: %w", err)
+	}
+	return nil
+}
+
 // GetUsageSummaryForAllOrgs returns usage summary for all organizations
 func (db *DB) GetUsageSummaryForAllOrgs() ([]map[string]interface{}, error) {
 	now := time.Now()

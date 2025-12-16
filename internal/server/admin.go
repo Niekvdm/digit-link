@@ -224,6 +224,9 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(path, "/organizations/") && strings.HasSuffix(path, "/usage") && r.Method == http.MethodGet:
 		orgID := strings.TrimSuffix(strings.TrimPrefix(path, "/organizations/"), "/usage")
 		s.handleGetOrganizationUsage(w, r, orgID)
+	case strings.HasPrefix(path, "/organizations/") && strings.HasSuffix(path, "/usage/reset") && r.Method == http.MethodPost:
+		orgID := strings.TrimSuffix(strings.TrimPrefix(path, "/organizations/"), "/usage/reset")
+		s.handleResetOrganizationUsage(w, r, orgID)
 
 	default:
 		http.Error(w, "Not found", http.StatusNotFound)
@@ -2519,6 +2522,35 @@ func (s *Server) handleGetOrganizationUsage(w http.ResponseWriter, r *http.Reque
 	}
 
 	jsonResponse(w, response)
+}
+
+// handleResetOrganizationUsage resets usage counters for an organization
+func (s *Server) handleResetOrganizationUsage(w http.ResponseWriter, r *http.Request, orgID string) {
+	org, err := s.db.GetOrganizationByID(orgID)
+	if err != nil {
+		log.Printf("Failed to get organization: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if org == nil {
+		jsonError(w, "Organization not found", http.StatusNotFound)
+		return
+	}
+
+	// Reset usage in database
+	if err := s.db.ResetOrgUsageForPeriod(orgID); err != nil {
+		log.Printf("Failed to reset usage in database for org %s: %v", orgID, err)
+		jsonError(w, "Failed to reset usage", http.StatusInternalServerError)
+		return
+	}
+
+	// Reset usage in cache
+	if s.usageCache != nil {
+		s.usageCache.ResetOrgUsage(orgID)
+	}
+
+	log.Printf("Usage reset for organization %s (%s) by admin", org.Name, orgID)
+	jsonResponse(w, map[string]bool{"success": true})
 }
 
 // handleSetOrganizationPlan sets the plan for an organization

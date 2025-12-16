@@ -326,6 +326,20 @@ func (uc *UsageCache) ClearLimitHit(orgID string) {
 	usage.mu.Unlock()
 }
 
+// ResetOrgUsage resets usage counters for an organization (admin action)
+func (uc *UsageCache) ResetOrgUsage(orgID string) {
+	usage := uc.getOrCreateOrgUsage(orgID)
+	usage.mu.Lock()
+	usage.dbBandwidthBytes = 0
+	usage.dbTunnelSeconds = 0
+	usage.dbRequestCount = 0
+	usage.deltaBandwidthBytes = 0
+	usage.deltaTunnelSeconds = 0
+	usage.deltaRequestCount = 0
+	usage.LimitHitAt = nil
+	usage.mu.Unlock()
+}
+
 // Retention periods
 const (
 	HourlyRetention = 7 * 24 * time.Hour  // 7 days

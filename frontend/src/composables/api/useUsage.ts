@@ -63,11 +63,27 @@ export function useUsage() {
     }
   }
 
+  async function resetOrgUsage(orgId: string): Promise<boolean> {
+    loading.value = true
+    error.value = null
+    
+    try {
+      await api.post(`/admin/organizations/${orgId}/usage/reset`)
+      return true
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Failed to reset usage'
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+
   return {
     loading: readonly(loading),
     error: readonly(error),
     getOrgUsage,
     getUsageHistory,
-    getUsageSummary
+    getUsageSummary,
+    resetOrgUsage
   }
 }
