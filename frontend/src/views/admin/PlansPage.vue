@@ -196,7 +196,7 @@ const bandwidthMb = computed({
       
       <template #cell-bandwidthBytesMonthly="{ value }">
         <span :class="value === undefined ? 'text-text-muted' : ''">
-          {{ formatBytes(value) }}
+          {{ formatBytes(value as number | undefined) }}
         </span>
       </template>
       
@@ -214,7 +214,7 @@ const bandwidthMb = computed({
       
       <template #cell-requestsMonthly="{ value }">
         <span :class="value === undefined ? 'text-text-muted' : ''">
-          {{ formatNumber(value) }}
+          {{ formatNumber(value as number | undefined) }}
         </span>
       </template>
       

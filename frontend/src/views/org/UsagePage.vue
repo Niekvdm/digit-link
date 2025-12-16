@@ -236,9 +236,9 @@ function getQuotaTextColor(percent: number): string {
 
         <!-- Warning for high usage -->
         <div 
-          v-if="usage.quotas.bandwidth?.percent >= 80 || 
-                usage.quotas.tunnelHours?.percent >= 80 || 
-                usage.quotas.requests?.percent >= 80"
+          v-if="(usage.quotas.bandwidth?.percent ?? 0) >= 80 || 
+                (usage.quotas.tunnelHours?.percent ?? 0) >= 80 || 
+                (usage.quotas.requests?.percent ?? 0) >= 80"
           class="mt-6 p-4 bg-[rgba(var(--accent-amber-rgb),0.1)] border border-accent-amber/30 rounded-xs flex items-start gap-3"
         >
           <AlertTriangle class="w-5 h-5 text-accent-amber shrink-0 mt-0.5" />
