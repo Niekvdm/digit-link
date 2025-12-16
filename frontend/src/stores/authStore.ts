@@ -6,6 +6,7 @@ const USER_TYPE_KEY = 'digit-link-user-type'
 const ORG_ID_KEY = 'digit-link-org-id'
 const ORG_NAME_KEY = 'digit-link-org-name'
 const USERNAME_KEY = 'digit-link-username'
+const IS_ORG_ADMIN_KEY = 'digit-link-is-org-admin'
 
 export type UserType = 'admin' | 'org'
 
@@ -16,11 +17,13 @@ export const useAuthStore = defineStore('auth', () => {
   const orgId = ref<string | null>(localStorage.getItem(ORG_ID_KEY))
   const orgName = ref<string | null>(localStorage.getItem(ORG_NAME_KEY))
   const username = ref<string | null>(localStorage.getItem(USERNAME_KEY))
+  const isOrgAdminState = ref<boolean>(localStorage.getItem(IS_ORG_ADMIN_KEY) === 'true')
 
   // Getters
   const isAuthenticated = computed(() => !!token.value)
   const isAdmin = computed(() => userType.value === 'admin')
   const isOrgUser = computed(() => userType.value === 'org')
+  const isOrgAdmin = computed(() => userType.value === 'org' && isOrgAdminState.value)
 
   // Actions
   function setToken(
@@ -28,7 +31,8 @@ export const useAuthStore = defineStore('auth', () => {
     type: UserType = 'admin',
     organizationId?: string,
     organizationName?: string,
-    user?: string
+    user?: string,
+    orgAdmin?: boolean
   ) {
     token.value = newToken
     userType.value = type
@@ -55,6 +59,13 @@ export const useAuthStore = defineStore('auth', () => {
       username.value = null
       localStorage.removeItem(USERNAME_KEY)
     }
+    if (orgAdmin !== undefined) {
+      isOrgAdminState.value = orgAdmin
+      localStorage.setItem(IS_ORG_ADMIN_KEY, String(orgAdmin))
+    } else {
+      isOrgAdminState.value = false
+      localStorage.removeItem(IS_ORG_ADMIN_KEY)
+    }
   }
 
   function clearToken() {
@@ -63,11 +74,13 @@ export const useAuthStore = defineStore('auth', () => {
     orgId.value = null
     orgName.value = null
     username.value = null
+    isOrgAdminState.value = false
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(USER_TYPE_KEY)
     localStorage.removeItem(ORG_ID_KEY)
     localStorage.removeItem(ORG_NAME_KEY)
     localStorage.removeItem(USERNAME_KEY)
+    localStorage.removeItem(IS_ORG_ADMIN_KEY)
   }
 
   async function validateToken(): Promise<boolean> {
@@ -99,9 +112,11 @@ export const useAuthStore = defineStore('auth', () => {
     orgId,
     orgName,
     username,
+    isOrgAdminState,
     isAuthenticated,
     isAdmin,
     isOrgUser,
+    isOrgAdmin,
     setToken,
     clearToken,
     validateToken

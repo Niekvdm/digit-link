@@ -37,9 +37,9 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		s.handleListAccounts(w, r)
 	case path == "/accounts" && r.Method == http.MethodPost:
 		s.handleCreateAccount(w, r)
-	case strings.HasPrefix(path, "/accounts/") && r.Method == http.MethodDelete:
-		accountID := strings.TrimPrefix(path, "/accounts/")
-		s.handleDeleteAccount(w, r, accountID)
+	case strings.HasPrefix(path, "/accounts/") && strings.HasSuffix(path, "/hard") && r.Method == http.MethodDelete:
+		accountID := strings.TrimSuffix(strings.TrimPrefix(path, "/accounts/"), "/hard")
+		s.handleHardDeleteAccount(w, r, accountID)
 	case strings.HasPrefix(path, "/accounts/") && strings.HasSuffix(path, "/activate") && r.Method == http.MethodPost:
 		accountID := strings.TrimSuffix(strings.TrimPrefix(path, "/accounts/"), "/activate")
 		s.handleActivateAccount(w, r, accountID)
@@ -52,6 +52,18 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(path, "/accounts/") && strings.HasSuffix(path, "/password") && r.Method == http.MethodPut:
 		accountID := strings.TrimSuffix(strings.TrimPrefix(path, "/accounts/"), "/password")
 		s.handleSetAccountPassword(w, r, accountID)
+	case strings.HasPrefix(path, "/accounts/") && strings.HasSuffix(path, "/username") && r.Method == http.MethodPut:
+		accountID := strings.TrimSuffix(strings.TrimPrefix(path, "/accounts/"), "/username")
+		s.handleSetAccountUsername(w, r, accountID)
+	case strings.HasPrefix(path, "/accounts/") && strings.HasSuffix(path, "/org-admin") && r.Method == http.MethodPut:
+		accountID := strings.TrimSuffix(strings.TrimPrefix(path, "/accounts/"), "/org-admin")
+		s.handleSetAccountOrgAdmin(w, r, accountID)
+	case strings.HasPrefix(path, "/accounts/") && r.Method == http.MethodGet:
+		accountID := strings.TrimPrefix(path, "/accounts/")
+		s.handleGetAccount(w, r, accountID)
+	case strings.HasPrefix(path, "/accounts/") && r.Method == http.MethodDelete:
+		accountID := strings.TrimPrefix(path, "/accounts/")
+		s.handleDeleteAccount(w, r, accountID)
 
 	// Whitelist management (global - legacy, kept for backward compatibility)
 	case path == "/whitelist" && r.Method == http.MethodGet:
@@ -229,6 +241,7 @@ func (s *Server) handleListAccounts(w http.ResponseWriter, r *http.Request) {
 			"id":          acc.ID,
 			"username":    acc.Username,
 			"isAdmin":     acc.IsAdmin,
+			"isOrgAdmin":  acc.IsOrgAdmin,
 			"totpEnabled": acc.TOTPEnabled,
 			"createdAt":   acc.CreatedAt,
 			"lastUsed":    acc.LastUsed,
@@ -525,6 +538,179 @@ func (s *Server) handleSetAccountPassword(w http.ResponseWriter, r *http.Request
 	}
 
 	log.Printf("Password set for account %s", accountID)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
+}
+
+// handleGetAccount returns a single account by ID
+func (s *Server) handleGetAccount(w http.ResponseWriter, r *http.Request, accountID string) {
+	account, err := s.db.GetAccountByID(accountID)
+	if err != nil {
+		log.Printf("Failed to get account: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if account == nil {
+		jsonError(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	// Get org name if account has an org
+	var orgName string
+	if account.OrgID != "" {
+		if org, _ := s.db.GetOrganizationByID(account.OrgID); org != nil {
+			orgName = org.Name
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"account": map[string]interface{}{
+			"id":          account.ID,
+			"username":    account.Username,
+			"isAdmin":     account.IsAdmin,
+			"isOrgAdmin":  account.IsOrgAdmin,
+			"totpEnabled": account.TOTPEnabled,
+			"createdAt":   account.CreatedAt,
+			"lastUsed":    account.LastUsed,
+			"active":      account.Active,
+			"orgId":       account.OrgID,
+			"orgName":     orgName,
+			"hasPassword": account.PasswordHash != "",
+		},
+	})
+}
+
+// handleSetAccountUsername updates the username for an account
+func (s *Server) handleSetAccountUsername(w http.ResponseWriter, r *http.Request, accountID string) {
+	var req struct {
+		Username string `json:"username"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Username == "" {
+		jsonError(w, "Username is required", http.StatusBadRequest)
+		return
+	}
+
+	// Check account exists
+	account, err := s.db.GetAccountByID(accountID)
+	if err != nil {
+		log.Printf("Failed to get account: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if account == nil {
+		jsonError(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	// Check if new username is already taken by another account
+	existing, err := s.db.GetAccountByUsername(req.Username)
+	if err != nil {
+		log.Printf("Failed to check username: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if existing != nil && existing.ID != accountID {
+		jsonError(w, "Username already exists", http.StatusConflict)
+		return
+	}
+
+	// Update username
+	if err := s.db.UpdateAccountUsername(accountID, req.Username); err != nil {
+		log.Printf("Failed to update username: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Username updated for account %s: %s", accountID, req.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":  true,
+		"username": req.Username,
+	})
+}
+
+// handleSetAccountOrgAdmin updates the org admin status for an account
+func (s *Server) handleSetAccountOrgAdmin(w http.ResponseWriter, r *http.Request, accountID string) {
+	var req struct {
+		IsOrgAdmin bool `json:"isOrgAdmin"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Check account exists
+	account, err := s.db.GetAccountByID(accountID)
+	if err != nil {
+		log.Printf("Failed to get account: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if account == nil {
+		jsonError(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	// Only org users can be org admins
+	if account.IsAdmin {
+		jsonError(w, "System admins cannot be org admins", http.StatusBadRequest)
+		return
+	}
+	if account.OrgID == "" {
+		jsonError(w, "Account must belong to an organization", http.StatusBadRequest)
+		return
+	}
+
+	// Update org admin status
+	if err := s.db.UpdateAccountOrgAdmin(accountID, req.IsOrgAdmin); err != nil {
+		log.Printf("Failed to update org admin status: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Org admin status updated for account %s: %v", accountID, req.IsOrgAdmin)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":    true,
+		"isOrgAdmin": req.IsOrgAdmin,
+	})
+}
+
+// handleHardDeleteAccount permanently deletes an account
+func (s *Server) handleHardDeleteAccount(w http.ResponseWriter, r *http.Request, accountID string) {
+	// Check account exists
+	account, err := s.db.GetAccountByID(accountID)
+	if err != nil {
+		log.Printf("Failed to get account: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if account == nil {
+		jsonError(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	// Permanently delete the account
+	if err := s.db.HardDeleteAccount(accountID); err != nil {
+		log.Printf("Failed to hard delete account: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Account permanently deleted: %s (%s)", accountID, account.Username)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

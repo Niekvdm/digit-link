@@ -24,6 +24,8 @@ type LoginResponse struct {
 	NeedsSetup   bool   `json:"needsSetup,omitempty"`
 	AccountType  string `json:"accountType,omitempty"` // "admin" or "org"
 	OrgID        string `json:"orgId,omitempty"`       // For org accounts
+	OrgName      string `json:"orgName,omitempty"`     // Organization name
+	IsOrgAdmin   bool   `json:"isOrgAdmin,omitempty"`  // Is org admin
 	Error        string `json:"error,omitempty"`
 }
 
@@ -41,6 +43,8 @@ type TOTPSetupResponse struct {
 	Token       string `json:"token,omitempty"`
 	AccountType string `json:"accountType,omitempty"`
 	OrgID       string `json:"orgId,omitempty"`
+	OrgName     string `json:"orgName,omitempty"`
+	IsOrgAdmin  bool   `json:"isOrgAdmin,omitempty"`
 	Error       string `json:"error,omitempty"`
 }
 
@@ -56,6 +60,8 @@ type TOTPVerifyResponse struct {
 	Token       string `json:"token,omitempty"`
 	AccountType string `json:"accountType,omitempty"`
 	OrgID       string `json:"orgId,omitempty"`
+	OrgName     string `json:"orgName,omitempty"`
+	IsOrgAdmin  bool   `json:"isOrgAdmin,omitempty"`
 	Error       string `json:"error,omitempty"`
 }
 
@@ -251,6 +257,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Get org name if org user
+		var orgName string
+		if account.OrgID != "" {
+			if org, _ := s.db.GetOrganizationByID(account.OrgID); org != nil {
+				orgName = org.Name
+			}
+		}
+
 		log.Printf("Successful login for user: %s (type: %s, no TOTP)", account.Username, accountType)
 		s.db.UpdateAccountLastUsed(account.ID)
 
@@ -259,6 +273,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			Token:       token,
 			AccountType: accountType,
 			OrgID:       account.OrgID,
+			OrgName:     orgName,
+			IsOrgAdmin:  account.IsOrgAdmin,
 		})
 		return
 	}
@@ -425,6 +441,14 @@ func (s *Server) handleTOTPSetupPost(w http.ResponseWriter, r *http.Request) {
 		accountType = "org"
 	}
 
+	// Get org name if org user
+	var orgName string
+	if account.OrgID != "" {
+		if org, _ := s.db.GetOrganizationByID(account.OrgID); org != nil {
+			orgName = org.Name
+		}
+	}
+
 	log.Printf("TOTP enabled for user: %s (type: %s)", account.Username, accountType)
 
 	// Update last used
@@ -435,6 +459,8 @@ func (s *Server) handleTOTPSetupPost(w http.ResponseWriter, r *http.Request) {
 		Token:       token,
 		AccountType: accountType,
 		OrgID:       account.OrgID,
+		OrgName:     orgName,
+		IsOrgAdmin:  account.IsOrgAdmin,
 	})
 }
 
@@ -509,6 +535,14 @@ func (s *Server) handleTOTPVerify(w http.ResponseWriter, r *http.Request) {
 		accountType = "org"
 	}
 
+	// Get org name if org user
+	var orgName string
+	if account.OrgID != "" {
+		if org, _ := s.db.GetOrganizationByID(account.OrgID); org != nil {
+			orgName = org.Name
+		}
+	}
+
 	log.Printf("Successful login for user: %s (type: %s)", account.Username, accountType)
 
 	// Update last used
@@ -519,6 +553,8 @@ func (s *Server) handleTOTPVerify(w http.ResponseWriter, r *http.Request) {
 		Token:       token,
 		AccountType: accountType,
 		OrgID:       account.OrgID,
+		OrgName:     orgName,
+		IsOrgAdmin:  account.IsOrgAdmin,
 	})
 }
 

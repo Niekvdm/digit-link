@@ -12,6 +12,7 @@ const AdminOrganizations = () => import('@/views/admin/OrganizationsPage.vue')
 const AdminApplications = () => import('@/views/admin/ApplicationsPage.vue')
 const AdminApplicationDetail = () => import('@/views/admin/ApplicationDetailPage.vue')
 const AdminAccounts = () => import('@/views/admin/AccountsPage.vue')
+const AdminAccountDetail = () => import('@/views/admin/AccountDetailPage.vue')
 const AdminAPIKeys = () => import('@/views/admin/APIKeysPage.vue')
 const AdminWhitelist = () => import('@/views/admin/WhitelistPage.vue')
 const AdminTunnels = () => import('@/views/admin/TunnelsPage.vue')
@@ -21,6 +22,9 @@ const AdminAudit = () => import('@/views/admin/AuditPage.vue')
 const OrgDashboard = () => import('@/views/org/DashboardPage.vue')
 const OrgApplications = () => import('@/views/org/ApplicationsPage.vue')
 const OrgApplicationDetail = () => import('@/views/org/ApplicationDetailPage.vue')
+const OrgAccounts = () => import('@/views/org/AccountsPage.vue')
+const OrgAccountDetail = () => import('@/views/org/AccountDetailPage.vue')
+const OrgMyAccount = () => import('@/views/org/MyAccountPage.vue')
 const OrgAPIKeys = () => import('@/views/org/APIKeysPage.vue')
 const OrgWhitelist = () => import('@/views/org/WhitelistPage.vue')
 const OrgSettings = () => import('@/views/org/SettingsPage.vue')
@@ -71,6 +75,12 @@ const routes: RouteRecordRaw[] = [
         path: 'accounts',
         name: 'admin-accounts',
         component: AdminAccounts
+      },
+      {
+        path: 'accounts/:accountId',
+        name: 'admin-account-detail',
+        component: AdminAccountDetail,
+        props: true
       },
       {
         path: 'api-keys',
@@ -126,6 +136,22 @@ const routes: RouteRecordRaw[] = [
         path: 'whitelist',
         name: 'org-whitelist',
         component: OrgWhitelist
+      },
+      {
+        path: 'accounts',
+        name: 'org-accounts',
+        component: OrgAccounts
+      },
+      {
+        path: 'accounts/:accountId',
+        name: 'org-account-detail',
+        component: OrgAccountDetail,
+        props: true
+      },
+      {
+        path: 'my-account',
+        name: 'org-my-account',
+        component: OrgMyAccount
       },
       {
         path: 'settings',

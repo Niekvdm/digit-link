@@ -73,7 +73,7 @@ function handleCancel() {
       <!-- Success message -->
       <div 
         v-if="success" 
-        class="flex items-center gap-3 py-4 px-5 bg-[rgba(var(--accent-secondary-rgb),0.1)] border border-[rgba(var(--accent-secondary-rgb),0.3)] rounded-[10px] text-[0.9375rem] text-accent-secondary mb-6"
+        class="flex items-center gap-3 py-4 px-5 bg-[rgba(var(--accent-secondary-rgb),0.1)] border border-[rgba(var(--accent-secondary-rgb),0.3)] rounded-xs text-[0.9375rem] text-accent-secondary mb-6"
       >
         <CheckCircle class="w-5 h-5" />
         {{ success }}
@@ -87,7 +87,7 @@ function handleCancel() {
       <!-- Policy Section -->
       <div class="bg-bg-surface border border-border-subtle rounded-xs overflow-hidden">
         <div class="flex gap-4 p-6 border-b border-border-subtle bg-bg-elevated">
-          <div class="w-10 h-10 rounded-[10px] bg-[rgba(var(--accent-secondary-rgb),0.15)] text-accent-secondary flex items-center justify-center shrink-0">
+          <div class="w-10 h-10 rounded-xs bg-[rgba(var(--accent-secondary-rgb),0.15)] text-accent-secondary flex items-center justify-center shrink-0">
             <Settings class="w-5 h-5" />
           </div>
           <div>

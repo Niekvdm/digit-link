@@ -35,7 +35,7 @@ function handleRefresh() {
 </script>
 
 <template>
-  <div class="max-w-[1000px]">
+  <div class="max-w-[1200px]">
     <PageHeader 
       title="Active Tunnels" 
       description="Monitor currently active tunnel connections"

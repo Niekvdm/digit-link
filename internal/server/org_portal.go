@@ -85,6 +85,42 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 	case path == "/tunnels" && r.Method == http.MethodGet:
 		s.handleOrgListTunnels(w, r, orgCtx)
 
+	// Account management (org admin only, except /accounts/me)
+	case path == "/accounts/me" && r.Method == http.MethodGet:
+		s.handleOrgGetMyAccount(w, r, orgCtx)
+	case path == "/accounts/me" && r.Method == http.MethodPut:
+		s.handleOrgUpdateMyAccount(w, r, orgCtx)
+	case path == "/accounts/me/password" && r.Method == http.MethodPut:
+		s.handleOrgSetMyPassword(w, r, orgCtx)
+	case path == "/accounts" && r.Method == http.MethodGet:
+		s.handleOrgListAccounts(w, r, orgCtx)
+	case path == "/accounts" && r.Method == http.MethodPost:
+		s.handleOrgCreateAccount(w, r, orgCtx)
+	case strings.HasPrefix(path, "/accounts/") && strings.HasSuffix(path, "/hard") && r.Method == http.MethodDelete:
+		accountID := strings.TrimSuffix(strings.TrimPrefix(path, "/accounts/"), "/hard")
+		s.handleOrgHardDeleteAccount(w, r, orgCtx, accountID)
+	case strings.HasPrefix(path, "/accounts/") && strings.HasSuffix(path, "/activate") && r.Method == http.MethodPost:
+		accountID := strings.TrimSuffix(strings.TrimPrefix(path, "/accounts/"), "/activate")
+		s.handleOrgActivateAccount(w, r, orgCtx, accountID)
+	case strings.HasPrefix(path, "/accounts/") && strings.HasSuffix(path, "/password") && r.Method == http.MethodPut:
+		accountID := strings.TrimSuffix(strings.TrimPrefix(path, "/accounts/"), "/password")
+		s.handleOrgSetAccountPassword(w, r, orgCtx, accountID)
+	case strings.HasPrefix(path, "/accounts/") && strings.HasSuffix(path, "/regenerate") && r.Method == http.MethodPost:
+		accountID := strings.TrimSuffix(strings.TrimPrefix(path, "/accounts/"), "/regenerate")
+		s.handleOrgRegenerateToken(w, r, orgCtx, accountID)
+	case strings.HasPrefix(path, "/accounts/") && strings.HasSuffix(path, "/org-admin") && r.Method == http.MethodPut:
+		accountID := strings.TrimSuffix(strings.TrimPrefix(path, "/accounts/"), "/org-admin")
+		s.handleOrgSetAccountOrgAdmin(w, r, orgCtx, accountID)
+	case strings.HasPrefix(path, "/accounts/") && r.Method == http.MethodGet:
+		accountID := strings.TrimPrefix(path, "/accounts/")
+		s.handleOrgGetAccount(w, r, orgCtx, accountID)
+	case strings.HasPrefix(path, "/accounts/") && r.Method == http.MethodPut:
+		accountID := strings.TrimPrefix(path, "/accounts/")
+		s.handleOrgUpdateAccount(w, r, orgCtx, accountID)
+	case strings.HasPrefix(path, "/accounts/") && r.Method == http.MethodDelete:
+		accountID := strings.TrimPrefix(path, "/accounts/")
+		s.handleOrgDeactivateAccount(w, r, orgCtx, accountID)
+
 	default:
 		http.Error(w, "Not found", http.StatusNotFound)
 	}
@@ -92,9 +128,10 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 
 // OrgContext holds authenticated org user context
 type OrgContext struct {
-	AccountID string
-	Username  string
-	OrgID     string
+	AccountID  string
+	Username   string
+	OrgID      string
+	IsOrgAdmin bool
 }
 
 // authenticateOrgAccount verifies org account authentication from the request
@@ -127,10 +164,17 @@ func (s *Server) authenticateOrgAccount(r *http.Request) (*OrgContext, error) {
 		return nil, nil
 	}
 
+	// Get account to check org admin status
+	account, err := s.db.GetAccountByID(claims.AccountID)
+	if err != nil || account == nil {
+		return nil, err
+	}
+
 	return &OrgContext{
-		AccountID: claims.AccountID,
-		Username:  claims.Username,
-		OrgID:     claims.OrgID,
+		AccountID:  claims.AccountID,
+		Username:   claims.Username,
+		OrgID:      claims.OrgID,
+		IsOrgAdmin: account.IsOrgAdmin,
 	}, nil
 }
 
@@ -1049,4 +1093,578 @@ func (s *Server) GetActiveTunnelCountByOrg(orgID string) int {
 		}
 	}
 	return count
+}
+
+// ============================================
+// Account Management (Org Portal)
+// ============================================
+
+// requireOrgAdmin checks if the user is an org admin
+func (s *Server) requireOrgAdmin(w http.ResponseWriter, orgCtx *OrgContext) bool {
+	if !orgCtx.IsOrgAdmin {
+		jsonError(w, "Org admin access required", http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
+// verifyOrgAccountOwnership checks if an account belongs to the authenticated org
+func (s *Server) verifyOrgAccountOwnership(orgCtx *OrgContext, accountID string) (*db.Account, error) {
+	account, err := s.db.GetAccountByID(accountID)
+	if err != nil {
+		return nil, err
+	}
+	if account == nil || account.OrgID != orgCtx.OrgID {
+		return nil, nil
+	}
+	return account, nil
+}
+
+// handleOrgGetMyAccount returns the current user's account
+func (s *Server) handleOrgGetMyAccount(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	account, err := s.db.GetAccountByID(orgCtx.AccountID)
+	if err != nil {
+		log.Printf("Failed to get account: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if account == nil {
+		jsonError(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"account": map[string]interface{}{
+			"id":          account.ID,
+			"username":    account.Username,
+			"isOrgAdmin":  account.IsOrgAdmin,
+			"totpEnabled": account.TOTPEnabled,
+			"createdAt":   account.CreatedAt,
+			"lastUsed":    account.LastUsed,
+			"active":      account.Active,
+			"hasPassword": account.PasswordHash != "",
+		},
+	})
+}
+
+// handleOrgUpdateMyAccount updates the current user's account
+func (s *Server) handleOrgUpdateMyAccount(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	var req struct {
+		Username string `json:"username"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Username != "" {
+		// Check if username is taken by another account
+		existing, err := s.db.GetAccountByUsername(req.Username)
+		if err != nil {
+			log.Printf("Failed to check username: %v", err)
+			jsonError(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		if existing != nil && existing.ID != orgCtx.AccountID {
+			jsonError(w, "Username already exists", http.StatusConflict)
+			return
+		}
+
+		if err := s.db.UpdateAccountUsername(orgCtx.AccountID, req.Username); err != nil {
+			log.Printf("Failed to update username: %v", err)
+			jsonError(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	log.Printf("Org user %s updated their account", orgCtx.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
+}
+
+// handleOrgSetMyPassword sets the current user's password
+func (s *Server) handleOrgSetMyPassword(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	var req struct {
+		Password string `json:"password"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Password == "" || len(req.Password) < 8 {
+		jsonError(w, "Password must be at least 8 characters", http.StatusBadRequest)
+		return
+	}
+
+	passwordHash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		log.Printf("Failed to hash password: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := s.db.UpdateAccountPassword(orgCtx.AccountID, passwordHash); err != nil {
+		log.Printf("Failed to set password: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Org user %s changed their password", orgCtx.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
+}
+
+// handleOrgListAccounts returns all accounts for the organization (org admin only)
+func (s *Server) handleOrgListAccounts(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	if !s.requireOrgAdmin(w, orgCtx) {
+		return
+	}
+
+	accounts, err := s.db.ListAccountsByOrg(orgCtx.OrgID)
+	if err != nil {
+		log.Printf("Failed to list accounts: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	result := make([]map[string]interface{}, len(accounts))
+	for i, acc := range accounts {
+		result[i] = map[string]interface{}{
+			"id":          acc.ID,
+			"username":    acc.Username,
+			"isOrgAdmin":  acc.IsOrgAdmin,
+			"totpEnabled": acc.TOTPEnabled,
+			"createdAt":   acc.CreatedAt,
+			"lastUsed":    acc.LastUsed,
+			"active":      acc.Active,
+			"hasPassword": acc.PasswordHash != "",
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"accounts": result,
+	})
+}
+
+// handleOrgGetAccount returns a single account (org admin only)
+func (s *Server) handleOrgGetAccount(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext, accountID string) {
+	if !s.requireOrgAdmin(w, orgCtx) {
+		return
+	}
+
+	account, err := s.verifyOrgAccountOwnership(orgCtx, accountID)
+	if err != nil {
+		log.Printf("Failed to get account: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if account == nil {
+		jsonError(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"account": map[string]interface{}{
+			"id":          account.ID,
+			"username":    account.Username,
+			"isOrgAdmin":  account.IsOrgAdmin,
+			"totpEnabled": account.TOTPEnabled,
+			"createdAt":   account.CreatedAt,
+			"lastUsed":    account.LastUsed,
+			"active":      account.Active,
+			"hasPassword": account.PasswordHash != "",
+		},
+	})
+}
+
+// handleOrgCreateAccount creates a new account in the organization (org admin only)
+func (s *Server) handleOrgCreateAccount(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	if !s.requireOrgAdmin(w, orgCtx) {
+		return
+	}
+
+	var req struct {
+		Username   string `json:"username"`
+		Password   string `json:"password,omitempty"`
+		IsOrgAdmin bool   `json:"isOrgAdmin"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Username == "" {
+		jsonError(w, "Username is required", http.StatusBadRequest)
+		return
+	}
+
+	if req.Password != "" && len(req.Password) < 8 {
+		jsonError(w, "Password must be at least 8 characters", http.StatusBadRequest)
+		return
+	}
+
+	// Check if username exists
+	existing, err := s.db.GetAccountByUsername(req.Username)
+	if err != nil {
+		log.Printf("Failed to check username: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if existing != nil {
+		jsonError(w, "Username already exists", http.StatusConflict)
+		return
+	}
+
+	// Generate token
+	token, tokenHash, err := auth.GenerateToken()
+	if err != nil {
+		log.Printf("Failed to generate token: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Hash password if provided
+	var passwordHash string
+	if req.Password != "" {
+		passwordHash, err = auth.HashPassword(req.Password)
+		if err != nil {
+			log.Printf("Failed to hash password: %v", err)
+			jsonError(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	// Create account
+	account, err := s.db.CreateOrgAccountWithOrgAdmin(req.Username, tokenHash, passwordHash, orgCtx.OrgID, req.IsOrgAdmin)
+	if err != nil {
+		log.Printf("Failed to create account: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Org account created: %s by %s (isOrgAdmin: %v)", req.Username, orgCtx.Username, req.IsOrgAdmin)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"account": map[string]interface{}{
+			"id":          account.ID,
+			"username":    account.Username,
+			"isOrgAdmin":  account.IsOrgAdmin,
+			"createdAt":   account.CreatedAt,
+			"hasPassword": passwordHash != "",
+		},
+		"token": token,
+	})
+}
+
+// handleOrgUpdateAccount updates an account (org admin only)
+func (s *Server) handleOrgUpdateAccount(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext, accountID string) {
+	if !s.requireOrgAdmin(w, orgCtx) {
+		return
+	}
+
+	account, err := s.verifyOrgAccountOwnership(orgCtx, accountID)
+	if err != nil {
+		log.Printf("Failed to get account: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if account == nil {
+		jsonError(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		Username string `json:"username"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Username != "" {
+		// Check if username is taken by another account
+		existing, err := s.db.GetAccountByUsername(req.Username)
+		if err != nil {
+			log.Printf("Failed to check username: %v", err)
+			jsonError(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		if existing != nil && existing.ID != accountID {
+			jsonError(w, "Username already exists", http.StatusConflict)
+			return
+		}
+
+		if err := s.db.UpdateAccountUsername(accountID, req.Username); err != nil {
+			log.Printf("Failed to update username: %v", err)
+			jsonError(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	log.Printf("Org account %s updated by %s", accountID, orgCtx.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
+}
+
+// handleOrgSetAccountPassword sets password for an account (org admin only)
+func (s *Server) handleOrgSetAccountPassword(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext, accountID string) {
+	if !s.requireOrgAdmin(w, orgCtx) {
+		return
+	}
+
+	account, err := s.verifyOrgAccountOwnership(orgCtx, accountID)
+	if err != nil {
+		log.Printf("Failed to get account: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if account == nil {
+		jsonError(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		Password string `json:"password"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Password == "" || len(req.Password) < 8 {
+		jsonError(w, "Password must be at least 8 characters", http.StatusBadRequest)
+		return
+	}
+
+	passwordHash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		log.Printf("Failed to hash password: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := s.db.UpdateAccountPassword(accountID, passwordHash); err != nil {
+		log.Printf("Failed to set password: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Password set for org account %s by %s", accountID, orgCtx.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
+}
+
+// handleOrgRegenerateToken regenerates token for an account (org admin only)
+func (s *Server) handleOrgRegenerateToken(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext, accountID string) {
+	if !s.requireOrgAdmin(w, orgCtx) {
+		return
+	}
+
+	account, err := s.verifyOrgAccountOwnership(orgCtx, accountID)
+	if err != nil {
+		log.Printf("Failed to get account: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if account == nil {
+		jsonError(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	// Generate new token
+	token, tokenHash, err := auth.GenerateToken()
+	if err != nil {
+		log.Printf("Failed to generate token: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := s.db.UpdateAccountToken(accountID, tokenHash); err != nil {
+		log.Printf("Failed to update token: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Token regenerated for org account %s by %s", accountID, orgCtx.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"token":   token,
+	})
+}
+
+// handleOrgSetAccountOrgAdmin toggles org admin status (org admin only)
+func (s *Server) handleOrgSetAccountOrgAdmin(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext, accountID string) {
+	if !s.requireOrgAdmin(w, orgCtx) {
+		return
+	}
+
+	// Cannot change own org admin status
+	if accountID == orgCtx.AccountID {
+		jsonError(w, "Cannot change your own org admin status", http.StatusBadRequest)
+		return
+	}
+
+	account, err := s.verifyOrgAccountOwnership(orgCtx, accountID)
+	if err != nil {
+		log.Printf("Failed to get account: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if account == nil {
+		jsonError(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	var req struct {
+		IsOrgAdmin bool `json:"isOrgAdmin"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if err := s.db.UpdateAccountOrgAdmin(accountID, req.IsOrgAdmin); err != nil {
+		log.Printf("Failed to update org admin status: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Org admin status updated for account %s to %v by %s", accountID, req.IsOrgAdmin, orgCtx.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":    true,
+		"isOrgAdmin": req.IsOrgAdmin,
+	})
+}
+
+// handleOrgActivateAccount activates an account (org admin only)
+func (s *Server) handleOrgActivateAccount(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext, accountID string) {
+	if !s.requireOrgAdmin(w, orgCtx) {
+		return
+	}
+
+	account, err := s.verifyOrgAccountOwnership(orgCtx, accountID)
+	if err != nil {
+		log.Printf("Failed to get account: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if account == nil {
+		jsonError(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	if err := s.db.ActivateAccount(accountID); err != nil {
+		log.Printf("Failed to activate account: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Org account %s activated by %s", accountID, orgCtx.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
+}
+
+// handleOrgDeactivateAccount deactivates an account (org admin only)
+func (s *Server) handleOrgDeactivateAccount(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext, accountID string) {
+	if !s.requireOrgAdmin(w, orgCtx) {
+		return
+	}
+
+	// Cannot deactivate self
+	if accountID == orgCtx.AccountID {
+		jsonError(w, "Cannot deactivate your own account", http.StatusBadRequest)
+		return
+	}
+
+	account, err := s.verifyOrgAccountOwnership(orgCtx, accountID)
+	if err != nil {
+		log.Printf("Failed to get account: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if account == nil {
+		jsonError(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	if err := s.db.DeactivateAccount(accountID); err != nil {
+		log.Printf("Failed to deactivate account: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Org account %s deactivated by %s", accountID, orgCtx.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
+}
+
+// handleOrgHardDeleteAccount permanently deletes an account (org admin only)
+func (s *Server) handleOrgHardDeleteAccount(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext, accountID string) {
+	if !s.requireOrgAdmin(w, orgCtx) {
+		return
+	}
+
+	// Cannot delete self
+	if accountID == orgCtx.AccountID {
+		jsonError(w, "Cannot delete your own account", http.StatusBadRequest)
+		return
+	}
+
+	account, err := s.verifyOrgAccountOwnership(orgCtx, accountID)
+	if err != nil {
+		log.Printf("Failed to get account: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if account == nil {
+		jsonError(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	if err := s.db.HardDeleteAccount(accountID); err != nil {
+		log.Printf("Failed to hard delete account: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Org account %s permanently deleted by %s", accountID, orgCtx.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
 }

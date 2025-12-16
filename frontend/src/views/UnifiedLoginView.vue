@@ -129,7 +129,7 @@ async function handlePasswordSubmit() {
 
     // Direct login (no TOTP required)
     if (data.token) {
-      completeLogin(data.token, data.accountType, data.orgId)
+      completeLogin(data.token, data.accountType, data.orgId, data.orgName, data.isOrgAdmin)
       return
     }
 
@@ -192,9 +192,10 @@ async function handleTOTPVerify() {
       return
     }
 
-    completeLogin(data.token, data.accountType, data.orgId)
+    completeLogin(data.token, data.accountType, data.orgId, data.orgName, data.isOrgAdmin)
   } catch {
-    error.value = 'Connection error. Please try again.'
+    error.value = 'Invalid code'
+    totpCode.value = ''
     loading.value = false
   }
 }
@@ -228,16 +229,16 @@ async function handleTOTPSetup() {
       return
     }
 
-    completeLogin(data.token, data.accountType, data.orgId)
+    completeLogin(data.token, data.accountType, data.orgId, data.orgName, data.isOrgAdmin)
   } catch {
     error.value = 'Connection error. Please try again.'
     loading.value = false
   }
 }
 
-function completeLogin(token: string, type: string, orgId?: string) {
+function completeLogin(token: string, type: string, orgId?: string, orgName?: string, isOrgAdmin?: boolean) {
   const userType = type === 'admin' ? 'admin' : 'org'
-  authStore.setToken(token, userType, orgId)
+  authStore.setToken(token, userType, orgId, orgName, username.value.trim(), isOrgAdmin)
   redirectToDashboard()
 }
 
@@ -368,7 +369,7 @@ function handleSubmit() {
           <Transition name="shake">
             <div 
               v-if="error" 
-              class="flex items-start gap-2.5 py-3.5 px-4 bg-[rgba(var(--accent-red-rgb),0.1)] border border-[rgba(var(--accent-red-rgb),0.3)] rounded-[10px] mb-5 text-sm text-accent-red"
+              class="flex items-start gap-2.5 py-3.5 px-4 bg-[rgba(var(--accent-red-rgb),0.1)] border border-[rgba(var(--accent-red-rgb),0.3)] rounded-xs mb-5 text-sm text-accent-red"
             >
               <AlertCircle class="w-4 h-4 shrink-0" />
               <span>{{ error }}</span>
@@ -386,7 +387,7 @@ function handleSubmit() {
                     id="username"
                     v-model="username"
                     type="text"
-                    class="w-full py-3.5 pl-11 pr-4 bg-bg-deep border border-border-subtle rounded-[10px] font-body text-[0.9375rem] text-text-primary transition-all duration-200 placeholder:text-text-muted focus:outline-none focus:border-accent-primary focus:shadow-[0_0_0_3px_rgba(var(--accent-primary-rgb),0.12)]"
+                    class="w-full py-3.5 pl-11 pr-4 bg-bg-deep border border-border-subtle rounded-xs font-body text-[0.9375rem] text-text-primary transition-all duration-200 placeholder:text-text-muted focus:outline-none focus:border-accent-primary focus:shadow-[0_0_0_3px_rgba(var(--accent-primary-rgb),0.12)]"
                     placeholder="Enter your username"
                     autocomplete="username"
                     autofocus
@@ -399,7 +400,7 @@ function handleSubmit() {
             <!-- Step: Password -->
             <div v-else-if="currentStep === 'password'" key="password" class="mb-6">
               <!-- Username display -->
-              <div class="flex items-center gap-3 py-3.5 px-4 bg-bg-deep border border-border-subtle rounded-[10px] mb-5">
+              <div class="flex items-center gap-3 py-3.5 px-4 bg-bg-deep border border-border-subtle rounded-xs mb-5">
                 <div 
                   class="w-9 h-9 rounded-xs flex items-center justify-center font-semibold text-sm"
                   :class="accentColor === 'primary' ? 'bg-[rgba(var(--accent-primary-rgb),0.2)] text-accent-primary' : 'bg-[rgba(var(--accent-secondary-rgb),0.2)] text-accent-secondary'"
@@ -417,7 +418,7 @@ function handleSubmit() {
                     id="password"
                     v-model="password"
                     type="password"
-                    class="w-full py-3.5 pl-11 pr-4 bg-bg-deep border border-border-subtle rounded-[10px] font-body text-[0.9375rem] text-text-primary transition-all duration-200 placeholder:text-text-muted focus:outline-none focus:border-accent-primary focus:shadow-[0_0_0_3px_rgba(var(--accent-primary-rgb),0.12)]"
+                    class="w-full py-3.5 pl-11 pr-4 bg-bg-deep border border-border-subtle rounded-xs font-body text-[0.9375rem] text-text-primary transition-all duration-200 placeholder:text-text-muted focus:outline-none focus:border-accent-primary focus:shadow-[0_0_0_3px_rgba(var(--accent-primary-rgb),0.12)]"
                     placeholder="Enter your password"
                     autocomplete="current-password"
                     autofocus
@@ -447,7 +448,7 @@ function handleSubmit() {
                   inputmode="numeric"
                   pattern="[0-9]*"
                   maxlength="6"
-                  class="w-full py-4 px-4 bg-bg-deep border border-border-subtle rounded-[10px] font-mono text-2xl text-center tracking-[0.5em] text-text-primary transition-all duration-200 placeholder:text-text-muted focus:outline-none focus:border-accent-primary focus:shadow-[0_0_0_3px_rgba(var(--accent-primary-rgb),0.12)]"
+                  class="w-full py-4 px-4 bg-bg-deep border border-border-subtle rounded-xs font-mono text-2xl text-center tracking-[0.5em] text-text-primary transition-all duration-200 placeholder:text-text-muted focus:outline-none focus:border-accent-primary focus:shadow-[0_0_0_3px_rgba(var(--accent-primary-rgb),0.12)]"
                   placeholder="000000"
                   autocomplete="one-time-code"
                   autofocus
@@ -496,7 +497,7 @@ function handleSubmit() {
                   inputmode="numeric"
                   pattern="[0-9]*"
                   maxlength="6"
-                  class="w-full py-4 px-4 bg-bg-deep border border-border-subtle rounded-[10px] font-mono text-2xl text-center tracking-[0.5em] text-text-primary transition-all duration-200 placeholder:text-text-muted focus:outline-none focus:border-accent-primary focus:shadow-[0_0_0_3px_rgba(var(--accent-primary-rgb),0.12)]"
+                  class="w-full py-4 px-4 bg-bg-deep border border-border-subtle rounded-xs font-mono text-2xl text-center tracking-[0.5em] text-text-primary transition-all duration-200 placeholder:text-text-muted focus:outline-none focus:border-accent-primary focus:shadow-[0_0_0_3px_rgba(var(--accent-primary-rgb),0.12)]"
                   placeholder="000000"
                   autocomplete="one-time-code"
                   :disabled="loading"
@@ -509,7 +510,7 @@ function handleSubmit() {
           <!-- Submit button -->
           <button
             type="submit"
-            class="w-full py-[0.9375rem] px-6 border-none rounded-[10px] font-body text-[0.9375rem] font-medium cursor-pointer transition-all duration-200 relative disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none"
+            class="w-full py-[0.9375rem] px-6 border-none rounded-xs font-body text-[0.9375rem] font-medium cursor-pointer transition-all duration-200 relative disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none"
             :class="accentColor === 'primary' 
               ? 'bg-accent-primary text-bg-deep hover:bg-accent-primary-dim hover:-translate-y-px' 
               : 'bg-accent-secondary text-bg-deep hover:bg-accent-secondary-dim hover:-translate-y-px'"

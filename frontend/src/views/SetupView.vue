@@ -247,7 +247,7 @@ const strengthTextClass = computed(() => {
         <Transition name="shake">
           <div 
             v-if="error" 
-            class="flex items-start gap-2.5 py-3.5 px-4 bg-[rgba(var(--accent-red-rgb),0.1)] border border-[rgba(var(--accent-red-rgb),0.3)] rounded-[10px] mb-6 text-sm text-accent-red"
+            class="flex items-start gap-2.5 py-3.5 px-4 bg-[rgba(var(--accent-red-rgb),0.1)] border border-[rgba(var(--accent-red-rgb),0.3)] rounded-xs mb-6 text-sm text-accent-red"
           >
             <AlertCircle class="w-4 h-4 shrink-0" />
             <span>{{ error }}</span>

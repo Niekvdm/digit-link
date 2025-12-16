@@ -138,7 +138,7 @@ const authModeClasses: Record<string, string> = {
 </script>
 
 <template>
-  <div class="max-w-[1000px]">
+  <div class="max-w-[1200px]">
     <PageHeader 
       :title="application?.name || 'Application'"
       :description="application ? `Subdomain: ${application.subdomain}` : ''"

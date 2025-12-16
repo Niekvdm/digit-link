@@ -47,7 +47,7 @@ const iconStyles = {
         <div 
           v-for="toast in toasts" 
           :key="toast.id"
-          class="flex items-start gap-3 py-4 px-5 bg-bg-surface border rounded-[10px] shadow-[0_8px_32px_rgba(0,0,0,0.3)]"
+          class="flex items-start gap-3 py-4 px-5 bg-bg-surface border rounded-xs shadow-[0_8px_32px_rgba(0,0,0,0.3)]"
           :class="typeStyles[toast.type]"
         >
           <component 

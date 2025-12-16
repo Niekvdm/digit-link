@@ -122,7 +122,7 @@ async function handleDelete() {
 </script>
 
 <template>
-  <div class="max-w-[1000px]">
+  <div class="max-w-[1200px]">
     <PageHeader 
       title="IP Whitelist" 
       description="Control which IP addresses can access your tunnels"

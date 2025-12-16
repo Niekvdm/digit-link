@@ -27,12 +27,14 @@ export interface Account {
   id: string
   username: string
   isAdmin: boolean
+  isOrgAdmin?: boolean
   active: boolean
   createdAt: string
   lastUsed?: string
   orgId?: string
   orgName?: string
   hasPassword?: boolean
+  totpEnabled?: boolean
 }
 
 export interface AccountsResponse {

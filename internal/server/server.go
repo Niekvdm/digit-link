@@ -91,6 +91,22 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// For main domain requests, distinguish between API calls and SPA navigation
+	// API calls have auth headers; browser navigation does not
+	isMainDomain := s.extractSubdomain(r.Host) == ""
+	if isMainDomain {
+		// Check if this is an API request (has auth headers) or browser navigation
+		hasAuthHeader := r.Header.Get("X-Admin-Token") != "" ||
+			strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ")
+
+		// If no auth header, serve the SPA for client-side routing
+		// This handles browser refresh on routes like /admin/accounts
+		if !hasAuthHeader {
+			s.serveDashboard(w, r)
+			return
+		}
+	}
+
 	// Admin API endpoints
 	if strings.HasPrefix(r.URL.Path, "/admin/") {
 		s.handleAdmin(w, r)
@@ -103,9 +119,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Static files for dashboard (on main domain)
-	if s.extractSubdomain(r.Host) == "" {
-		// Serve static dashboard files
+	// Static files for dashboard (on main domain) - fallback for any remaining main domain requests
+	if isMainDomain {
 		s.serveDashboard(w, r)
 		return
 	}

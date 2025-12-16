@@ -19,6 +19,11 @@ export function usePortalContext() {
   const isOrgUser = computed(() => authStore.isOrgUser)
 
   /**
+   * Whether the current user is an organization admin
+   */
+  const isOrgAdmin = computed(() => authStore.isOrgAdmin)
+
+  /**
    * The organization ID for org users (undefined for admins)
    */
   const currentOrgId = computed(() => authStore.orgId)
@@ -57,6 +62,7 @@ export function usePortalContext() {
   return {
     isAdmin,
     isOrgUser,
+    isOrgAdmin,
     currentOrgId,
     currentOrgName,
     username,

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { 
   PageHeader, 
   DataTable, 
@@ -12,8 +13,9 @@ import {
 import { useAccounts, useOrganizations } from '@/composables/api'
 import { useFormatters } from '@/composables/useFormatters'
 import type { Account, CreateAccountRequest } from '@/types/api'
-import { Plus, Trash2, RotateCcw, UserCheck, Shield, Building2, Key, Lock } from 'lucide-vue-next'
+import { Plus, Trash2, RotateCcw, UserCheck, Shield, Building2, Key, Lock, Crown } from 'lucide-vue-next'
 
+const router = useRouter()
 const { accounts, loading, error, fetchAll, create, remove, activate, regenerateToken, setOrganization, setPassword } = useAccounts()
 const { organizations, fetchAll: fetchOrgs } = useOrganizations()
 const { formatDate } = useFormatters()
@@ -61,7 +63,7 @@ const newPassword = ref('')
 // Table columns
 const columns = [
   { key: 'username', label: 'Username', sortable: true },
-  { key: 'isAdmin', label: 'Role', width: '100px' },
+  { key: 'isAdmin', label: 'Role', width: '125px' },
   { key: 'orgName', label: 'Organization', sortable: true },
   { key: 'active', label: 'Status', width: '100px' },
   { key: 'hasPassword', label: 'Auth', width: '100px' },
@@ -71,6 +73,11 @@ const columns = [
 onMounted(async () => {
   await Promise.all([fetchAll(), fetchOrgs()])
 })
+
+// Navigate to detail
+function viewAccount(account: Account) {
+  router.push({ name: 'admin-account-detail', params: { accountId: account.id } })
+}
 
 // Create
 function openCreateModal() {
@@ -250,6 +257,7 @@ async function handleDelete() {
       empty-title="No accounts"
       empty-description="Create your first account to get started."
       row-key="id"
+      @row-click="viewAccount"
     >
       <template #cell-username="{ row }">
         <div class="flex items-center gap-3">
@@ -257,9 +265,12 @@ async function handleDelete() {
             class="w-8 h-8 rounded-xs flex items-center justify-center"
             :class="row.isAdmin 
               ? 'bg-[rgba(var(--accent-primary-rgb),0.1)] text-accent-primary' 
-              : 'bg-[rgba(var(--accent-secondary-rgb),0.1)] text-accent-secondary'"
+              : row.isOrgAdmin
+                ? 'bg-[rgba(var(--accent-amber-rgb),0.1)] text-accent-amber'
+                : 'bg-[rgba(var(--accent-secondary-rgb),0.1)] text-accent-secondary'"
           >
             <Shield v-if="row.isAdmin" class="w-4 h-4" />
+            <Crown v-else-if="row.isOrgAdmin" class="w-4 h-4" />
             <Building2 v-else-if="row.orgId" class="w-4 h-4" />
             <UserCheck v-else class="w-4 h-4" />
           </div>
@@ -267,14 +278,16 @@ async function handleDelete() {
         </div>
       </template>
       
-      <template #cell-isAdmin="{ value }">
+      <template #cell-isAdmin="{ row }">
         <span 
           class="text-xs font-medium py-1 px-2 rounded"
-          :class="value 
+          :class="row.isAdmin 
             ? 'bg-[rgba(var(--accent-primary-rgb),0.15)] text-accent-primary' 
-            : 'bg-bg-elevated text-text-secondary'"
+            : row.isOrgAdmin
+              ? 'bg-[rgba(var(--accent-amber-rgb),0.15)] text-accent-amber'
+              : 'bg-bg-elevated text-text-secondary'"
         >
-          {{ value ? 'Admin' : 'User' }}
+          {{ row.isAdmin ? 'Admin' : row.isOrgAdmin ? 'Org Admin' : 'User' }}
         </span>
       </template>
       
@@ -403,7 +416,7 @@ async function handleDelete() {
           </select>
         </div>
         
-        <label class="flex items-center gap-4 p-4 bg-bg-deep border border-border-subtle rounded-[10px] cursor-pointer transition-colors duration-200 has-[:checked]:border-accent-primary has-[:checked]:bg-[rgba(var(--accent-primary-rgb),0.05)]">
+        <label class="flex items-center gap-4 p-4 bg-bg-deep border border-border-subtle rounded-xs cursor-pointer transition-colors duration-200 has-[:checked]:border-accent-primary has-[:checked]:bg-[rgba(var(--accent-primary-rgb),0.05)]">
           <input type="checkbox" v-model="formIsAdmin" class="accent-accent-primary w-[18px] h-[18px]" />
           <div class="flex items-center gap-3 flex-1 text-text-secondary">
             <Shield class="w-5 h-5" />

@@ -132,7 +132,7 @@ function handleCancel() {
           v-for="type in authTypes"
           :key="type.value"
           type="button"
-          class="flex items-center gap-3.5 py-4 px-5 bg-bg-deep border rounded-[10px] cursor-pointer transition-all duration-200 text-left"
+          class="flex items-center gap-3.5 py-4 px-5 bg-bg-deep border rounded-xs cursor-pointer transition-all duration-200 text-left"
           :class="authType === type.value 
             ? 'border-accent-primary bg-[rgba(var(--accent-primary-rgb),0.05)] text-accent-primary' 
             : 'border-border-subtle text-text-secondary hover:border-border-accent hover:bg-bg-elevated'"

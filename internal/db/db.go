@@ -257,6 +257,7 @@ func (db *DB) runMigrations() error {
 		{"accounts", "totp_secret", "TEXT"},
 		{"accounts", "totp_enabled", "BOOLEAN DEFAULT FALSE"},
 		{"accounts", "org_id", "TEXT REFERENCES organizations(id)"},
+		{"accounts", "is_org_admin", "BOOLEAN DEFAULT FALSE"},
 		{"tunnels", "app_id", "TEXT"},
 		{"api_keys", "key_type", "TEXT DEFAULT 'account'"},
 		{"organizations", "require_totp", "BOOLEAN DEFAULT FALSE"},

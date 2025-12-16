@@ -10,10 +10,15 @@ import type {
   DeleteResponse
 } from '@/types/api'
 
+interface AccountResponse {
+  account: Account
+}
+
 export function useAccounts() {
   const api = useApi()
   
   const accounts = ref<Account[]>([])
+  const currentAccount = ref<Account | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -26,6 +31,22 @@ export function useAccounts() {
       accounts.value = res.accounts
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load accounts'
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function fetchOne(accountId: string) {
+    loading.value = true
+    error.value = null
+    
+    try {
+      const res = await api.get<AccountResponse>(`/admin/accounts/${accountId}`)
+      currentAccount.value = res.account
+      return res.account
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Failed to load account'
+      throw e
     } finally {
       loading.value = false
     }
@@ -52,6 +73,9 @@ export function useAccounts() {
     accounts.value = accounts.value.map(acc => 
       acc.id === accountId ? { ...acc, active: true } : acc
     )
+    if (currentAccount.value?.id === accountId) {
+      currentAccount.value = { ...currentAccount.value, active: true }
+    }
   }
 
   async function regenerateToken(accountId: string) {
@@ -68,6 +92,9 @@ export function useAccounts() {
       accounts.value = accounts.value.map(acc => 
         acc.id === accountId ? { ...acc, orgId: res.orgId, orgName: res.orgName } : acc
       )
+      if (currentAccount.value?.id === accountId) {
+        currentAccount.value = { ...currentAccount.value, orgId: res.orgId, orgName: res.orgName }
+      }
     }
     return res
   }
@@ -77,18 +104,54 @@ export function useAccounts() {
     accounts.value = accounts.value.map(acc => 
       acc.id === accountId ? { ...acc, hasPassword: true } : acc
     )
+    if (currentAccount.value?.id === accountId) {
+      currentAccount.value = { ...currentAccount.value, hasPassword: true }
+    }
+  }
+
+  async function updateUsername(accountId: string, username: string) {
+    await api.put(`/admin/accounts/${accountId}/username`, { username })
+    accounts.value = accounts.value.map(acc => 
+      acc.id === accountId ? { ...acc, username } : acc
+    )
+    if (currentAccount.value?.id === accountId) {
+      currentAccount.value = { ...currentAccount.value, username }
+    }
+  }
+
+  async function setOrgAdmin(accountId: string, isOrgAdmin: boolean) {
+    await api.put(`/admin/accounts/${accountId}/org-admin`, { isOrgAdmin })
+    accounts.value = accounts.value.map(acc => 
+      acc.id === accountId ? { ...acc, isOrgAdmin } : acc
+    )
+    if (currentAccount.value?.id === accountId) {
+      currentAccount.value = { ...currentAccount.value, isOrgAdmin }
+    }
+  }
+
+  async function hardDelete(accountId: string) {
+    await api.del(`/admin/accounts/${accountId}/hard`)
+    accounts.value = accounts.value.filter(acc => acc.id !== accountId)
+    if (currentAccount.value?.id === accountId) {
+      currentAccount.value = null
+    }
   }
 
   return {
     accounts: readonly(accounts),
+    currentAccount: readonly(currentAccount),
     loading: readonly(loading),
     error: readonly(error),
     fetchAll,
+    fetchOne,
     create,
     remove,
     activate,
     regenerateToken,
     setOrganization,
-    setPassword
+    setPassword,
+    updateUsername,
+    setOrgAdmin,
+    hardDelete
   }
 }
