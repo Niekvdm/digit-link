@@ -7,6 +7,8 @@ export interface Stats {
   totalTunnels: number
   totalBytesSent?: number
   totalBytesReceived?: number
+  applicationCount?: number
+  totalConnections?: number
 }
 
 export interface Tunnel {

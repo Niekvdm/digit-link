@@ -541,6 +541,11 @@ func (s *Server) handleListWhitelist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Ensure empty array instead of null
+	if entries == nil {
+		entries = []*db.WhitelistEntry{}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"entries": entries,
@@ -605,6 +610,11 @@ func (s *Server) handleListAllOrgWhitelists(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Ensure empty array instead of null
+	if entries == nil {
+		entries = []*db.OrgWhitelistEntry{}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"entries": entries,
@@ -620,6 +630,11 @@ func (s *Server) handleListAllAppWhitelists(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Ensure empty array instead of null
+	if entries == nil {
+		entries = []*db.AppWhitelistEntry{}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"entries": entries,
@@ -631,10 +646,15 @@ func (s *Server) handleListTunnels(w http.ResponseWriter, r *http.Request) {
 	// Get in-memory active tunnels
 	activeTunnels := s.GetActiveTunnels()
 
+	// Ensure empty arrays instead of null
+	if activeTunnels == nil {
+		activeTunnels = []map[string]interface{}{}
+	}
+
 	// Get database tunnel records for additional info
-	var dbTunnels interface{}
+	var dbTunnels interface{} = []interface{}{}
 	if s.db != nil {
-		if tunnels, err := s.db.ListActiveTunnels(); err == nil {
+		if tunnels, err := s.db.ListActiveTunnels(); err == nil && tunnels != nil {
 			dbTunnels = tunnels
 		}
 	}
@@ -1384,6 +1404,11 @@ func (s *Server) handleListAPIKeys(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Failed to list API keys: %v", err)
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
+	}
+
+	// Ensure empty array instead of null
+	if keys == nil {
+		keys = []*db.APIKey{}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

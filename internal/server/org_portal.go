@@ -661,6 +661,11 @@ func (s *Server) handleOrgListWhitelist(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
+	// Ensure empty array instead of null
+	if orgEntries == nil {
+		orgEntries = []*db.OrgWhitelistEntry{}
+	}
+
 	// Get app whitelists for all apps in org
 	apps, err := s.db.ListApplicationsByOrg(orgCtx.OrgID)
 	if err != nil {
@@ -848,6 +853,11 @@ func (s *Server) handleOrgListAPIKeys(w http.ResponseWriter, r *http.Request, or
 		return
 	}
 
+	// Ensure empty array instead of null
+	if keys == nil {
+		keys = []*db.APIKey{}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"keys": keys,
@@ -954,9 +964,14 @@ func (s *Server) handleOrgListTunnels(w http.ResponseWriter, r *http.Request, or
 	// Get live active tunnels from memory
 	activeTunnels := s.GetActiveTunnelsByOrg(orgCtx.OrgID)
 
+	// Ensure empty array instead of null
+	if activeTunnels == nil {
+		activeTunnels = []map[string]interface{}{}
+	}
+
 	// Get database tunnel records
-	var dbTunnels interface{}
-	if tunnels, err := s.db.ListActiveTunnelsByOrg(orgCtx.OrgID); err == nil {
+	var dbTunnels interface{} = []interface{}{}
+	if tunnels, err := s.db.ListActiveTunnelsByOrg(orgCtx.OrgID); err == nil && tunnels != nil {
 		dbTunnels = tunnels
 	}
 

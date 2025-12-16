@@ -1,117 +1,175 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 
+// Lazy-load views for better performance
+const UnifiedLoginView = () => import('@/views/UnifiedLoginView.vue')
+const SetupView = () => import('@/views/SetupView.vue')
+const PortalShell = () => import('@/components/layout/PortalShell.vue')
+
+// Admin pages
+const AdminDashboard = () => import('@/views/admin/DashboardPage.vue')
+const AdminOrganizations = () => import('@/views/admin/OrganizationsPage.vue')
+const AdminApplications = () => import('@/views/admin/ApplicationsPage.vue')
+const AdminApplicationDetail = () => import('@/views/admin/ApplicationDetailPage.vue')
+const AdminAccounts = () => import('@/views/admin/AccountsPage.vue')
+const AdminAPIKeys = () => import('@/views/admin/APIKeysPage.vue')
+const AdminWhitelist = () => import('@/views/admin/WhitelistPage.vue')
+const AdminTunnels = () => import('@/views/admin/TunnelsPage.vue')
+const AdminAudit = () => import('@/views/admin/AuditPage.vue')
+
+// Org pages
+const OrgDashboard = () => import('@/views/org/DashboardPage.vue')
+const OrgApplications = () => import('@/views/org/ApplicationsPage.vue')
+const OrgApplicationDetail = () => import('@/views/org/ApplicationDetailPage.vue')
+const OrgAPIKeys = () => import('@/views/org/APIKeysPage.vue')
+const OrgWhitelist = () => import('@/views/org/WhitelistPage.vue')
+const OrgSettings = () => import('@/views/org/SettingsPage.vue')
+
 const routes: RouteRecordRaw[] = [
-  // Unified login - handles both admin and org authentication
+  // Public routes
   {
     path: '/',
     name: 'login',
-    component: () => import('@/views/UnifiedLoginView.vue'),
+    component: UnifiedLoginView,
     meta: { requiresAuth: false }
   },
   {
     path: '/setup',
     name: 'setup',
-    component: () => import('@/views/SetupView.vue'),
+    component: SetupView,
     meta: { requiresAuth: false }
   },
-  // Admin routes
+
+  // Admin Portal
+  {
+    path: '/admin',
+    component: PortalShell,
+    meta: { requiresAuth: true, role: 'admin' },
+    children: [
+      {
+        path: '',
+        name: 'admin-dashboard',
+        component: AdminDashboard
+      },
+      {
+        path: 'organizations',
+        name: 'admin-organizations',
+        component: AdminOrganizations
+      },
+      {
+        path: 'applications',
+        name: 'admin-applications',
+        component: AdminApplications
+      },
+      {
+        path: 'applications/:appId',
+        name: 'admin-application-detail',
+        component: AdminApplicationDetail,
+        props: true
+      },
+      {
+        path: 'accounts',
+        name: 'admin-accounts',
+        component: AdminAccounts
+      },
+      {
+        path: 'api-keys',
+        name: 'admin-api-keys',
+        component: AdminAPIKeys
+      },
+      {
+        path: 'whitelist',
+        name: 'admin-whitelist',
+        component: AdminWhitelist
+      },
+      {
+        path: 'tunnels',
+        name: 'admin-tunnels',
+        component: AdminTunnels
+      },
+      {
+        path: 'audit',
+        name: 'admin-audit',
+        component: AdminAudit
+      }
+    ]
+  },
+
+  // Organization Portal
+  {
+    path: '/portal',
+    component: PortalShell,
+    meta: { requiresAuth: true, role: 'org' },
+    children: [
+      {
+        path: '',
+        name: 'org-dashboard',
+        component: OrgDashboard
+      },
+      {
+        path: 'applications',
+        name: 'org-applications',
+        component: OrgApplications
+      },
+      {
+        path: 'applications/:appId',
+        name: 'org-application-detail',
+        component: OrgApplicationDetail,
+        props: true
+      },
+      {
+        path: 'api-keys',
+        name: 'org-api-keys',
+        component: OrgAPIKeys
+      },
+      {
+        path: 'whitelist',
+        name: 'org-whitelist',
+        component: OrgWhitelist
+      },
+      {
+        path: 'settings',
+        name: 'org-settings',
+        component: OrgSettings
+      }
+    ]
+  },
+
+  // Legacy redirects for backwards compatibility
   {
     path: '/dashboard',
-    name: 'dashboard',
-    component: () => import('@/views/DashboardView.vue'),
-    meta: { requiresAuth: true, userType: 'admin' }
+    redirect: '/admin'
   },
   {
     path: '/organizations',
-    name: 'organizations',
-    component: () => import('@/views/OrganizationsView.vue'),
-    meta: { requiresAuth: true, userType: 'admin' }
+    redirect: '/admin/organizations'
   },
   {
     path: '/applications',
-    name: 'applications',
-    component: () => import('@/views/ApplicationsView.vue'),
-    meta: { requiresAuth: true, userType: 'admin' }
-  },
-  {
-    path: '/applications/:id',
-    name: 'application-detail',
-    component: () => import('@/views/ApplicationDetailView.vue'),
-    meta: { requiresAuth: true, userType: 'admin' }
-  },
-  {
-    path: '/api-keys',
-    name: 'api-keys',
-    component: () => import('@/views/APIKeysView.vue'),
-    meta: { requiresAuth: true, userType: 'admin' }
+    redirect: '/admin/applications'
   },
   {
     path: '/accounts',
-    name: 'accounts',
-    component: () => import('@/views/AccountsView.vue'),
-    meta: { requiresAuth: true, userType: 'admin' }
+    redirect: '/admin/accounts'
   },
   {
     path: '/tunnels',
-    name: 'tunnels',
-    component: () => import('@/views/TunnelsView.vue'),
-    meta: { requiresAuth: true, userType: 'admin' }
-  },
-  {
-    path: '/whitelist',
-    name: 'whitelist',
-    component: () => import('@/views/WhitelistView.vue'),
-    meta: { requiresAuth: true, userType: 'admin' }
+    redirect: '/admin/tunnels'
   },
   {
     path: '/audit',
-    name: 'audit',
-    component: () => import('@/views/AuditLogsView.vue'),
-    meta: { requiresAuth: true, userType: 'admin' }
-  },
-  // Org Portal routes
-  {
-    path: '/portal',
-    name: 'org-dashboard',
-    component: () => import('@/views/org/OrgDashboardView.vue'),
-    meta: { requiresAuth: true, userType: 'org' }
+    redirect: '/admin/audit'
   },
   {
-    path: '/portal/applications',
-    name: 'org-applications',
-    component: () => import('@/views/org/OrgApplicationsView.vue'),
-    meta: { requiresAuth: true, userType: 'org' }
+    path: '/whitelist',
+    redirect: '/admin/whitelist'
   },
   {
-    path: '/portal/applications/:id',
-    name: 'org-application-detail',
-    component: () => import('@/views/org/OrgApplicationDetailView.vue'),
-    meta: { requiresAuth: true, userType: 'org' }
+    path: '/api-keys',
+    redirect: '/admin/api-keys'
   },
-  {
-    path: '/portal/whitelist',
-    name: 'org-whitelist',
-    component: () => import('@/views/org/OrgWhitelistView.vue'),
-    meta: { requiresAuth: true, userType: 'org' }
-  },
-  {
-    path: '/portal/api-keys',
-    name: 'org-api-keys',
-    component: () => import('@/views/org/OrgAPIKeysView.vue'),
-    meta: { requiresAuth: true, userType: 'org' }
-  },
-  {
-    path: '/portal/settings',
-    name: 'org-settings',
-    component: () => import('@/views/org/OrgSettingsView.vue'),
-    meta: { requiresAuth: true, userType: 'org' }
-  },
-  // Legacy route redirect (for backwards compatibility)
-  {
-    path: '/org-login',
-    redirect: '/'
-  },
+
+  // Catch-all
   {
     path: '/:pathMatch(.*)*',
     redirect: '/'
@@ -127,37 +185,42 @@ const router = createRouter({
 router.beforeEach(async (to, _from, next) => {
   const authStore = useAuthStore()
   const requiresAuth = to.meta.requiresAuth as boolean
-  const requiredUserType = to.meta.userType as string | undefined
+  const requiredRole = to.meta.role as 'admin' | 'org' | undefined
 
-  if (requiresAuth && !authStore.isAuthenticated) {
-    // Redirect to unified login
-    next({ name: 'login' })
-  } else if (requiresAuth && requiredUserType) {
-    // Check user type matches
-    if (requiredUserType === 'admin' && !authStore.isAdmin) {
-      // Org user trying to access admin pages
-      next({ name: 'org-dashboard' })
-    } else if (requiredUserType === 'org' && !authStore.isOrgUser) {
-      // Admin user trying to access org pages
-      next({ name: 'dashboard' })
-    } else {
-      next()
-    }
-  } else if (to.name === 'login' && authStore.isAuthenticated) {
-    // Redirect to appropriate dashboard if already authenticated
-    const isValid = await authStore.validateToken()
-    if (isValid) {
-      if (authStore.isOrgUser) {
-        next({ name: 'org-dashboard' })
-      } else {
-        next({ name: 'dashboard' })
+  // Public routes
+  if (!requiresAuth) {
+    if (to.name === 'login' && authStore.isAuthenticated) {
+      // Redirect to appropriate dashboard if already authenticated
+      const isValid = await authStore.validateToken()
+      if (isValid) {
+        next(authStore.isOrgUser ? { name: 'org-dashboard' } : { name: 'admin-dashboard' })
+        return
       }
-    } else {
-      next()
     }
-  } else {
     next()
+    return
   }
+
+  // Protected routes - check authentication
+  if (!authStore.isAuthenticated) {
+    next({ name: 'login' })
+    return
+  }
+
+  // Check role requirements
+  if (requiredRole === 'admin' && !authStore.isAdmin) {
+    // Org user trying to access admin routes
+    next({ name: 'org-dashboard' })
+    return
+  }
+
+  if (requiredRole === 'org' && !authStore.isOrgUser) {
+    // Admin user trying to access org routes
+    next({ name: 'admin-dashboard' })
+    return
+  }
+
+  next()
 })
 
 export default router

@@ -19,8 +19,13 @@ export function useApi() {
     const headers = new Headers(fetchOptions.headers)
 
     // Add auth header if authenticated
+    // Admin endpoints use X-Admin-Token, org endpoints use Authorization: Bearer
     if (!skipAuth && authStore.token) {
-      headers.set('X-Admin-Token', authStore.token)
+      if (authStore.isAdmin) {
+        headers.set('X-Admin-Token', authStore.token)
+      } else {
+        headers.set('Authorization', `Bearer ${authStore.token}`)
+      }
     }
 
     // Add content type for JSON bodies

@@ -210,7 +210,7 @@ body {
   padding: 0.875rem 1rem;
   background: var(--bg-deep);
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: 4px;
   font-family: var(--font-body);
   font-size: 0.875rem;
   color: var(--text-primary);
@@ -257,7 +257,7 @@ body {
   justify-content: center;
   gap: 0.5rem;
   padding: 0.875rem 1.5rem;
-  border-radius: 8px;
+  border-radius: 4px;
   font-family: var(--font-body);
   font-size: 0.875rem;
   font-weight: 500;
@@ -322,7 +322,7 @@ body {
 
 .btn-icon {
   padding: 0.5rem;
-  border-radius: 6px;
+  border-radius: 4px;
 }
 
 .btn-loading .btn-text {
@@ -350,7 +350,7 @@ body {
 .card {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  border-radius: 4px;
 }
 
 .card-header {
@@ -380,7 +380,7 @@ body {
 .stat-card {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  border-radius: 4px;
   padding: 1.5rem;
   position: relative;
   overflow: hidden;
@@ -414,7 +414,7 @@ body {
 .modal {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  border-radius: 4px;
   width: 100%;
   max-width: 480px;
   max-height: 90vh;
@@ -459,7 +459,7 @@ body {
 .token-box {
   background: var(--bg-deep);
   border: 2px solid var(--accent-amber);
-  border-radius: 8px;
+  border-radius: 4px;
   padding: 1.25rem;
   position: relative;
   overflow: hidden;
@@ -492,7 +492,7 @@ body {
   padding: 1rem;
   background: rgba(var(--accent-red-rgb), 0.08);
   border: 1px solid rgba(var(--accent-red-rgb), 0.3);
-  border-radius: 8px;
+  border-radius: 4px;
 }
 
 /* ============================================
@@ -505,7 +505,7 @@ body {
   padding: 1rem 1.25rem;
   background: rgba(var(--accent-blue-rgb), 0.1);
   border: 1px solid rgba(var(--accent-blue-rgb), 0.3);
-  border-radius: 8px;
+  border-radius: 4px;
   font-size: 0.875rem;
   color: var(--accent-blue);
 }
@@ -517,7 +517,7 @@ body {
 .error-message {
   background: rgba(var(--accent-red-rgb), 0.1);
   border: 1px solid var(--accent-red);
-  border-radius: 8px;
+  border-radius: 4px;
   padding: 0.875rem 1rem;
   font-size: 0.875rem;
   color: var(--accent-red);
@@ -568,7 +568,7 @@ body {
   background: var(--accent-secondary);
   color: var(--bg-deep);
   padding: 0.75rem 1.5rem;
-  border-radius: 8px;
+  border-radius: 4px;
   font-size: 0.875rem;
   font-weight: 500;
   opacity: 0;
