@@ -17,8 +17,6 @@ spec:
             type: digest  # Track digest changes for :latest tag
           containerName: digit-link
 
-  # Write back method - update git repo with new image
+  # Write back method - use argocd to update via parameter overrides (no git push needed)
   writeBack:
-    method: git
-    git:
-      branch: HEAD
+    method: argocd

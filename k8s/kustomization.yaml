@@ -9,5 +9,15 @@ resources:
   - ingress.yaml
   # Optional: Pre-configure admin token (copy secrets.yaml.example to secrets.yaml)
   # - secrets.yaml
-  # ArgoCD Image Updater CR (v1.0+)
+  # ArgoCD Image Updater CR (v1.0+) - applied separately to preserve its namespace
   - image-updater.yaml
+
+# Preserve the namespace for ImageUpdater CR (must stay in argocd-image-updater-system)
+patches:
+  - target:
+      kind: ImageUpdater
+      name: digit-link-updater
+    patch: |
+      - op: replace
+        path: /metadata/namespace
+        value: argocd-image-updater-system
