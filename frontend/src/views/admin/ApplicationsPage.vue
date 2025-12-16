@@ -191,9 +191,9 @@ const authModeClasses: Record<string, string> = {
       <template #cell-authMode="{ value }">
         <span 
           class="text-xs font-medium py-1 px-2 rounded"
-          :class="authModeClasses[value] || authModeClasses.inherit"
+          :class="authModeClasses[value as string] || authModeClasses.inherit"
         >
-          {{ getAuthModeLabel(value) }}
+          {{ getAuthModeLabel(value as string) }}
         </span>
       </template>
       
@@ -206,7 +206,7 @@ const authModeClasses: Record<string, string> = {
       </template>
       
       <template #cell-createdAt="{ value }">
-        {{ formatDate(value) }}
+        {{ formatDate(value as string) }}
       </template>
       
       <template #actions="{ row }">

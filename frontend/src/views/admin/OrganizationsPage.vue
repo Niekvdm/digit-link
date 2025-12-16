@@ -207,7 +207,7 @@ async function handleDelete() {
       </template>
       
       <template #cell-createdAt="{ value }">
-        {{ formatDate(value) }}
+        {{ formatDate(value as string) }}
       </template>
       
       <template #actions="{ row }">
@@ -230,7 +230,7 @@ async function handleDelete() {
             class="w-8 h-8 flex items-center justify-center border-none rounded-xs bg-transparent text-text-muted cursor-pointer transition-all duration-150 hover:bg-[rgba(var(--accent-red-rgb),0.1)] hover:text-accent-red disabled:opacity-30 disabled:cursor-not-allowed"
             title="Delete" 
             @click.stop="openDeleteConfirm(row)"
-            :disabled="row.appCount > 0"
+            :disabled="(row.appCount ?? 0) > 0"
           >
             <Trash2 class="w-4 h-4" />
           </button>

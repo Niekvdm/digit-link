@@ -68,7 +68,7 @@ onUnmounted(() => {
       <span class="hidden sm:inline">Theme</span>
       <div 
         class="w-3.5 h-3.5 rounded border border-white/15"
-        :style="{ background: currentTheme.colors.primary }"
+        :style="{ background: currentTheme?.colors.primary }"
       />
     </button>
 
@@ -86,7 +86,7 @@ onUnmounted(() => {
             v-for="theme in themes"
             :key="theme.id"
             class="flex items-center gap-3 w-full p-3 rounded-xs bg-transparent border-none cursor-pointer transition-all duration-150 text-left hover:bg-bg-elevated"
-            :class="{ 'bg-[rgba(var(--accent-primary-rgb),0.1)] hover:bg-[rgba(var(--accent-primary-rgb),0.15)]': theme.id === currentTheme.id }"
+            :class="{ 'bg-[rgba(var(--accent-primary-rgb),0.1)] hover:bg-[rgba(var(--accent-primary-rgb),0.15)]': theme.id === currentTheme?.id }"
             @click="selectTheme(theme.id)"
           >
             <div class="flex gap-0.5 p-[3px] bg-bg-deep rounded-xs">
@@ -108,7 +108,7 @@ onUnmounted(() => {
               <span class="text-[0.6875rem] text-text-muted">{{ theme.description }}</span>
             </div>
             <Check 
-              v-if="theme.id === currentTheme.id"
+              v-if="theme.id === currentTheme?.id"
               class="w-4 h-4 text-accent-primary shrink-0"
             />
           </button>

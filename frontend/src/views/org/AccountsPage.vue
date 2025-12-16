@@ -220,7 +220,7 @@ async function handleDeactivate() {
       </template>
       
       <template #cell-lastUsed="{ value }">
-        {{ value ? formatDate(value) : 'Never' }}
+        {{ value ? formatDate(value as string) : 'Never' }}
       </template>
       
       <template #actions="{ row }">

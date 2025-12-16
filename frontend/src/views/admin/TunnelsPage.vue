@@ -84,7 +84,7 @@ function handleRefresh() {
       
       <template #cell-url="{ value }">
         <a 
-          :href="value" 
+          :href="value as string" 
           target="_blank" 
           class="flex items-center gap-2 text-text-secondary text-sm no-underline transition-colors duration-150 hover:text-accent-primary"
         >
@@ -94,7 +94,7 @@ function handleRefresh() {
       </template>
       
       <template #cell-createdAt="{ value }">
-        {{ formatDate(value) }}
+        {{ formatDate(value as string) }}
       </template>
     </DataTable>
   </div>

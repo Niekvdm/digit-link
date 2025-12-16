@@ -218,16 +218,16 @@ function getKeyScope(key: APIKey): string {
       </template>
       
       <template #cell-createdAt="{ value }">
-        {{ formatDate(value) }}
+        {{ formatDate(value as string) }}
       </template>
       
       <template #cell-lastUsed="{ value }">
-        {{ value ? formatDate(value) : 'Never' }}
+        {{ value ? formatDate(value as string) : 'Never' }}
       </template>
       
       <template #cell-expiresAt="{ value }">
-        <span v-if="value" :class="{ 'text-accent-amber': new Date(value) < new Date() }">
-          {{ formatDate(value) }}
+        <span v-if="value" :class="{ 'text-accent-amber': new Date(value as string) < new Date() }">
+          {{ formatDate(value as string) }}
         </span>
         <span v-else class="text-text-muted">Never</span>
       </template>

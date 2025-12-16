@@ -9,7 +9,7 @@ export interface ToastItem {
 }
 
 const props = defineProps<{
-  toasts: ToastItem[]
+  toasts: readonly ToastItem[]
 }>()
 
 const emit = defineEmits<{

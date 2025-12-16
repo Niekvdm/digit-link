@@ -182,12 +182,12 @@ function getFilterBtnClass(value: boolean | null, type: 'all' | 'success' | 'fai
       row-key="id"
     >
       <template #cell-timestamp="{ value }">
-        {{ formatDate(value) }}
+        {{ formatDate(value as string) }}
       </template>
       
       <template #cell-authType="{ value }">
         <span class="text-xs font-medium py-1 px-2 rounded bg-bg-elevated text-text-secondary">
-          {{ getAuthTypeLabel(value) }}
+          {{ getAuthTypeLabel(value as string) }}
         </span>
       </template>
       
