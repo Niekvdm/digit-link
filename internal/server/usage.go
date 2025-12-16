@@ -340,6 +340,15 @@ func (uc *UsageCache) ResetOrgUsage(orgID string) {
 	usage.mu.Unlock()
 }
 
+// UpdateOrgPlanID updates the cached plan ID for an organization (called when plan changes)
+func (uc *UsageCache) UpdateOrgPlanID(orgID string, planID *string) {
+	usage := uc.getOrCreateOrgUsage(orgID)
+	usage.mu.Lock()
+	usage.planID = planID
+	usage.LimitHitAt = nil // Clear limit hit marker when plan changes
+	usage.mu.Unlock()
+}
+
 // Retention periods
 const (
 	HourlyRetention = 7 * 24 * time.Hour  // 7 days

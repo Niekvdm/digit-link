@@ -2544,9 +2544,10 @@ func (s *Server) handleResetOrganizationUsage(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	// Reset usage in cache
+	// Reset usage in cache and refresh planID
 	if s.usageCache != nil {
 		s.usageCache.ResetOrgUsage(orgID)
+		s.usageCache.UpdateOrgPlanID(orgID, org.PlanID)
 	}
 
 	log.Printf("Usage reset for organization %s (%s) by admin", org.Name, orgID)
@@ -2597,6 +2598,11 @@ func (s *Server) handleSetOrganizationPlan(w http.ResponseWriter, r *http.Reques
 		log.Printf("Failed to update organization plan: %v", err)
 		jsonError(w, "Internal server error", http.StatusInternalServerError)
 		return
+	}
+
+	// Update cached plan ID so quota checks use the new plan immediately
+	if s.usageCache != nil {
+		s.usageCache.UpdateOrgPlanID(orgID, input.PlanID)
 	}
 
 	log.Printf("Organization %s plan updated to: %v", orgID, input.PlanID)
