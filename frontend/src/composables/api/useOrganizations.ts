@@ -13,6 +13,7 @@ export function useOrganizations() {
   const api = useApi()
   
   const organizations = ref<Organization[]>([])
+  const currentOrg = ref<Organization | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
 
@@ -25,6 +26,22 @@ export function useOrganizations() {
       organizations.value = res.organizations
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Failed to load organizations'
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function fetchOne(id: string): Promise<Organization | null> {
+    loading.value = true
+    error.value = null
+    
+    try {
+      const org = await api.get<Organization>(`/admin/organizations/${id}`)
+      currentOrg.value = org
+      return org
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Failed to load organization'
+      return null
     } finally {
       loading.value = false
     }
@@ -62,9 +79,11 @@ export function useOrganizations() {
 
   return {
     organizations: readonly(organizations),
+    currentOrg: readonly(currentOrg),
     loading: readonly(loading),
     error: readonly(error),
     fetchAll,
+    fetchOne,
     create,
     update,
     remove,

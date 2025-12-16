@@ -23,7 +23,8 @@ import {
   X,
   ChevronUp,
   Package,
-  BarChart3
+  BarChart3,
+  CreditCard
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -69,6 +70,7 @@ const orgLinks = computed(() => {
     { name: 'org-api-keys', label: 'API Keys', icon: KeyRound },
     { name: 'org-whitelist', label: 'Whitelist', icon: ShieldCheck },
     { name: 'org-usage', label: 'Usage', icon: BarChart3 },
+    { name: 'org-billing', label: 'Billing', icon: CreditCard },
   ]
   
   // Only show Accounts link for org admins

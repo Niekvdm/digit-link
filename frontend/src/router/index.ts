@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/authStore'
 // Lazy-load views for better performance
 const UnifiedLoginView = () => import('@/views/UnifiedLoginView.vue')
 const SetupView = () => import('@/views/SetupView.vue')
+const PricingPage = () => import('@/views/public/PricingPage.vue')
 const PortalShell = () => import('@/components/layout/PortalShell.vue')
 
 // Admin pages
@@ -20,6 +21,7 @@ const AdminTunnels = () => import('@/views/admin/TunnelsPage.vue')
 const AdminAudit = () => import('@/views/admin/AuditPage.vue')
 const AdminPlans = () => import('@/views/admin/PlansPage.vue')
 const AdminUsage = () => import('@/views/admin/UsagePage.vue')
+const AdminOrgDetail = () => import('@/views/admin/OrgDetailPage.vue')
 
 // Org pages
 const OrgDashboard = () => import('@/views/org/DashboardPage.vue')
@@ -32,6 +34,7 @@ const OrgAPIKeys = () => import('@/views/org/APIKeysPage.vue')
 const OrgWhitelist = () => import('@/views/org/WhitelistPage.vue')
 const OrgSettings = () => import('@/views/org/SettingsPage.vue')
 const OrgUsage = () => import('@/views/org/UsagePage.vue')
+const OrgBilling = () => import('@/views/org/BillingPage.vue')
 
 const routes: RouteRecordRaw[] = [
   // Public routes
@@ -45,6 +48,12 @@ const routes: RouteRecordRaw[] = [
     path: '/setup',
     name: 'setup',
     component: SetupView,
+    meta: { requiresAuth: false }
+  },
+  {
+    path: '/pricing',
+    name: 'pricing',
+    component: PricingPage,
     meta: { requiresAuth: false }
   },
 
@@ -63,6 +72,12 @@ const routes: RouteRecordRaw[] = [
         path: 'organizations',
         name: 'admin-organizations',
         component: AdminOrganizations
+      },
+      {
+        path: 'organizations/:orgId',
+        name: 'admin-organization-detail',
+        component: AdminOrgDetail,
+        props: true
       },
       {
         path: 'applications',
@@ -181,6 +196,11 @@ const routes: RouteRecordRaw[] = [
         path: 'usage',
         name: 'org-usage',
         component: OrgUsage
+      },
+      {
+        path: 'billing',
+        name: 'org-billing',
+        component: OrgBilling
       }
     ]
   },

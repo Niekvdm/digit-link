@@ -157,6 +157,11 @@ export interface Organization {
   createdAt: string
   appCount?: number
   hasPolicy?: boolean
+  planId?: string
+  planName?: string
+  plan?: Plan
+  accountCount?: number
+  activeTunnels?: number
 }
 
 export interface OrganizationsResponse {
@@ -437,4 +442,31 @@ export interface UsageSummaryResponse {
   }>
   periodStart: string
   periodEnd: string
+}
+
+// ============================================
+// Billing (Placeholders for future implementation)
+// ============================================
+
+export interface BillingInfo {
+  currentPlan?: Plan
+  usage: OrgUsageResponse
+  billingHistory: Invoice[]
+  paymentMethod?: PaymentMethod
+}
+
+export interface Invoice {
+  id: string
+  date: string
+  amount: number
+  currency: string
+  status: 'paid' | 'pending' | 'failed'
+  pdfUrl?: string
+}
+
+export interface PaymentMethod {
+  type: 'card' | 'invoice'
+  last4?: string
+  expiryMonth?: number
+  expiryYear?: number
 }

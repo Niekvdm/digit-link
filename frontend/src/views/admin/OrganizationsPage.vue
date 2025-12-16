@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { 
   PageHeader, 
   DataTable, 
@@ -7,14 +8,17 @@ import {
   ConfirmDialog,
   SearchInput,
   PolicyEditor,
-  StatusBadge
+  StatusBadge,
+  PlanBadge
 } from '@/components/ui'
-import { useOrganizations } from '@/composables/api'
+import { useOrganizations, usePlans } from '@/composables/api'
 import { useFormatters } from '@/composables/useFormatters'
-import type { Organization, SetPolicyRequest } from '@/types/api'
-import { Plus, Settings, Trash2, Pencil, Building2 } from 'lucide-vue-next'
+import type { Organization, SetPolicyRequest, Plan } from '@/types/api'
+import { Plus, Settings, Trash2, Pencil, Building2, Eye, Package } from 'lucide-vue-next'
 
+const router = useRouter()
 const { organizations, loading, error, fetchAll, create, update, remove, getPolicy, setPolicy } = useOrganizations()
+const { plans, fetchAll: fetchPlans, setOrganizationPlan } = usePlans()
 const { formatDate } = useFormatters()
 
 // Search
@@ -24,7 +28,8 @@ const filteredOrganizations = computed(() => {
   if (!searchQuery.value) return organizations.value
   const query = searchQuery.value.toLowerCase()
   return organizations.value.filter(org => 
-    org.name.toLowerCase().includes(query)
+    org.name.toLowerCase().includes(query) ||
+    (org.planName?.toLowerCase().includes(query))
   )
 })
 
@@ -33,9 +38,11 @@ const showCreateModal = ref(false)
 const showEditModal = ref(false)
 const showPolicyModal = ref(false)
 const showDeleteConfirm = ref(false)
+const showPlanModal = ref(false)
 
 // Form state
 const formName = ref('')
+const formPlanId = ref<string | null>(null)
 const formLoading = ref(false)
 const formError = ref('')
 const selectedOrg = ref<Organization | null>(null)
@@ -44,6 +51,7 @@ const currentPolicy = ref<SetPolicyRequest | null>(null)
 // Table columns
 const columns = [
   { key: 'name', label: 'Name', sortable: true },
+  { key: 'planName', label: 'Plan', sortable: true, width: '140px' },
   { key: 'appCount', label: 'Applications', sortable: true, width: '120px' },
   { key: 'hasPolicy', label: 'Auth Policy', width: '120px' },
   { key: 'createdAt', label: 'Created', sortable: true, width: '160px' },
@@ -51,11 +59,18 @@ const columns = [
 
 onMounted(() => {
   fetchAll()
+  fetchPlans()
 })
+
+// Navigate to org detail
+function viewOrgDetail(org: Organization) {
+  router.push({ name: 'admin-organization-detail', params: { orgId: org.id } })
+}
 
 // Create
 function openCreateModal() {
   formName.value = ''
+  formPlanId.value = null
   formError.value = ''
   showCreateModal.value = true
 }
@@ -70,7 +85,12 @@ async function handleCreate() {
   formError.value = ''
   
   try {
-    await create(formName.value.trim())
+    const org = await create(formName.value.trim())
+    // If a plan was selected, assign it
+    if (formPlanId.value && org) {
+      await setOrganizationPlan(org.id, formPlanId.value)
+      await fetchAll() // Refresh to get plan info
+    }
     showCreateModal.value = false
   } catch (e) {
     formError.value = e instanceof Error ? e.message : 'Failed to create organization'
@@ -83,6 +103,7 @@ async function handleCreate() {
 function openEditModal(org: Organization) {
   selectedOrg.value = org
   formName.value = org.name
+  formPlanId.value = org.planId || null
   formError.value = ''
   showEditModal.value = true
 }
@@ -98,9 +119,39 @@ async function handleUpdate() {
   
   try {
     await update(selectedOrg.value.id, formName.value.trim())
+    // Update plan if changed
+    if (formPlanId.value !== (selectedOrg.value.planId || null)) {
+      await setOrganizationPlan(selectedOrg.value.id, formPlanId.value)
+      await fetchAll() // Refresh to get updated plan info
+    }
     showEditModal.value = false
   } catch (e) {
     formError.value = e instanceof Error ? e.message : 'Failed to update organization'
+  } finally {
+    formLoading.value = false
+  }
+}
+
+// Plan assignment modal
+function openPlanModal(org: Organization) {
+  selectedOrg.value = org
+  formPlanId.value = org.planId || null
+  formError.value = ''
+  showPlanModal.value = true
+}
+
+async function handleSetPlan() {
+  if (!selectedOrg.value) return
+  
+  formLoading.value = true
+  formError.value = ''
+  
+  try {
+    await setOrganizationPlan(selectedOrg.value.id, formPlanId.value)
+    await fetchAll() // Refresh to get updated plan info
+    showPlanModal.value = false
+  } catch (e) {
+    formError.value = e instanceof Error ? e.message : 'Failed to update plan'
   } finally {
     formLoading.value = false
   }
@@ -160,7 +211,7 @@ async function handleDelete() {
   <div class="max-w-[1200px]">
     <PageHeader 
       title="Organizations" 
-      description="Manage organizations and their authentication policies"
+      description="Manage organizations, plans, and authentication policies"
     >
       <template #actions>
         <button class="btn btn-primary" @click="openCreateModal">
@@ -190,12 +241,25 @@ async function handleDelete() {
       row-key="id"
     >
       <template #cell-name="{ row }">
-        <div class="flex items-center gap-3">
+        <button 
+          class="flex items-center gap-3 text-left hover:text-accent-primary transition-colors"
+          @click="viewOrgDetail(row)"
+        >
           <div class="w-8 h-8 rounded-xs bg-[rgba(var(--accent-primary-rgb),0.1)] text-accent-primary flex items-center justify-center">
             <Building2 class="w-4 h-4" />
           </div>
           <span>{{ row.name }}</span>
-        </div>
+        </button>
+      </template>
+      
+      <template #cell-planName="{ row }">
+        <button 
+          class="hover:opacity-80 transition-opacity"
+          @click.stop="openPlanModal(row)"
+          title="Click to change plan"
+        >
+          <PlanBadge :plan-name="row.planName" size="sm" />
+        </button>
       </template>
       
       <template #cell-hasPolicy="{ value }">
@@ -212,6 +276,20 @@ async function handleDelete() {
       
       <template #actions="{ row }">
         <div class="flex items-center gap-1">
+          <button 
+            class="w-8 h-8 flex items-center justify-center border-none rounded-xs bg-transparent text-text-muted cursor-pointer transition-all duration-150 hover:bg-bg-elevated hover:text-text-primary"
+            title="View Details" 
+            @click.stop="viewOrgDetail(row)"
+          >
+            <Eye class="w-4 h-4" />
+          </button>
+          <button 
+            class="w-8 h-8 flex items-center justify-center border-none rounded-xs bg-transparent text-text-muted cursor-pointer transition-all duration-150 hover:bg-bg-elevated hover:text-text-primary"
+            title="Change Plan" 
+            @click.stop="openPlanModal(row)"
+          >
+            <Package class="w-4 h-4" />
+          </button>
           <button 
             class="w-8 h-8 flex items-center justify-center border-none rounded-xs bg-transparent text-text-muted cursor-pointer transition-all duration-150 hover:bg-bg-elevated hover:text-text-primary"
             title="Configure Policy" 
@@ -261,6 +339,21 @@ async function handleDelete() {
             autofocus
           />
         </div>
+
+        <div class="flex flex-col gap-2">
+          <label class="form-label" for="org-plan">Subscription Plan</label>
+          <select
+            id="org-plan"
+            v-model="formPlanId"
+            class="form-input"
+          >
+            <option :value="null">No Plan</option>
+            <option v-for="plan in plans" :key="plan.id" :value="plan.id">
+              {{ plan.name }}
+            </option>
+          </select>
+          <p class="text-xs text-text-muted">Select a plan to set quota limits for this organization.</p>
+        </div>
       </form>
       
       <template #footer>
@@ -289,6 +382,20 @@ async function handleDelete() {
             autofocus
           />
         </div>
+
+        <div class="flex flex-col gap-2">
+          <label class="form-label" for="edit-org-plan">Subscription Plan</label>
+          <select
+            id="edit-org-plan"
+            v-model="formPlanId"
+            class="form-input"
+          >
+            <option :value="null">No Plan</option>
+            <option v-for="plan in plans" :key="plan.id" :value="plan.id">
+              {{ plan.name }}
+            </option>
+          </select>
+        </div>
       </form>
       
       <template #footer>
@@ -297,6 +404,67 @@ async function handleDelete() {
         </button>
         <button class="btn btn-primary" @click="handleUpdate" :disabled="formLoading || !formName.trim()">
           {{ formLoading ? 'Saving...' : 'Save Changes' }}
+        </button>
+      </template>
+    </Modal>
+
+    <!-- Plan Assignment Modal -->
+    <Modal v-model="showPlanModal" :title="`Change Plan: ${selectedOrg?.name}`">
+      <div class="flex flex-col gap-4">
+        <div v-if="formError" class="error-message">{{ formError }}</div>
+        
+        <div class="flex flex-col gap-2">
+          <label class="form-label">Current Plan</label>
+          <PlanBadge :plan-name="selectedOrg?.planName" size="md" />
+        </div>
+
+        <div class="flex flex-col gap-2">
+          <label class="form-label" for="plan-select">New Plan</label>
+          <select
+            id="plan-select"
+            v-model="formPlanId"
+            class="form-input"
+          >
+            <option :value="null">No Plan (Remove limits)</option>
+            <option v-for="plan in plans" :key="plan.id" :value="plan.id">
+              {{ plan.name }}
+            </option>
+          </select>
+        </div>
+
+        <div v-if="formPlanId" class="p-4 bg-bg-elevated rounded-xs border border-border-subtle">
+          <h4 class="text-sm font-semibold text-text-primary mb-2">Plan Details</h4>
+          <div class="space-y-1.5 text-sm">
+            <template v-for="plan in plans" :key="plan.id">
+              <template v-if="plan.id === formPlanId">
+                <div class="flex justify-between">
+                  <span class="text-text-secondary">Bandwidth</span>
+                  <span class="text-text-primary font-mono">{{ plan.bandwidthBytesMonthly ? `${Math.round(plan.bandwidthBytesMonthly / 1048576)} MB` : 'Unlimited' }}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-text-secondary">Tunnel Hours</span>
+                  <span class="text-text-primary font-mono">{{ plan.tunnelHoursMonthly || 'Unlimited' }}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-text-secondary">Concurrent Tunnels</span>
+                  <span class="text-text-primary font-mono">{{ plan.concurrentTunnelsMax || 'Unlimited' }}</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-text-secondary">Requests</span>
+                  <span class="text-text-primary font-mono">{{ plan.requestsMonthly ? plan.requestsMonthly.toLocaleString() : 'Unlimited' }}</span>
+                </div>
+              </template>
+            </template>
+          </div>
+        </div>
+      </div>
+      
+      <template #footer>
+        <button class="btn btn-secondary" @click="showPlanModal = false" :disabled="formLoading">
+          Cancel
+        </button>
+        <button class="btn btn-primary" @click="handleSetPlan" :disabled="formLoading">
+          {{ formLoading ? 'Updating...' : 'Update Plan' }}
         </button>
       </template>
     </Modal>

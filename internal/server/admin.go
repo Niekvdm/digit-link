@@ -143,12 +143,23 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(path, "/organizations/") && strings.HasSuffix(path, "/policy") && r.Method == http.MethodPut:
 		orgID := strings.TrimSuffix(strings.TrimPrefix(path, "/organizations/"), "/policy")
 		s.handleSetOrgPolicy(w, r, orgID)
+	case strings.HasPrefix(path, "/organizations/") && strings.HasSuffix(path, "/plan") && r.Method == http.MethodPut:
+		orgID := strings.TrimSuffix(strings.TrimPrefix(path, "/organizations/"), "/plan")
+		s.handleSetOrganizationPlan(w, r, orgID)
 	case strings.HasPrefix(path, "/organizations/") && r.Method == http.MethodPut:
 		orgID := strings.TrimPrefix(path, "/organizations/")
 		s.handleUpdateOrganization(w, r, orgID)
 	case strings.HasPrefix(path, "/organizations/") && r.Method == http.MethodDelete:
 		orgID := strings.TrimPrefix(path, "/organizations/")
 		s.handleDeleteOrganization(w, r, orgID)
+	case strings.HasPrefix(path, "/organizations/") && r.Method == http.MethodGet:
+		// GET /organizations/:id - single org (must come after /policy and /usage routes)
+		orgID := strings.TrimPrefix(path, "/organizations/")
+		if !strings.Contains(orgID, "/") {
+			s.handleGetOrganization(w, r, orgID)
+		} else {
+			http.Error(w, "Not found", http.StatusNotFound)
+		}
 
 	// Application management
 	case path == "/applications" && r.Method == http.MethodGet:
@@ -213,9 +224,6 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(path, "/organizations/") && strings.HasSuffix(path, "/usage") && r.Method == http.MethodGet:
 		orgID := strings.TrimSuffix(strings.TrimPrefix(path, "/organizations/"), "/usage")
 		s.handleGetOrganizationUsage(w, r, orgID)
-	case strings.HasPrefix(path, "/organizations/") && strings.HasSuffix(path, "/plan") && r.Method == http.MethodPut:
-		orgID := strings.TrimSuffix(strings.TrimPrefix(path, "/organizations/"), "/plan")
-		s.handleSetOrganizationPlan(w, r, orgID)
 
 	default:
 		http.Error(w, "Not found", http.StatusNotFound)
@@ -1273,7 +1281,7 @@ func (s *Server) handleListOrganizations(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Enrich with app counts and policy status
+	// Enrich with app counts, policy status, and plan info
 	result := make([]map[string]interface{}, len(orgs))
 	for i, org := range orgs {
 		appCount, _ := s.db.CountApplicationsByOrg(org.ID)
@@ -1285,6 +1293,14 @@ func (s *Server) handleListOrganizations(w http.ResponseWriter, r *http.Request)
 			"createdAt": org.CreatedAt,
 			"appCount":  appCount,
 			"hasPolicy": hasPolicy,
+		}
+
+		// Add plan info if organization has a plan
+		if org.PlanID != nil {
+			result[i]["planId"] = *org.PlanID
+			if plan, err := s.db.GetPlan(*org.PlanID); err == nil && plan != nil {
+				result[i]["planName"] = plan.Name
+			}
 		}
 	}
 
@@ -1426,6 +1442,48 @@ func (s *Server) handleDeleteOrganization(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 	})
+}
+
+// handleGetOrganization returns a single organization with full details
+func (s *Server) handleGetOrganization(w http.ResponseWriter, r *http.Request, orgID string) {
+	org, err := s.db.GetOrganizationByID(orgID)
+	if err != nil {
+		log.Printf("Failed to get organization: %v", err)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if org == nil {
+		http.Error(w, "Organization not found", http.StatusNotFound)
+		return
+	}
+
+	// Get enriched data
+	appCount, _ := s.db.CountApplicationsByOrg(orgID)
+	hasPolicy, _ := s.db.HasOrgAuthPolicy(orgID)
+	accountCount, _ := s.db.CountAccountsByOrg(orgID)
+	activeTunnels, _ := s.db.CountActiveTunnelsByOrg(orgID)
+
+	result := map[string]interface{}{
+		"id":            org.ID,
+		"name":          org.Name,
+		"createdAt":     org.CreatedAt,
+		"appCount":      appCount,
+		"hasPolicy":     hasPolicy,
+		"accountCount":  accountCount,
+		"activeTunnels": activeTunnels,
+	}
+
+	// Add plan info if set
+	if org.PlanID != nil {
+		result["planId"] = *org.PlanID
+		if plan, err := s.db.GetPlan(*org.PlanID); err == nil && plan != nil {
+			result["planName"] = plan.Name
+			result["plan"] = plan
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
 }
 
 // handleGetOrgPolicy returns the auth policy for an organization

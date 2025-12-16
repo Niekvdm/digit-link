@@ -138,6 +138,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Public API endpoints (no auth required)
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		s.handlePublicAPI(w, r)
+		return
+	}
+
 	// For main domain requests, distinguish between API calls and SPA navigation
 	// API calls have auth headers; browser navigation does not
 	isMainDomain := s.extractSubdomain(r.Host) == ""
@@ -213,6 +219,32 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status": "ok",
+	})
+}
+
+// handlePublicAPI handles public API endpoints that don't require authentication
+func (s *Server) handlePublicAPI(w http.ResponseWriter, r *http.Request) {
+	path := strings.TrimPrefix(r.URL.Path, "/api")
+
+	switch {
+	case path == "/plans" && r.Method == http.MethodGet:
+		s.handlePublicListPlans(w, r)
+	default:
+		http.Error(w, "Not found", http.StatusNotFound)
+	}
+}
+
+// handlePublicListPlans returns all plans for public display (pricing page)
+func (s *Server) handlePublicListPlans(w http.ResponseWriter, r *http.Request) {
+	plans, err := s.db.ListPlans()
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"plans": plans,
 	})
 }
 
