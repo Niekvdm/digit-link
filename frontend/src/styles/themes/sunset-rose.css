@@ -1,0 +1,43 @@
+/* ==============================================
+   THEME: Sunset Rose
+   Character: Warm elegant
+   ============================================== */
+
+[data-theme="sunset-rose"] {
+  /* Background Colors - Warm dark tones */
+  --bg-deep: #1a1717;
+  --bg-surface: #252020;
+  --bg-elevated: #302929;
+
+  /* Border Colors - Warm grays */
+  --border-subtle: #423838;
+  --border-accent: #524646;
+
+  /* Text Colors - Warm whites */
+  --text-primary: #ede8e8;
+  --text-secondary: #a89898;
+  --text-muted: #7a6a6a;
+
+  /* Primary Accent - Dusty Rose */
+  --accent-primary: #d4847a;
+  --accent-primary-dim: #b86e64;
+  --accent-primary-rgb: 212, 132, 122;
+
+  /* Secondary Accent - Soft Gold */
+  --accent-secondary: #c9a86c;
+  --accent-secondary-dim: #b3945a;
+  --accent-secondary-rgb: 201, 168, 108;
+
+  /* Semantic Accents */
+  --accent-amber: #d4a84b;
+  --accent-amber-rgb: 212, 168, 75;
+  --accent-red: #d47a7a;
+  --accent-red-rgb: 212, 122, 122;
+  --accent-blue: #8494c9;
+  --accent-blue-rgb: 132, 148, 201;
+
+  /* Legacy aliases */
+  --accent-copper: var(--accent-primary);
+  --accent-copper-dim: var(--accent-primary-dim);
+  --accent-emerald: var(--accent-secondary);
+}

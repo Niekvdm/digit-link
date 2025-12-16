@@ -1,0 +1,44 @@
+/* ==============================================
+   THEME: Copper Dark (Default)
+   Character: Warm industrial
+   ============================================== */
+
+[data-theme="copper-dark"],
+:root {
+  /* Background Colors */
+  --bg-deep: #1a1a1a;
+  --bg-surface: #242424;
+  --bg-elevated: #2d2d2d;
+
+  /* Border Colors */
+  --border-subtle: #3a3a3a;
+  --border-accent: #4a4a4a;
+
+  /* Text Colors */
+  --text-primary: #e8e4e0;
+  --text-secondary: #9a9590;
+  --text-muted: #6a6560;
+
+  /* Primary Accent - Copper */
+  --accent-primary: #c9956c;
+  --accent-primary-dim: #a67a54;
+  --accent-primary-rgb: 201, 149, 108;
+
+  /* Secondary Accent - Emerald */
+  --accent-secondary: #4a9f7e;
+  --accent-secondary-dim: #3d8a6b;
+  --accent-secondary-rgb: 74, 159, 126;
+
+  /* Semantic Accents */
+  --accent-amber: #d4a84b;
+  --accent-amber-rgb: 212, 168, 75;
+  --accent-red: #c96c6c;
+  --accent-red-rgb: 201, 108, 108;
+  --accent-blue: #6c9fc9;
+  --accent-blue-rgb: 108, 159, 201;
+
+  /* Legacy aliases for backwards compatibility */
+  --accent-copper: var(--accent-primary);
+  --accent-copper-dim: var(--accent-primary-dim);
+  --accent-emerald: var(--accent-secondary);
+}

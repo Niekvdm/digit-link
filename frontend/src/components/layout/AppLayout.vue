@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
+import { ThemeSwitcher } from '@/components/shared'
 import { 
   LayoutDashboard, 
   Users, 
@@ -47,8 +48,8 @@ function logout() {
           to="/dashboard" 
           class="flex items-center gap-3 text-[var(--text-primary)] no-underline"
         >
-          <div class="w-7 h-7 border-2 border-[var(--accent-copper)] rounded-md flex items-center justify-center">
-            <div class="w-3 h-3 bg-[var(--accent-copper)] rounded-sm rotate-45" />
+          <div class="w-7 h-7 border-2 border-[var(--accent-primary)] rounded-md flex items-center justify-center">
+            <div class="w-3 h-3 bg-[var(--accent-primary)] rounded-sm rotate-45" />
           </div>
           <span class="font-[var(--font-display)] text-xl font-semibold hidden lg:inline">digit-link</span>
         </RouterLink>
@@ -59,12 +60,8 @@ function logout() {
             v-for="link in navLinks"
             :key="link.name"
             :to="{ name: link.name }"
-            class="flex items-center gap-1.5 px-3 py-2 rounded-md text-sm transition-all whitespace-nowrap"
-            :class="[
-              currentRoute === link.name 
-                ? 'text-[var(--accent-copper)] bg-[rgba(201,149,108,0.1)]' 
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-elevated)]'
-            ]"
+            class="nav-link"
+            :class="{ 'nav-link--active': currentRoute === link.name }"
           >
             <component :is="link.icon" class="w-4 h-4" />
             <span class="hidden md:inline">{{ link.label }}</span>
@@ -74,9 +71,12 @@ function logout() {
         <!-- Spacer -->
         <div class="flex-1" />
 
+        <!-- Theme Switcher -->
+        <ThemeSwitcher />
+
         <!-- Logout -->
         <button 
-          class="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-[var(--text-muted)] border border-[var(--border-subtle)] hover:text-[var(--accent-red)] hover:border-[var(--accent-red)] transition-all"
+          class="flex items-center gap-2 px-3 py-2 ml-2 rounded-md text-sm text-[var(--text-muted)] border border-[var(--border-subtle)] hover:text-[var(--accent-red)] hover:border-[var(--accent-red)] transition-all"
           @click="logout"
         >
           <LogOut class="w-4 h-4" />
@@ -91,3 +91,32 @@ function logout() {
     </main>
   </div>
 </template>
+
+<style scoped>
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.nav-link:hover {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+}
+
+.nav-link--active {
+  color: var(--accent-primary);
+  background: rgba(var(--accent-primary-rgb), 0.1);
+}
+
+.nav-link--active:hover {
+  color: var(--accent-primary);
+  background: rgba(var(--accent-primary-rgb), 0.15);
+}
+</style>

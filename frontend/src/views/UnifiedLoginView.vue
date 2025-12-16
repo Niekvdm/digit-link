@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
+import { ThemeSwitcher } from '@/components/shared'
 import { User, Lock, Key, ArrowRight, ArrowLeft, AlertCircle, Shield, Building2, Loader2, Check } from 'lucide-vue-next'
 
 const router = useRouter()
@@ -46,7 +47,7 @@ const stepDescription = computed(() => {
 })
 
 const accentColor = computed(() => {
-  return accountType.value === 'admin' ? 'copper' : 'emerald'
+  return accountType.value === 'admin' ? 'primary' : 'secondary'
 })
 
 // Check if already authenticated
@@ -517,6 +518,7 @@ function handleSubmit() {
 
       <!-- Footer -->
       <div class="login-footer">
+        <ThemeSwitcher />
         <p>
           Secure infrastructure by 
           <a href="https://digit.zone" target="_blank" rel="noopener">digit.zone</a>
@@ -559,14 +561,14 @@ function handleSubmit() {
   transition: background 0.6s ease;
 }
 
-.bg-gradient--copper {
-  background: radial-gradient(ellipse at 30% 20%, rgba(201, 149, 108, 0.08) 0%, transparent 50%),
-              radial-gradient(ellipse at 70% 80%, rgba(201, 149, 108, 0.05) 0%, transparent 50%);
+.bg-gradient--primary {
+  background: radial-gradient(ellipse at 30% 20%, rgba(var(--accent-primary-rgb), 0.08) 0%, transparent 50%),
+              radial-gradient(ellipse at 70% 80%, rgba(var(--accent-primary-rgb), 0.05) 0%, transparent 50%);
 }
 
-.bg-gradient--emerald {
-  background: radial-gradient(ellipse at 30% 20%, rgba(74, 159, 126, 0.08) 0%, transparent 50%),
-              radial-gradient(ellipse at 70% 80%, rgba(74, 159, 126, 0.05) 0%, transparent 50%);
+.bg-gradient--secondary {
+  background: radial-gradient(ellipse at 30% 20%, rgba(var(--accent-secondary-rgb), 0.08) 0%, transparent 50%),
+              radial-gradient(ellipse at 70% 80%, rgba(var(--accent-secondary-rgb), 0.05) 0%, transparent 50%);
 }
 
 /* Decorative corners */
@@ -582,7 +584,7 @@ function handleSubmit() {
 .corner::after {
   content: '';
   position: absolute;
-  background: var(--accent-copper);
+  background: var(--accent-primary);
   opacity: 0.25;
   transition: background 0.3s ease;
 }
@@ -620,7 +622,7 @@ function handleSubmit() {
   width: 56px;
   height: 56px;
   margin: 0 auto 1.25rem;
-  border: 2px solid var(--accent-copper);
+  border: 2px solid var(--accent-primary);
   border-radius: 14px;
   display: flex;
   align-items: center;
@@ -628,34 +630,34 @@ function handleSubmit() {
   transition: border-color 0.3s ease;
 }
 
-.logo--emerald {
-  border-color: var(--accent-emerald);
+.logo--secondary {
+  border-color: var(--accent-secondary);
 }
 
 .logo-inner {
   width: 20px;
   height: 20px;
-  background: var(--accent-copper);
+  background: var(--accent-primary);
   border-radius: 4px;
   transform: rotate(45deg);
   transition: background 0.3s ease;
 }
 
-.logo--emerald .logo-inner {
-  background: var(--accent-emerald);
+.logo--secondary .logo-inner {
+  background: var(--accent-secondary);
 }
 
 .logo-ring {
   position: absolute;
   inset: -4px;
-  border: 1px solid var(--accent-copper);
+  border: 1px solid var(--accent-primary);
   border-radius: 16px;
   opacity: 0.3;
   transition: border-color 0.3s ease;
 }
 
-.logo--emerald .logo-ring {
-  border-color: var(--accent-emerald);
+.logo--secondary .logo-ring {
+  border-color: var(--accent-secondary);
 }
 
 .brand-title {
@@ -686,12 +688,12 @@ function handleSubmit() {
   left: 2rem;
   right: 2rem;
   height: 2px;
-  background: linear-gradient(90deg, transparent, var(--accent-copper), transparent);
+  background: linear-gradient(90deg, transparent, var(--accent-primary), transparent);
   transition: background 0.3s ease;
 }
 
-.card-accent--emerald {
-  background: linear-gradient(90deg, transparent, var(--accent-emerald), transparent);
+.card-accent--secondary {
+  background: linear-gradient(90deg, transparent, var(--accent-secondary), transparent);
 }
 
 /* Card header */
@@ -756,14 +758,14 @@ function handleSubmit() {
   flex-shrink: 0;
 }
 
-.account-badge--copper {
-  background: rgba(201, 149, 108, 0.15);
-  color: var(--accent-copper);
+.account-badge--primary {
+  background: rgba(var(--accent-primary-rgb), 0.15);
+  color: var(--accent-primary);
 }
 
-.account-badge--emerald {
-  background: rgba(74, 159, 126, 0.15);
-  color: var(--accent-emerald);
+.account-badge--secondary {
+  background: rgba(var(--accent-secondary-rgb), 0.15);
+  color: var(--accent-secondary);
 }
 
 /* Card body */
@@ -777,8 +779,8 @@ function handleSubmit() {
   align-items: flex-start;
   gap: 0.625rem;
   padding: 0.875rem 1rem;
-  background: rgba(201, 108, 108, 0.1);
-  border: 1px solid rgba(201, 108, 108, 0.3);
+  background: rgba(var(--accent-red-rgb), 0.1);
+  border: 1px solid rgba(var(--accent-red-rgb), 0.3);
   border-radius: 10px;
   margin-bottom: 1.25rem;
   font-size: 0.875rem;
@@ -842,8 +844,8 @@ function handleSubmit() {
 
 .form-input:focus {
   outline: none;
-  border-color: var(--accent-copper);
-  box-shadow: 0 0 0 3px rgba(201, 149, 108, 0.12);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(var(--accent-primary-rgb), 0.12);
 }
 
 .form-input--icon {
@@ -887,14 +889,14 @@ function handleSubmit() {
   font-size: 0.875rem;
 }
 
-.user-avatar--copper {
-  background: rgba(201, 149, 108, 0.2);
-  color: var(--accent-copper);
+.user-avatar--primary {
+  background: rgba(var(--accent-primary-rgb), 0.2);
+  color: var(--accent-primary);
 }
 
-.user-avatar--emerald {
-  background: rgba(74, 159, 126, 0.2);
-  color: var(--accent-emerald);
+.user-avatar--secondary {
+  background: rgba(var(--accent-secondary-rgb), 0.2);
+  color: var(--accent-secondary);
 }
 
 .user-name {
@@ -918,14 +920,14 @@ function handleSubmit() {
   justify-content: center;
 }
 
-.totp-icon--copper {
-  background: rgba(201, 149, 108, 0.15);
-  color: var(--accent-copper);
+.totp-icon--primary {
+  background: rgba(var(--accent-primary-rgb), 0.15);
+  color: var(--accent-primary);
 }
 
-.totp-icon--emerald {
-  background: rgba(74, 159, 126, 0.15);
-  color: var(--accent-emerald);
+.totp-icon--secondary {
+  background: rgba(var(--accent-secondary-rgb), 0.15);
+  color: var(--accent-secondary);
 }
 
 /* TOTP Setup */
@@ -959,12 +961,12 @@ function handleSubmit() {
   overflow: hidden;
 }
 
-.qr-placeholder--copper {
-  border-color: rgba(201, 149, 108, 0.3);
+.qr-placeholder--primary {
+  border-color: rgba(var(--accent-primary-rgb), 0.3);
 }
 
-.qr-placeholder--emerald {
-  border-color: rgba(74, 159, 126, 0.3);
+.qr-placeholder--secondary {
+  border-color: rgba(var(--accent-secondary-rgb), 0.3);
 }
 
 .qr-image {
@@ -1009,23 +1011,23 @@ function handleSubmit() {
   position: relative;
 }
 
-.submit-btn--copper {
-  background: var(--accent-copper);
+.submit-btn--primary {
+  background: var(--accent-primary);
   color: var(--bg-deep);
 }
 
-.submit-btn--copper:hover:not(:disabled) {
-  background: var(--accent-copper-dim);
+.submit-btn--primary:hover:not(:disabled) {
+  background: var(--accent-primary-dim);
   transform: translateY(-1px);
 }
 
-.submit-btn--emerald {
-  background: var(--accent-emerald);
+.submit-btn--secondary {
+  background: var(--accent-secondary);
   color: var(--bg-deep);
 }
 
-.submit-btn--emerald:hover:not(:disabled) {
-  background: #3d8a6b;
+.submit-btn--secondary:hover:not(:disabled) {
+  background: var(--accent-secondary-dim);
   transform: translateY(-1px);
 }
 
@@ -1048,10 +1050,14 @@ function handleSubmit() {
   margin-top: 1.5rem;
   font-size: 0.75rem;
   color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
 }
 
 .login-footer a {
-  color: var(--accent-copper);
+  color: var(--accent-primary);
   text-decoration: none;
   transition: color 0.2s ease;
 }
@@ -1096,4 +1102,3 @@ function handleSubmit() {
   to { transform: rotate(360deg); }
 }
 </style>
-

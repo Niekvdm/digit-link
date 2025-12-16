@@ -1,45 +1,42 @@
 @import url('https://fonts.googleapis.com/css2?family=Crimson+Text:wght@400;600&family=JetBrains+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
+/* Import theme files */
+@import "./styles/themes/copper-dark.css";
+@import "./styles/themes/midnight-sapphire.css";
+@import "./styles/themes/forest-moss.css";
+@import "./styles/themes/sunset-rose.css";
+
 /* Tailwind Theme - Typography */
 @theme {
   --font-display: 'Crimson Text', Georgia, serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
   --font-body: 'Inter', -apple-system, sans-serif;
 
-  /* Color tokens */
-  --color-bg-deep: #1a1a1a;
-  --color-bg-surface: #242424;
-  --color-bg-elevated: #2d2d2d;
-  --color-border-subtle: #3a3a3a;
-  --color-border-accent: #4a4a4a;
-  --color-text-primary: #e8e4e0;
-  --color-text-secondary: #9a9590;
-  --color-text-muted: #6a6560;
-  --color-accent-copper: #c9956c;
-  --color-accent-copper-dim: #a67a54;
-  --color-accent-emerald: #4a9f7e;
-  --color-accent-amber: #d4a84b;
-  --color-accent-red: #c96c6c;
-  --color-accent-blue: #6c9fc9;
+  /* Color tokens mapped to CSS variables */
+  --color-bg-deep: var(--bg-deep);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-accent: var(--border-accent);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-accent-primary: var(--accent-primary);
+  --color-accent-primary-dim: var(--accent-primary-dim);
+  --color-accent-secondary: var(--accent-secondary);
+  --color-accent-amber: var(--accent-amber);
+  --color-accent-red: var(--accent-red);
+  --color-accent-blue: var(--accent-blue);
+  
+  /* Legacy color tokens for backwards compatibility */
+  --color-accent-copper: var(--accent-primary);
+  --color-accent-copper-dim: var(--accent-primary-dim);
+  --color-accent-emerald: var(--accent-secondary);
 }
 
-/* CSS Variables for theming */
+/* CSS Variables for theming - Typography */
 :root {
-  --bg-deep: #1a1a1a;
-  --bg-surface: #242424;
-  --bg-elevated: #2d2d2d;
-  --border-subtle: #3a3a3a;
-  --border-accent: #4a4a4a;
-  --text-primary: #e8e4e0;
-  --text-secondary: #9a9590;
-  --text-muted: #6a6560;
-  --accent-copper: #c9956c;
-  --accent-copper-dim: #a67a54;
-  --accent-emerald: #4a9f7e;
-  --accent-amber: #d4a84b;
-  --accent-red: #c96c6c;
-  --accent-blue: #6c9fc9;
   --font-display: 'Crimson Text', Georgia, serif;
   --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
   --font-body: 'Inter', -apple-system, sans-serif;
@@ -76,12 +73,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-copper-dim);
+  background: var(--accent-primary-dim);
 }
 
 /* Selection styling */
 ::selection {
-  background: var(--accent-copper);
+  background: var(--accent-primary);
   color: var(--bg-deep);
 }
 
@@ -192,7 +189,7 @@ body {
 .corner::after {
   content: '';
   position: absolute;
-  background: var(--accent-copper);
+  background: var(--accent-primary);
   opacity: 0.3;
 }
 
@@ -226,8 +223,8 @@ body {
 
 .form-input:focus {
   outline: none;
-  border-color: var(--accent-copper);
-  box-shadow: 0 0 0 3px rgba(201, 149, 108, 0.15);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(var(--accent-primary-rgb), 0.15);
 }
 
 .form-input-mono {
@@ -278,12 +275,12 @@ body {
 }
 
 .btn-primary {
-  background: var(--accent-copper);
+  background: var(--accent-primary);
   color: var(--bg-deep);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: var(--accent-copper-dim);
+  background: var(--accent-primary-dim);
   transform: translateY(-1px);
 }
 
@@ -300,12 +297,12 @@ body {
 }
 
 .btn-success {
-  background: var(--accent-emerald);
+  background: var(--accent-secondary);
   color: var(--bg-deep);
 }
 
 .btn-success:hover:not(:disabled) {
-  background: #3d8a6b;
+  background: var(--accent-secondary-dim);
 }
 
 .btn-danger {
@@ -315,7 +312,7 @@ body {
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: rgba(201, 108, 108, 0.1);
+  background: rgba(var(--accent-red-rgb), 0.1);
 }
 
 .btn-sm {
@@ -396,7 +393,7 @@ body {
   left: 0;
   right: 0;
   height: 2px;
-  background: linear-gradient(90deg, var(--accent-copper), transparent);
+  background: linear-gradient(90deg, var(--accent-primary), transparent);
 }
 
 /* ============================================
@@ -472,7 +469,7 @@ body {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(135deg, rgba(212, 168, 75, 0.05), transparent);
+  background: linear-gradient(135deg, rgba(var(--accent-amber-rgb), 0.05), transparent);
   pointer-events: none;
 }
 
@@ -493,8 +490,8 @@ body {
   display: flex;
   gap: 0.75rem;
   padding: 1rem;
-  background: rgba(201, 108, 108, 0.08);
-  border: 1px solid rgba(201, 108, 108, 0.3);
+  background: rgba(var(--accent-red-rgb), 0.08);
+  border: 1px solid rgba(var(--accent-red-rgb), 0.3);
   border-radius: 8px;
 }
 
@@ -506,8 +503,8 @@ body {
   display: flex;
   gap: 0.75rem;
   padding: 1rem 1.25rem;
-  background: rgba(108, 159, 201, 0.1);
-  border: 1px solid rgba(108, 159, 201, 0.3);
+  background: rgba(var(--accent-blue-rgb), 0.1);
+  border: 1px solid rgba(var(--accent-blue-rgb), 0.3);
   border-radius: 8px;
   font-size: 0.875rem;
   color: var(--accent-blue);
@@ -518,7 +515,7 @@ body {
    ============================================ */
 
 .error-message {
-  background: rgba(201, 108, 108, 0.1);
+  background: rgba(var(--accent-red-rgb), 0.1);
   border: 1px solid var(--accent-red);
   border-radius: 8px;
   padding: 0.875rem 1rem;
@@ -534,8 +531,8 @@ body {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: var(--accent-emerald);
-  box-shadow: 0 0 10px var(--accent-emerald);
+  background: var(--accent-secondary);
+  box-shadow: 0 0 10px var(--accent-secondary);
   animation: pulse 2s ease-in-out infinite;
 }
 
@@ -548,14 +545,14 @@ body {
   align-items: center;
   gap: 0.5rem;
   font-size: 0.75rem;
-  color: var(--accent-emerald);
+  color: var(--accent-secondary);
 }
 
 .live-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--accent-emerald);
+  background: var(--accent-secondary);
   animation: pulse 1.5s ease-in-out infinite;
 }
 
@@ -568,7 +565,7 @@ body {
   bottom: 2rem;
   left: 50%;
   transform: translateX(-50%) translateY(100px);
-  background: var(--accent-emerald);
+  background: var(--accent-secondary);
   color: var(--bg-deep);
   padding: 0.75rem 1.5rem;
   border-radius: 8px;

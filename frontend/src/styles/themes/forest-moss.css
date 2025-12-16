@@ -1,0 +1,43 @@
+/* ==============================================
+   THEME: Forest Moss
+   Character: Organic natural
+   ============================================== */
+
+[data-theme="forest-moss"] {
+  /* Background Colors - Forest dark greens */
+  --bg-deep: #141816;
+  --bg-surface: #1c211e;
+  --bg-elevated: #262d28;
+
+  /* Border Colors - Earthy greens */
+  --border-subtle: #3a4239;
+  --border-accent: #4a564a;
+
+  /* Text Colors - Natural warmth */
+  --text-primary: #e4e8e2;
+  --text-secondary: #9aa594;
+  --text-muted: #6a7566;
+
+  /* Primary Accent - Sage Green */
+  --accent-primary: #7fae7a;
+  --accent-primary-dim: #6a9665;
+  --accent-primary-rgb: 127, 174, 122;
+
+  /* Secondary Accent - Warm Terracotta */
+  --accent-secondary: #c9957a;
+  --accent-secondary-dim: #b38066;
+  --accent-secondary-rgb: 201, 149, 122;
+
+  /* Semantic Accents */
+  --accent-amber: #c9b44b;
+  --accent-amber-rgb: 201, 180, 75;
+  --accent-red: #c98a7a;
+  --accent-red-rgb: 201, 138, 122;
+  --accent-blue: #7a9fc9;
+  --accent-blue-rgb: 122, 159, 201;
+
+  /* Legacy aliases */
+  --accent-copper: var(--accent-primary);
+  --accent-copper-dim: var(--accent-primary-dim);
+  --accent-emerald: var(--accent-secondary);
+}

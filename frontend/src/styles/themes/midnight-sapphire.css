@@ -1,0 +1,43 @@
+/* ==============================================
+   THEME: Midnight Sapphire
+   Character: Cool professional
+   ============================================== */
+
+[data-theme="midnight-sapphire"] {
+  /* Background Colors - Blue-black tones */
+  --bg-deep: #0f1419;
+  --bg-surface: #1a2332;
+  --bg-elevated: #243044;
+
+  /* Border Colors - Steel blue hints */
+  --border-subtle: #2d3d52;
+  --border-accent: #3d5066;
+
+  /* Text Colors - Cool neutrals */
+  --text-primary: #e4e8ed;
+  --text-secondary: #8b9aad;
+  --text-muted: #5a6b7f;
+
+  /* Primary Accent - Steel Blue */
+  --accent-primary: #6b8cce;
+  --accent-primary-dim: #5474b3;
+  --accent-primary-rgb: 107, 140, 206;
+
+  /* Secondary Accent - Cyan */
+  --accent-secondary: #5ab3a8;
+  --accent-secondary-dim: #4a9a90;
+  --accent-secondary-rgb: 90, 179, 168;
+
+  /* Semantic Accents */
+  --accent-amber: #c9a84b;
+  --accent-amber-rgb: 201, 168, 75;
+  --accent-red: #c97878;
+  --accent-red-rgb: 201, 120, 120;
+  --accent-blue: #6b8cce;
+  --accent-blue-rgb: 107, 140, 206;
+
+  /* Legacy aliases */
+  --accent-copper: var(--accent-primary);
+  --accent-copper-dim: var(--accent-primary-dim);
+  --accent-emerald: var(--accent-secondary);
+}
