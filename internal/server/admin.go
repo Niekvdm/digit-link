@@ -227,12 +227,6 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	// Usage management
 	case path == "/usage/summary" && r.Method == http.MethodGet:
 		s.handleUsageSummary(w, r)
-	case strings.HasPrefix(path, "/organizations/") && strings.HasSuffix(path, "/usage") && r.Method == http.MethodGet:
-		orgID := strings.TrimSuffix(strings.TrimPrefix(path, "/organizations/"), "/usage")
-		s.handleGetOrganizationUsage(w, r, orgID)
-	case strings.HasPrefix(path, "/organizations/") && strings.HasSuffix(path, "/usage/reset") && r.Method == http.MethodPost:
-		orgID := strings.TrimSuffix(strings.TrimPrefix(path, "/organizations/"), "/usage/reset")
-		s.handleResetOrganizationUsage(w, r, orgID)
 
 	default:
 		http.Error(w, "Not found", http.StatusNotFound)
