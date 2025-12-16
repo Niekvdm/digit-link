@@ -24,10 +24,18 @@ type UsageCache struct {
 
 // OrgUsage holds current period usage for an organization
 type OrgUsage struct {
-	mu                sync.RWMutex
-	BandwidthBytes    int64
-	TunnelSeconds     int64
-	RequestCount      int64
+	mu sync.RWMutex
+
+	// Baseline from DB (set on init, updated after each flush)
+	dbBandwidthBytes int64
+	dbTunnelSeconds  int64
+	dbRequestCount   int64
+
+	// Delta since last flush (reset to 0 after flush)
+	deltaBandwidthBytes int64
+	deltaTunnelSeconds  int64
+	deltaRequestCount   int64
+
 	ConcurrentTunnels int32 // atomic
 	PeriodStart       time.Time
 	LimitHitAt        *time.Time
@@ -115,8 +123,8 @@ func (uc *UsageCache) flushOrg(orgID string) {
 	usage.mu.Lock()
 	defer usage.mu.Unlock()
 
-	// Only flush if there's data to flush
-	if usage.BandwidthBytes == 0 && usage.TunnelSeconds == 0 && usage.RequestCount == 0 {
+	// Only flush if there's delta data to flush
+	if usage.deltaBandwidthBytes == 0 && usage.deltaTunnelSeconds == 0 && usage.deltaRequestCount == 0 {
 		return
 	}
 
@@ -127,9 +135,9 @@ func (uc *UsageCache) flushOrg(orgID string) {
 		orgID,
 		db.PeriodHourly,
 		hourStart,
-		usage.BandwidthBytes,
-		usage.TunnelSeconds,
-		usage.RequestCount,
+		usage.deltaBandwidthBytes,
+		usage.deltaTunnelSeconds,
+		usage.deltaRequestCount,
 		int(atomic.LoadInt32(&usage.ConcurrentTunnels)),
 	)
 	if err != nil {
@@ -137,10 +145,14 @@ func (uc *UsageCache) flushOrg(orgID string) {
 		return
 	}
 
-	// Reset counters after flush (but keep concurrent tunnels - they're managed separately)
-	usage.BandwidthBytes = 0
-	usage.TunnelSeconds = 0
-	usage.RequestCount = 0
+	// Move delta to baseline and reset delta counters
+	usage.dbBandwidthBytes += usage.deltaBandwidthBytes
+	usage.dbTunnelSeconds += usage.deltaTunnelSeconds
+	usage.dbRequestCount += usage.deltaRequestCount
+
+	usage.deltaBandwidthBytes = 0
+	usage.deltaTunnelSeconds = 0
+	usage.deltaRequestCount = 0
 	usage.lastFlush = now
 }
 
@@ -201,10 +213,11 @@ func (uc *UsageCache) getOrCreateOrgUsage(orgID string) *OrgUsage {
 		lastFlush:   now,
 	}
 
+	// Load DB totals into baseline fields (delta starts at 0)
 	if existing != nil {
-		usage.BandwidthBytes = existing.BandwidthBytes
-		usage.TunnelSeconds = existing.TunnelSeconds
-		usage.RequestCount = existing.RequestCount
+		usage.dbBandwidthBytes = existing.BandwidthBytes
+		usage.dbTunnelSeconds = existing.TunnelSeconds
+		usage.dbRequestCount = existing.RequestCount
 	}
 
 	uc.orgs[orgID] = usage
@@ -215,7 +228,7 @@ func (uc *UsageCache) getOrCreateOrgUsage(orgID string) *OrgUsage {
 func (uc *UsageCache) RecordBandwidth(orgID string, bytes int64) {
 	usage := uc.getOrCreateOrgUsage(orgID)
 	usage.mu.Lock()
-	usage.BandwidthBytes += bytes
+	usage.deltaBandwidthBytes += bytes
 	usage.mu.Unlock()
 }
 
@@ -223,7 +236,7 @@ func (uc *UsageCache) RecordBandwidth(orgID string, bytes int64) {
 func (uc *UsageCache) RecordRequest(orgID string) {
 	usage := uc.getOrCreateOrgUsage(orgID)
 	usage.mu.Lock()
-	usage.RequestCount++
+	usage.deltaRequestCount++
 	usage.mu.Unlock()
 }
 
@@ -231,7 +244,7 @@ func (uc *UsageCache) RecordRequest(orgID string) {
 func (uc *UsageCache) RecordTunnelTime(orgID string, seconds int64) {
 	usage := uc.getOrCreateOrgUsage(orgID)
 	usage.mu.Lock()
-	usage.TunnelSeconds += seconds
+	usage.deltaTunnelSeconds += seconds
 	usage.mu.Unlock()
 }
 
@@ -253,13 +266,13 @@ func (uc *UsageCache) GetConcurrentTunnels(orgID string) int32 {
 	return atomic.LoadInt32(&usage.ConcurrentTunnels)
 }
 
-// GetCurrentUsage returns current usage for an organization
+// GetCurrentUsage returns current usage for an organization (db baseline + unflushed delta)
 func (uc *UsageCache) GetCurrentUsage(orgID string) (bandwidth, tunnelSeconds, requests int64, concurrent int32) {
 	usage := uc.getOrCreateOrgUsage(orgID)
 	usage.mu.RLock()
-	bandwidth = usage.BandwidthBytes
-	tunnelSeconds = usage.TunnelSeconds
-	requests = usage.RequestCount
+	bandwidth = usage.dbBandwidthBytes + usage.deltaBandwidthBytes
+	tunnelSeconds = usage.dbTunnelSeconds + usage.deltaTunnelSeconds
+	requests = usage.dbRequestCount + usage.deltaRequestCount
 	usage.mu.RUnlock()
 	concurrent = atomic.LoadInt32(&usage.ConcurrentTunnels)
 	return

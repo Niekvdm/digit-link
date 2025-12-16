@@ -1992,24 +1992,17 @@ func (s *Server) handleOrgGetUsage(w http.ResponseWriter, r *http.Request, orgCt
 		return
 	}
 
-	// Get current period usage
-	usage, err := s.db.GetCurrentPeriodUsage(orgCtx.OrgID)
-	if err != nil {
-		log.Printf("Failed to get usage: %v", err)
-		jsonError(w, "Internal server error", http.StatusInternalServerError)
-		return
+	// Get current usage from cache (includes unflushed data for real-time accuracy)
+	var bandwidthBytes, tunnelSeconds, requestCount int64
+	var currentConcurrent int32
+	if s.usageCache != nil {
+		bandwidthBytes, tunnelSeconds, requestCount, currentConcurrent = s.usageCache.GetCurrentUsage(orgCtx.OrgID)
 	}
 
 	// Get plan if set
 	var plan *db.Plan
 	if org.PlanID != nil {
 		plan, _ = s.db.GetPlan(*org.PlanID)
-	}
-
-	// Get current concurrent tunnels from cache
-	var currentConcurrent int32
-	if s.usageCache != nil {
-		currentConcurrent = s.usageCache.GetConcurrentTunnels(orgCtx.OrgID)
 	}
 
 	now := time.Now()
@@ -2020,12 +2013,11 @@ func (s *Server) handleOrgGetUsage(w http.ResponseWriter, r *http.Request, orgCt
 		"periodStart": periodStart,
 		"periodEnd":   periodEnd,
 		"usage": map[string]interface{}{
-			"bandwidthBytes":        usage.BandwidthBytes,
-			"tunnelSeconds":         usage.TunnelSeconds,
-			"tunnelHours":           usage.TunnelSeconds / 3600,
-			"requestCount":          usage.RequestCount,
-			"peakConcurrentTunnels": usage.PeakConcurrentTunnels,
-			"currentConcurrent":     currentConcurrent,
+			"bandwidthBytes":    bandwidthBytes,
+			"tunnelSeconds":     tunnelSeconds,
+			"tunnelHours":       tunnelSeconds / 3600,
+			"requestCount":      requestCount,
+			"currentConcurrent": currentConcurrent,
 		},
 	}
 
@@ -2045,14 +2037,14 @@ func (s *Server) handleOrgGetUsage(w http.ResponseWriter, r *http.Request, orgCt
 
 		if plan.BandwidthBytesMonthly != nil && *plan.BandwidthBytesMonthly > 0 {
 			quotas["bandwidth"] = map[string]interface{}{
-				"used":    usage.BandwidthBytes,
+				"used":    bandwidthBytes,
 				"limit":   *plan.BandwidthBytesMonthly,
-				"percent": float64(usage.BandwidthBytes) / float64(*plan.BandwidthBytesMonthly) * 100,
+				"percent": float64(bandwidthBytes) / float64(*plan.BandwidthBytesMonthly) * 100,
 			}
 		}
 
 		if plan.TunnelHoursMonthly != nil && *plan.TunnelHoursMonthly > 0 {
-			tunnelHours := usage.TunnelSeconds / 3600
+			tunnelHours := tunnelSeconds / 3600
 			quotas["tunnelHours"] = map[string]interface{}{
 				"used":    tunnelHours,
 				"limit":   *plan.TunnelHoursMonthly,
@@ -2070,9 +2062,9 @@ func (s *Server) handleOrgGetUsage(w http.ResponseWriter, r *http.Request, orgCt
 
 		if plan.RequestsMonthly != nil && *plan.RequestsMonthly > 0 {
 			quotas["requests"] = map[string]interface{}{
-				"used":    usage.RequestCount,
+				"used":    requestCount,
 				"limit":   *plan.RequestsMonthly,
-				"percent": float64(usage.RequestCount) / float64(*plan.RequestsMonthly) * 100,
+				"percent": float64(requestCount) / float64(*plan.RequestsMonthly) * 100,
 			}
 		}
 

@@ -2457,12 +2457,11 @@ func (s *Server) handleGetOrganizationUsage(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Get current period usage
-	usage, err := s.db.GetCurrentPeriodUsage(orgID)
-	if err != nil {
-		log.Printf("Failed to get usage: %v", err)
-		jsonError(w, "Internal server error", http.StatusInternalServerError)
-		return
+	// Get current usage from cache (includes unflushed data for real-time accuracy)
+	var bandwidthBytes, tunnelSeconds, requestCount int64
+	var currentConcurrent int32
+	if s.usageCache != nil {
+		bandwidthBytes, tunnelSeconds, requestCount, currentConcurrent = s.usageCache.GetCurrentUsage(orgID)
 	}
 
 	// Get plan if set
@@ -2501,10 +2500,10 @@ func (s *Server) handleGetOrganizationUsage(w http.ResponseWriter, r *http.Reque
 		"periodStart":  periodStart,
 		"periodEnd":    periodEnd,
 		"usage": map[string]interface{}{
-			"bandwidthBytes":        usage.BandwidthBytes,
-			"tunnelSeconds":         usage.TunnelSeconds,
-			"requestCount":          usage.RequestCount,
-			"peakConcurrentTunnels": usage.PeakConcurrentTunnels,
+			"bandwidthBytes":    bandwidthBytes,
+			"tunnelSeconds":     tunnelSeconds,
+			"requestCount":      requestCount,
+			"currentConcurrent": currentConcurrent,
 		},
 		"history": history,
 	}
