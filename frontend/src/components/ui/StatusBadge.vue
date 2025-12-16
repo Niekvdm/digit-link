@@ -21,63 +21,34 @@ const statusConfig = computed(() => {
 })
 
 const displayLabel = computed(() => props.label || statusConfig.value.defaultLabel)
-const sizeClass = computed(() => `status-badge--${props.size || 'md'}`)
+
+const colorClasses = computed(() => {
+  const colors = {
+    secondary: 'bg-[rgba(var(--accent-secondary-rgb),0.15)] text-accent-secondary',
+    muted: 'bg-bg-elevated text-text-muted',
+    amber: 'bg-[rgba(var(--accent-amber-rgb),0.15)] text-accent-amber',
+    red: 'bg-[rgba(var(--accent-red-rgb),0.15)] text-accent-red'
+  }
+  return colors[statusConfig.value.color as keyof typeof colors]
+})
+
+const sizeClasses = computed(() => {
+  return props.size === 'sm' 
+    ? 'py-1 px-2 text-[0.6875rem]' 
+    : 'py-1.5 px-3 text-xs'
+})
+
+const iconSizeClass = computed(() => {
+  return props.size === 'sm' ? 'w-3 h-3' : 'w-3.5 h-3.5'
+})
 </script>
 
 <template>
   <span 
-    class="status-badge" 
-    :class="[`status-badge--${statusConfig.color}`, sizeClass]"
+    class="inline-flex items-center gap-1.5 rounded-full font-medium whitespace-nowrap"
+    :class="[colorClasses, sizeClasses]"
   >
-    <component :is="statusConfig.icon" class="status-icon" />
+    <component :is="statusConfig.icon" :class="iconSizeClass" />
     <span>{{ displayLabel }}</span>
   </span>
 </template>
-
-<style scoped>
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.375rem 0.75rem;
-  border-radius: 9999px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.status-badge--sm {
-  padding: 0.25rem 0.5rem;
-  font-size: 0.6875rem;
-}
-
-.status-badge--sm .status-icon {
-  width: 12px;
-  height: 12px;
-}
-
-.status-icon {
-  width: 14px;
-  height: 14px;
-}
-
-.status-badge--secondary {
-  background: rgba(var(--accent-secondary-rgb), 0.15);
-  color: var(--accent-secondary);
-}
-
-.status-badge--muted {
-  background: var(--bg-elevated);
-  color: var(--text-muted);
-}
-
-.status-badge--amber {
-  background: rgba(var(--accent-amber-rgb), 0.15);
-  color: var(--accent-amber);
-}
-
-.status-badge--red {
-  background: rgba(var(--accent-red-rgb), 0.15);
-  color: var(--accent-red);
-}
-</style>

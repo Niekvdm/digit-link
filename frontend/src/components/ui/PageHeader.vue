@@ -17,96 +17,22 @@ function goBack() {
 </script>
 
 <template>
-  <div class="page-header">
-    <div class="page-header-main">
-      <button v-if="backTo" class="back-btn" @click="goBack">
+  <div class="flex items-start justify-between gap-6 mb-8 flex-wrap max-sm:flex-col max-sm:items-stretch">
+    <div class="flex items-start gap-4">
+      <button 
+        v-if="backTo" 
+        class="w-9 h-9 flex items-center justify-center border border-border-subtle rounded-xs bg-transparent text-text-secondary cursor-pointer transition-all duration-200 shrink-0 mt-1 hover:bg-bg-elevated hover:text-text-primary hover:border-border-accent"
+        @click="goBack"
+      >
         <ArrowLeft class="w-4 h-4" />
       </button>
-      <div class="page-header-text">
-        <h1 class="page-title">{{ title }}</h1>
-        <p v-if="description" class="page-description">{{ description }}</p>
+      <div class="flex-1 min-w-0">
+        <h1 class="font-display text-[1.75rem] font-semibold text-text-primary m-0 leading-tight">{{ title }}</h1>
+        <p v-if="description" class="text-[0.9375rem] text-text-secondary mt-2 m-0 leading-relaxed">{{ description }}</p>
       </div>
     </div>
-    <div class="page-header-actions">
+    <div class="flex items-center gap-3 shrink-0 max-sm:justify-start">
       <slot name="actions" />
     </div>
   </div>
 </template>
-
-<style scoped>
-.page-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 1.5rem;
-  margin-bottom: 2rem;
-  flex-wrap: wrap;
-}
-
-.page-header-main {
-  display: flex;
-  align-items: flex-start;
-  gap: 1rem;
-}
-
-.back-btn {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-  margin-top: 0.25rem;
-}
-
-.back-btn:hover {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  border-color: var(--border-accent);
-}
-
-.page-header-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.page-title {
-  font-family: var(--font-display);
-  font-size: 1.75rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
-  line-height: 1.2;
-}
-
-.page-description {
-  font-size: 0.9375rem;
-  color: var(--text-secondary);
-  margin: 0.5rem 0 0;
-  line-height: 1.5;
-}
-
-.page-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-shrink: 0;
-}
-
-@media (max-width: 640px) {
-  .page-header {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  
-  .page-header-actions {
-    justify-content: flex-start;
-  }
-}
-</style>

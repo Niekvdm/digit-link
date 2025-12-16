@@ -60,33 +60,53 @@ watch(open, (isOpen) => {
 onUnmounted(() => {
   document.body.style.overflow = ''
 })
+
+const sizeClasses = {
+  sm: 'max-w-[400px]',
+  md: 'max-w-[560px]',
+  lg: 'max-w-[800px]'
+}
 </script>
 
 <template>
   <Teleport to="body">
     <Transition name="modal">
-      <div v-if="open" class="modal-overlay" @click="handleBackdropClick">
+      <div 
+        v-if="open" 
+        class="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-[1000]" 
+        @click="handleBackdropClick"
+      >
         <div 
           ref="modalRef"
-          class="modal" 
-          :class="`modal--${size}`"
+          class="bg-bg-surface border border-border-subtle rounded-2xl w-full max-h-[calc(100vh-2rem)] flex flex-col overflow-hidden animate-modal-slide-in"
+          :class="sizeClasses[size]"
           role="dialog" 
           aria-modal="true"
         >
-          <header v-if="title || $slots.header" class="modal-header">
+          <header 
+            v-if="title || $slots.header" 
+            class="flex items-center justify-between py-5 px-6 border-b border-border-subtle shrink-0"
+          >
             <slot name="header">
-              <h2 class="modal-title">{{ title }}</h2>
+              <h2 class="font-display text-xl font-semibold text-text-primary m-0">{{ title }}</h2>
             </slot>
-            <button class="modal-close" @click="close" aria-label="Close modal">
+            <button 
+              class="w-9 h-9 flex items-center justify-center border-none rounded-xs bg-transparent text-text-muted cursor-pointer transition-all duration-200 -my-2 -mr-2 hover:bg-bg-elevated hover:text-text-primary"
+              @click="close" 
+              aria-label="Close modal"
+            >
               <X class="w-5 h-5" />
             </button>
           </header>
           
-          <div class="modal-body">
+          <div class="p-6 overflow-y-auto flex-1">
             <slot />
           </div>
           
-          <footer v-if="$slots.footer" class="modal-footer">
+          <footer 
+            v-if="$slots.footer" 
+            class="flex items-center justify-end gap-3 py-4 px-6 border-t border-border-subtle shrink-0"
+          >
             <slot name="footer" />
           </footer>
         </div>
@@ -94,120 +114,3 @@ onUnmounted(() => {
     </Transition>
   </Teleport>
 </template>
-
-<style scoped>
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-  z-index: 1000;
-}
-
-.modal {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: 16px;
-  width: 100%;
-  max-height: calc(100vh - 2rem);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  animation: modalSlideIn 0.2s ease-out;
-}
-
-.modal--sm {
-  max-width: 400px;
-}
-
-.modal--md {
-  max-width: 560px;
-}
-
-.modal--lg {
-  max-width: 800px;
-}
-
-@keyframes modalSlideIn {
-  from {
-    opacity: 0;
-    transform: translateY(-20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1.25rem 1.5rem;
-  border-bottom: 1px solid var(--border-subtle);
-  flex-shrink: 0;
-}
-
-.modal-title {
-  font-family: var(--font-display);
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0;
-}
-
-.modal-close {
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  margin: -0.5rem -0.5rem -0.5rem 0;
-}
-
-.modal-close:hover {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-}
-
-.modal-body {
-  padding: 1.5rem;
-  overflow-y: auto;
-  flex: 1;
-}
-
-.modal-footer {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.75rem;
-  padding: 1rem 1.5rem;
-  border-top: 1px solid var(--border-subtle);
-  flex-shrink: 0;
-}
-
-/* Transitions */
-.modal-enter-active,
-.modal-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.modal-enter-from,
-.modal-leave-to {
-  opacity: 0;
-}
-
-.modal-enter-from .modal,
-.modal-leave-to .modal {
-  transform: translateY(-20px);
-}
-</style>

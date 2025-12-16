@@ -96,21 +96,22 @@ function getRowKey(row: T, index: number): string | number {
 </script>
 
 <template>
-  <div class="data-table-wrapper">
-    <div class="data-table-container">
-      <table class="data-table">
+  <div class="bg-bg-surface border border-border-subtle rounded-xs overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full border-collapse min-w-[600px]">
         <thead>
           <tr>
             <th
               v-for="column in columns"
               :key="String(column.key)"
               :style="getColumnStyle(column)"
-              :class="{ 'sortable': column.sortable }"
+              class="py-3.5 px-4 text-xs font-semibold uppercase tracking-wider text-text-secondary bg-bg-elevated border-b border-border-subtle text-left whitespace-nowrap"
+              :class="{ 'cursor-pointer select-none hover:text-text-primary': column.sortable }"
               @click="toggleSort(column)"
             >
-              <div class="th-content">
+              <div class="flex items-center gap-1.5">
                 <span>{{ column.label }}</span>
-                <span v-if="column.sortable" class="sort-icon">
+                <span v-if="column.sortable" class="flex items-center text-accent-primary">
                   <ArrowUp 
                     v-if="sortKey === String(column.key) && sortDirection === 'asc'" 
                     class="w-3.5 h-3.5" 
@@ -123,25 +124,35 @@ function getRowKey(row: T, index: number): string | number {
                 </span>
               </div>
             </th>
-            <th v-if="$slots.actions" class="actions-header">Actions</th>
+            <th 
+              v-if="$slots.actions" 
+              class="py-3.5 px-4 text-xs font-semibold uppercase tracking-wider text-text-secondary bg-bg-elevated border-b border-border-subtle w-[1%] whitespace-nowrap text-right"
+            >
+              Actions
+            </th>
           </tr>
         </thead>
         <tbody v-if="!loading && sortedData.length > 0">
           <tr 
             v-for="(row, index) in sortedData" 
             :key="getRowKey(row, index)"
+            class="transition-colors duration-150 hover:bg-bg-elevated last:[&>td]:border-b-0"
             @click="handleRowClick(row)"
           >
             <td
               v-for="column in columns"
               :key="String(column.key)"
               :style="getColumnStyle(column)"
+              class="p-4 text-sm text-text-primary border-b border-border-subtle align-middle"
             >
               <slot :name="`cell-${String(column.key)}`" :row="row" :value="getNestedValue(row, String(column.key))">
                 {{ getNestedValue(row, String(column.key)) ?? '—' }}
               </slot>
             </td>
-            <td v-if="$slots.actions" class="actions-cell">
+            <td 
+              v-if="$slots.actions" 
+              class="p-4 pr-5 text-sm border-b border-border-subtle w-[1%] whitespace-nowrap text-right align-middle"
+            >
               <slot name="actions" :row="row" />
             </td>
           </tr>
@@ -149,12 +160,12 @@ function getRowKey(row: T, index: number): string | number {
       </table>
       
       <!-- Loading state -->
-      <div v-if="loading" class="table-loading">
+      <div v-if="loading" class="p-8">
         <LoadingSpinner label="Loading..." />
       </div>
       
       <!-- Empty state -->
-      <div v-else-if="sortedData.length === 0" class="table-empty">
+      <div v-else-if="sortedData.length === 0" class="p-8 min-h-[280px] flex items-center justify-center">
         <EmptyState :title="emptyTitle" :description="emptyDescription">
           <template #action>
             <slot name="emptyAction" />
@@ -164,99 +175,3 @@ function getRowKey(row: T, index: number): string | number {
     </div>
   </div>
 </template>
-
-<style scoped>
-.data-table-wrapper {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.data-table-container {
-  overflow-x: auto;
-}
-
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  min-width: 600px;
-}
-
-.data-table th {
-  padding: 0.875rem 1rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-secondary);
-  background: var(--bg-elevated);
-  border-bottom: 1px solid var(--border-subtle);
-  text-align: left;
-  white-space: nowrap;
-}
-
-.data-table th.sortable {
-  cursor: pointer;
-  user-select: none;
-}
-
-.data-table th.sortable:hover {
-  color: var(--text-primary);
-}
-
-.th-content {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-}
-
-.sort-icon {
-  display: flex;
-  align-items: center;
-  color: var(--accent-primary);
-}
-
-.data-table td {
-  padding: 1rem;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-  border-bottom: 1px solid var(--border-subtle);
-  vertical-align: middle;
-}
-
-.data-table tbody tr {
-  transition: background 0.15s ease;
-}
-
-.data-table tbody tr:hover {
-  background: var(--bg-elevated);
-}
-
-.data-table tbody tr:last-child td {
-  border-bottom: none;
-}
-
-.actions-header,
-.actions-cell {
-  width: 1%;
-  white-space: nowrap;
-  text-align: right;
-}
-
-.actions-cell {
-  padding-right: 1.25rem;
-}
-
-.table-loading,
-.table-empty {
-  padding: 2rem;
-}
-
-.table-empty {
-  min-height: 280px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-</style>

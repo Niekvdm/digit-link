@@ -87,10 +87,13 @@ function navigateTo(name: string) {
 </script>
 
 <template>
-  <div class="portal-shell">
+  <div class="min-h-screen flex bg-bg-deep relative overflow-hidden">
     <!-- Animated background -->
     <div class="bg-pattern" />
-    <div class="bg-gradient" :class="`bg-gradient--${accentColor}`" />
+    <div 
+      class="fixed inset-0 pointer-events-none z-0 transition-[background] duration-600"
+      :class="accentColor === 'primary' ? 'bg-gradient-primary' : 'bg-gradient-secondary'"
+    />
     
     <!-- Decorative corners -->
     <div class="corner corner-tl" />
@@ -98,15 +101,24 @@ function navigateTo(name: string) {
 
     <!-- Mobile header -->
     <header class="mobile-header">
-      <button class="mobile-menu-btn" @click="toggleMobileMenu">
+      <button 
+        class="w-10 h-10 flex items-center justify-center border border-border-subtle rounded-xs bg-transparent text-text-secondary cursor-pointer transition-all duration-200 hover:bg-bg-elevated hover:text-text-primary"
+        @click="toggleMobileMenu"
+      >
         <Menu v-if="!mobileMenuOpen" class="w-5 h-5" />
         <X v-else class="w-5 h-5" />
       </button>
-      <div class="mobile-brand">
-        <div class="brand-icon" :class="`brand-icon--${accentColor}`">
-          <div class="brand-icon-inner" />
+      <div class="flex-1 flex items-center gap-3">
+        <div 
+          class="w-9 h-9 border-2 rounded-[10px] flex items-center justify-center shrink-0 transition-colors duration-300"
+          :class="accentColor === 'primary' ? 'border-accent-primary' : 'border-accent-secondary'"
+        >
+          <div 
+            class="w-3.5 h-3.5 rounded transition-colors duration-300 rotate-45"
+            :class="accentColor === 'primary' ? 'bg-accent-primary' : 'bg-accent-secondary'"
+          />
         </div>
-        <span class="brand-name">digit-link</span>
+        <span class="font-display text-xl font-semibold whitespace-nowrap">digit-link</span>
       </div>
       <ThemeSwitcher />
     </header>
@@ -129,23 +141,38 @@ function navigateTo(name: string) {
       }"
     >
       <!-- Brand -->
-      <div class="sidebar-brand">
-        <RouterLink to="/" class="brand-link">
-          <div class="brand-icon" :class="`brand-icon--${accentColor}`">
-            <div class="brand-icon-inner" />
+      <div class="flex items-center justify-between mb-6">
+        <RouterLink to="/" class="flex items-center gap-3 no-underline text-text-primary">
+          <div 
+            class="w-9 h-9 border-2 rounded-[10px] flex items-center justify-center shrink-0 transition-colors duration-300"
+            :class="accentColor === 'primary' ? 'border-accent-primary' : 'border-accent-secondary'"
+          >
+            <div 
+              class="w-3.5 h-3.5 rounded transition-colors duration-300 rotate-45"
+              :class="accentColor === 'primary' ? 'bg-accent-primary' : 'bg-accent-secondary'"
+            />
           </div>
           <Transition name="fade">
-            <span v-if="!sidebarCollapsed" class="brand-name">digit-link</span>
+            <span v-if="!sidebarCollapsed" class="font-display text-xl font-semibold whitespace-nowrap">digit-link</span>
           </Transition>
         </RouterLink>
-        <button class="collapse-btn" @click="toggleSidebar">
+        <button 
+          class="collapse-btn w-7 h-7 flex items-center justify-center border border-border-subtle rounded-xs bg-transparent text-text-muted cursor-pointer transition-all duration-200 hover:bg-bg-elevated hover:text-text-primary"
+          @click="toggleSidebar"
+        >
           <ChevronLeft v-if="!sidebarCollapsed" class="w-4 h-4" />
           <ChevronRight v-else class="w-4 h-4" />
         </button>
       </div>
 
       <!-- Portal type badge -->
-      <div class="sidebar-badge" :class="`sidebar-badge--${accentColor}`">
+      <div 
+        class="flex items-center gap-2 py-2.5 px-3.5 rounded-xs text-xs font-medium mb-6 whitespace-nowrap overflow-hidden"
+        :class="[
+          accentColor === 'primary' ? 'bg-[rgba(var(--accent-primary-rgb),0.1)] text-accent-primary' : 'bg-[rgba(var(--accent-secondary-rgb),0.1)] text-accent-secondary',
+          sidebarCollapsed ? 'justify-center px-2.5' : ''
+        ]"
+      >
         <Building2 v-if="!isAdmin" class="w-3.5 h-3.5" />
         <ShieldCheck v-else class="w-3.5 h-3.5" />
         <Transition name="fade">
@@ -154,35 +181,38 @@ function navigateTo(name: string) {
       </div>
 
       <!-- Navigation -->
-      <nav class="sidebar-nav">
+      <nav class="flex flex-col gap-1">
         <button
           v-for="link in navLinks"
           :key="link.name"
-          class="nav-item"
-          :class="{ 'nav-item--active': currentRoute === link.name }"
+          class="flex items-center gap-3 py-3 px-3.5 rounded-xs text-sm font-medium text-text-secondary bg-transparent border-none cursor-pointer transition-all duration-200 text-left w-full whitespace-nowrap hover:bg-bg-elevated hover:text-text-primary"
+          :class="[
+            currentRoute === link.name ? 'bg-[rgba(var(--accent-primary-rgb),0.1)] text-accent-primary hover:bg-[rgba(var(--accent-primary-rgb),0.15)]' : '',
+            sidebarCollapsed ? 'justify-center px-3' : ''
+          ]"
           @click="navigateTo(link.name)"
           :title="sidebarCollapsed ? link.label : undefined"
         >
-          <component :is="link.icon" class="nav-icon" />
+          <component :is="link.icon" class="w-[18px] h-[18px] shrink-0" />
           <Transition name="fade">
-            <span v-if="!sidebarCollapsed" class="nav-label">{{ link.label }}</span>
+            <span v-if="!sidebarCollapsed" class="overflow-hidden">{{ link.label }}</span>
           </Transition>
         </button>
       </nav>
 
       <!-- Spacer -->
-      <div class="sidebar-spacer" />
+      <div class="flex-1" />
 
       <!-- User section -->
-      <div class="sidebar-user">
+      <div class="flex flex-col gap-3 pt-4 border-t border-border-subtle mt-4">
         <ThemeSwitcher class="hidden lg:flex" />
-        <div class="user-info" v-if="!sidebarCollapsed">
-          <div class="user-avatar" :class="`user-avatar--${accentColor}`">
-            {{ username?.charAt(0).toUpperCase() || 'U' }}
-          </div>
-          <span class="user-name">{{ username }}</span>
-        </div>
-        <button class="logout-btn" @click="logout" :title="sidebarCollapsed ? 'Logout' : undefined">
+
+        <button 
+          class="flex items-center gap-3 py-3 px-3.5 rounded-xs text-sm font-medium text-text-muted bg-transparent border border-border-subtle cursor-pointer transition-all duration-200 w-full hover:text-accent-red hover:border-accent-red hover:bg-[rgba(var(--accent-red-rgb),0.05)]"
+          :class="sidebarCollapsed ? 'justify-center px-3' : ''"
+          @click="logout" 
+          :title="sidebarCollapsed ? 'Logout' : undefined"
+        >
           <LogOut class="w-4 h-4" />
           <Transition name="fade">
             <span v-if="!sidebarCollapsed">Logout</span>
@@ -192,7 +222,7 @@ function navigateTo(name: string) {
     </aside>
 
     <!-- Main content -->
-    <main class="main-content" :class="{ 'main-content--expanded': sidebarCollapsed }">
+    <main class="flex-1 p-8 min-w-0 max-w-full relative z-10 max-lg:ml-0 max-lg:pt-[60px]">
       <RouterView />
     </main>
 
@@ -202,429 +232,66 @@ function navigateTo(name: string) {
 </template>
 
 <style scoped>
-.portal-shell {
-  min-height: 100vh;
-  display: flex;
-  background: var(--bg-deep);
-  position: relative;
-  overflow: hidden;
-}
-
-/* Background effects */
+  @reference "../../style.css";
+/* Background pattern - needs pseudo-element */
 .bg-pattern {
-  position: fixed;
-  inset: 0;
+  @apply fixed inset-0 pointer-events-none z-0 opacity-[0.12];
   background-image: 
     linear-gradient(var(--border-subtle) 1px, transparent 1px),
     linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
   background-size: 60px 60px;
-  opacity: 0.12;
-  pointer-events: none;
-  z-index: 0;
 }
 
-.bg-gradient {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  transition: background 0.6s ease;
-}
-
-.bg-gradient--primary {
+/* Background gradients */
+.bg-gradient-primary {
   background: radial-gradient(ellipse at 30% 20%, rgba(var(--accent-primary-rgb), 0.08) 0%, transparent 50%),
               radial-gradient(ellipse at 70% 80%, rgba(var(--accent-primary-rgb), 0.05) 0%, transparent 50%);
 }
 
-.bg-gradient--secondary {
+.bg-gradient-secondary {
   background: radial-gradient(ellipse at 30% 20%, rgba(var(--accent-secondary-rgb), 0.08) 0%, transparent 50%),
               radial-gradient(ellipse at 70% 80%, rgba(var(--accent-secondary-rgb), 0.05) 0%, transparent 50%);
 }
 
-/* Decorative corners */
-.corner {
-  position: fixed;
-  width: 100px;
-  height: 100px;
-  pointer-events: none;
-  z-index: 1;
-}
-
-.corner::before,
-.corner::after {
-  content: '';
-  position: absolute;
-  background: var(--accent-primary);
-  opacity: 0.25;
-  transition: background 0.3s ease;
-}
-
-.corner-tl { top: 2rem; left: 2rem; }
-.corner-tl::before { top: 0; left: 0; width: 50px; height: 2px; }
-.corner-tl::after { top: 0; left: 0; width: 2px; height: 50px; }
-
-.corner-br { bottom: 2rem; right: 2rem; }
-.corner-br::before { bottom: 0; right: 0; width: 50px; height: 2px; }
-.corner-br::after { bottom: 0; right: 0; width: 2px; height: 50px; }
-
 /* Mobile header */
 .mobile-header {
-  display: none;
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 60px;
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border-subtle);
-  padding: 0 1rem;
-  align-items: center;
-  gap: 1rem;
-  z-index: 100;
-}
-
-.mobile-menu-btn {
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.mobile-menu-btn:hover {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-}
-
-.mobile-brand {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
+  @apply hidden fixed top-0 left-0 right-0 h-[60px] bg-bg-surface border-b border-border-subtle px-4 items-center gap-4 z-[100];
 }
 
 .mobile-overlay {
-  display: none;
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 199;
+  @apply hidden fixed inset-0 bg-black/50 z-[199];
 }
 
 @media (max-width: 1023px) {
   .mobile-header {
-    display: flex;
+    @apply flex;
   }
   
   .mobile-overlay {
-    display: block;
-  }
-  
-  .main-content {
-    margin-left: 0 !important;
-    padding-top: 60px;
-  }
-  
-  .sidebar {
-    position: fixed;
-    left: -280px;
-    top: 0;
-    bottom: 0;
-    z-index: 200;
-    transition: left 0.3s ease;
-  }
-  
-  .sidebar--mobile-open {
-    left: 0;
+    @apply block;
   }
   
   .collapse-btn {
-    display: none !important;
+    @apply hidden;
   }
 }
 
 /* Sidebar */
 .sidebar {
-  width: 260px;
-  background: var(--bg-surface);
-  border-right: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  padding: 1.25rem;
-  transition: width 0.3s ease;
-  flex-shrink: 0;
-  position: relative;
-  z-index: 10;
+  @apply w-[260px] bg-bg-surface border-r border-border-subtle flex flex-col p-5 transition-[width] duration-300 shrink-0 relative z-10;
 }
 
 .sidebar--collapsed {
-  width: 80px;
-  padding: 1.25rem 0.75rem;
+  @apply w-20 px-3;
 }
 
-/* Brand */
-.sidebar-brand {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 1.5rem;
-}
-
-.brand-link {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  text-decoration: none;
-  color: var(--text-primary);
-}
-
-.brand-icon {
-  width: 36px;
-  height: 36px;
-  border: 2px solid var(--accent-primary);
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  transition: border-color 0.3s ease;
-}
-
-.brand-icon--secondary {
-  border-color: var(--accent-secondary);
-}
-
-.brand-icon-inner {
-  width: 14px;
-  height: 14px;
-  background: var(--accent-primary);
-  border-radius: 4px;
-  transform: rotate(45deg);
-  transition: background 0.3s ease;
-}
-
-.brand-icon--secondary .brand-icon-inner {
-  background: var(--accent-secondary);
-}
-
-.brand-name {
-  font-family: var(--font-display);
-  font-size: 1.25rem;
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.collapse-btn {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.collapse-btn:hover {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-}
-
-/* Badge */
-.sidebar-badge {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.625rem 0.875rem;
-  border-radius: 8px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  margin-bottom: 1.5rem;
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.sidebar-badge--primary {
-  background: rgba(var(--accent-primary-rgb), 0.1);
-  color: var(--accent-primary);
-}
-
-.sidebar-badge--secondary {
-  background: rgba(var(--accent-secondary-rgb), 0.1);
-  color: var(--accent-secondary);
-}
-
-.sidebar--collapsed .sidebar-badge {
-  justify-content: center;
-  padding: 0.625rem;
-}
-
-/* Navigation */
-.sidebar-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.nav-item {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 0.875rem;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--text-secondary);
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-align: left;
-  width: 100%;
-  white-space: nowrap;
-}
-
-.sidebar--collapsed .nav-item {
-  justify-content: center;
-  padding: 0.75rem;
-}
-
-.nav-item:hover {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-}
-
-.nav-item--active {
-  background: rgba(var(--accent-primary-rgb), 0.1);
-  color: var(--accent-primary);
-}
-
-.nav-item--active:hover {
-  background: rgba(var(--accent-primary-rgb), 0.15);
-}
-
-.nav-icon {
-  width: 18px;
-  height: 18px;
-  flex-shrink: 0;
-}
-
-.nav-label {
-  overflow: hidden;
-}
-
-/* Spacer */
-.sidebar-spacer {
-  flex: 1;
-}
-
-/* User section */
-.sidebar-user {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border-subtle);
-  margin-top: 1rem;
-}
-
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem 0;
-}
-
-.user-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  font-size: 0.875rem;
-  flex-shrink: 0;
-}
-
-.user-avatar--primary {
-  background: rgba(var(--accent-primary-rgb), 0.2);
-  color: var(--accent-primary);
-}
-
-.user-avatar--secondary {
-  background: rgba(var(--accent-secondary-rgb), 0.2);
-  color: var(--accent-secondary);
-}
-
-.user-name {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.logout-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 0.875rem;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--text-muted);
-  background: transparent;
-  border: 1px solid var(--border-subtle);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  width: 100%;
-}
-
-.sidebar--collapsed .logout-btn {
-  justify-content: center;
-  padding: 0.75rem;
-}
-
-.logout-btn:hover {
-  color: var(--accent-red);
-  border-color: var(--accent-red);
-  background: rgba(var(--accent-red-rgb), 0.05);
-}
-
-/* Main content */
-.main-content {
-  flex: 1;
-  margin-left: 0;
-  padding: 2rem;
-  min-width: 0;
-  max-width: 100%;
-  position: relative;
-  z-index: 10;
-}
-
-.main-content--expanded {
-  margin-left: 0;
-}
-
-/* Transitions */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
+@media (max-width: 1023px) {
+  .sidebar {
+    @apply fixed -left-[280px] top-0 bottom-0 z-[200] transition-[left] duration-300;
+  }
+  
+  .sidebar--mobile-open {
+    @apply left-0;
+  }
 }
 </style>

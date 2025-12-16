@@ -58,20 +58,23 @@ function handleCancel() {
 </script>
 
 <template>
-  <div class="settings-page">
+  <div class="max-w-[800px]">
     <PageHeader 
       title="Organization Settings" 
       description="Configure authentication and security policies"
     />
 
     <!-- Loading -->
-    <div v-if="loading" class="loading-state">
+    <div v-if="loading" class="p-12 text-center text-text-secondary">
       Loading settings...
     </div>
 
     <template v-else>
       <!-- Success message -->
-      <div v-if="success" class="success-message">
+      <div 
+        v-if="success" 
+        class="flex items-center gap-3 py-4 px-5 bg-[rgba(var(--accent-secondary-rgb),0.1)] border border-[rgba(var(--accent-secondary-rgb),0.3)] rounded-[10px] text-[0.9375rem] text-accent-secondary mb-6"
+      >
         <CheckCircle class="w-5 h-5" />
         {{ success }}
       </div>
@@ -82,21 +85,21 @@ function handleCancel() {
       </div>
 
       <!-- Policy Section -->
-      <div class="settings-card">
-        <div class="settings-header">
-          <div class="settings-icon">
+      <div class="bg-bg-surface border border-border-subtle rounded-xs overflow-hidden">
+        <div class="flex gap-4 p-6 border-b border-border-subtle bg-bg-elevated">
+          <div class="w-10 h-10 rounded-[10px] bg-[rgba(var(--accent-secondary-rgb),0.15)] text-accent-secondary flex items-center justify-center shrink-0">
             <Settings class="w-5 h-5" />
           </div>
           <div>
-            <h2 class="settings-title">Authentication Policy</h2>
-            <p class="settings-desc">
+            <h2 class="text-lg font-semibold text-text-primary m-0 mb-1">Authentication Policy</h2>
+            <p class="text-sm text-text-secondary m-0 leading-relaxed">
               Configure how users authenticate to access your organization's tunnels. 
               Applications set to "inherit" will use this policy.
             </p>
           </div>
         </div>
 
-        <div class="settings-body">
+        <div class="p-6">
           <PolicyEditor 
             :initial-policy="currentPolicy"
             @submit="handleSubmit"
@@ -107,77 +110,3 @@ function handleCancel() {
     </template>
   </div>
 </template>
-
-<style scoped>
-.settings-page {
-  max-width: 800px;
-}
-
-.loading-state {
-  padding: 3rem;
-  text-align: center;
-  color: var(--text-secondary);
-}
-
-.success-message {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 1rem 1.25rem;
-  background: rgba(var(--accent-secondary-rgb), 0.1);
-  border: 1px solid rgba(var(--accent-secondary-rgb), 0.3);
-  border-radius: 10px;
-  font-size: 0.9375rem;
-  color: var(--accent-secondary);
-  margin-bottom: 1.5rem;
-}
-
-.settings-card {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.settings-header {
-  display: flex;
-  gap: 1rem;
-  padding: 1.5rem;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-elevated);
-}
-
-.settings-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background: rgba(var(--accent-secondary-rgb), 0.15);
-  color: var(--accent-secondary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.settings-title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0 0 0.25rem;
-}
-
-.settings-desc {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-  margin: 0;
-  line-height: 1.5;
-}
-
-.settings-body {
-  padding: 1.5rem;
-}
-
-.mb-4 {
-  margin-bottom: 1rem;
-}
-</style>

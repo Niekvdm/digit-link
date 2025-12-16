@@ -25,17 +25,48 @@ onMounted(() => {
 function navigateTo(name: string) {
   router.push({ name })
 }
+
+const actionCards = [
+  { 
+    name: 'org-applications', 
+    icon: AppWindow, 
+    title: 'Applications', 
+    desc: 'Manage your applications and subdomains',
+    colorClass: 'bg-[rgba(var(--accent-secondary-rgb),0.15)] text-accent-secondary'
+  },
+  { 
+    name: 'org-api-keys', 
+    icon: KeyRound, 
+    title: 'API Keys', 
+    desc: 'Create and manage API keys for your apps',
+    colorClass: 'bg-[rgba(var(--accent-amber-rgb),0.15)] text-accent-amber'
+  },
+  { 
+    name: 'org-whitelist', 
+    icon: ShieldCheck, 
+    title: 'IP Whitelist', 
+    desc: 'Control which IPs can access your tunnels',
+    colorClass: 'bg-[rgba(var(--accent-blue-rgb),0.15)] text-accent-blue'
+  },
+  { 
+    name: 'org-settings', 
+    icon: Settings, 
+    title: 'Settings', 
+    desc: 'Configure authentication policies',
+    colorClass: 'bg-[rgba(var(--accent-primary-rgb),0.15)] text-accent-primary'
+  },
+]
 </script>
 
 <template>
-  <div class="dashboard">
+  <div class="max-w-[1200px]">
     <PageHeader 
       :title="`Welcome, ${currentOrgName}`" 
       description="Organization portal overview"
     />
 
     <!-- Stats Grid -->
-    <div class="stats-grid">
+    <div class="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-5 mb-10">
       <StatCard
         label="Active Tunnels"
         :value="stats?.activeTunnels ?? 0"
@@ -67,160 +98,28 @@ function navigateTo(name: string) {
     </div>
 
     <!-- Quick Actions -->
-    <div class="quick-actions">
-      <h2 class="section-title">Quick Actions</h2>
-      <div class="actions-grid">
-        <button class="action-card" @click="navigateTo('org-applications')">
-          <div class="action-icon action-icon--secondary">
-            <AppWindow class="w-6 h-6" />
+    <div>
+      <h2 class="font-display text-xl font-semibold text-text-primary m-0 mb-5">Quick Actions</h2>
+      <div class="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4">
+        <button 
+          v-for="card in actionCards"
+          :key="card.name"
+          class="flex items-center gap-4 py-5 px-6 bg-bg-surface border border-border-subtle rounded-xs cursor-pointer transition-all duration-200 text-left w-full hover:border-border-accent hover:bg-bg-elevated group"
+          @click="navigateTo(card.name)"
+        >
+          <div 
+            class="w-12 h-12 rounded-xs flex items-center justify-center shrink-0"
+            :class="card.colorClass"
+          >
+            <component :is="card.icon" class="w-6 h-6" />
           </div>
-          <div class="action-content">
-            <h3 class="action-title">Applications</h3>
-            <p class="action-desc">Manage your applications and subdomains</p>
+          <div class="flex-1 min-w-0">
+            <h3 class="text-base font-semibold text-text-primary m-0 mb-1">{{ card.title }}</h3>
+            <p class="text-[0.8125rem] text-text-secondary m-0">{{ card.desc }}</p>
           </div>
-          <ArrowUpRight class="action-arrow" />
-        </button>
-        
-        <button class="action-card" @click="navigateTo('org-api-keys')">
-          <div class="action-icon action-icon--amber">
-            <KeyRound class="w-6 h-6" />
-          </div>
-          <div class="action-content">
-            <h3 class="action-title">API Keys</h3>
-            <p class="action-desc">Create and manage API keys for your apps</p>
-          </div>
-          <ArrowUpRight class="action-arrow" />
-        </button>
-        
-        <button class="action-card" @click="navigateTo('org-whitelist')">
-          <div class="action-icon action-icon--blue">
-            <ShieldCheck class="w-6 h-6" />
-          </div>
-          <div class="action-content">
-            <h3 class="action-title">IP Whitelist</h3>
-            <p class="action-desc">Control which IPs can access your tunnels</p>
-          </div>
-          <ArrowUpRight class="action-arrow" />
-        </button>
-        
-        <button class="action-card" @click="navigateTo('org-settings')">
-          <div class="action-icon action-icon--primary">
-            <Settings class="w-6 h-6" />
-          </div>
-          <div class="action-content">
-            <h3 class="action-title">Settings</h3>
-            <p class="action-desc">Configure authentication policies</p>
-          </div>
-          <ArrowUpRight class="action-arrow" />
+          <ArrowUpRight class="w-[18px] h-[18px] text-text-muted transition-all duration-200 shrink-0 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-accent-secondary" />
         </button>
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.dashboard {
-  max-width: 1200px;
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 1.25rem;
-  margin-bottom: 2.5rem;
-}
-
-.section-title {
-  font-family: var(--font-display);
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0 0 1.25rem;
-}
-
-.actions-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1rem;
-}
-
-.action-card {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 1.25rem 1.5rem;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-align: left;
-  width: 100%;
-}
-
-.action-card:hover {
-  border-color: var(--border-accent);
-  background: var(--bg-elevated);
-}
-
-.action-card:hover .action-arrow {
-  transform: translate(2px, -2px);
-  color: var(--accent-secondary);
-}
-
-.action-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.action-icon--primary {
-  background: rgba(var(--accent-primary-rgb), 0.15);
-  color: var(--accent-primary);
-}
-
-.action-icon--secondary {
-  background: rgba(var(--accent-secondary-rgb), 0.15);
-  color: var(--accent-secondary);
-}
-
-.action-icon--amber {
-  background: rgba(var(--accent-amber-rgb), 0.15);
-  color: var(--accent-amber);
-}
-
-.action-icon--blue {
-  background: rgba(var(--accent-blue-rgb), 0.15);
-  color: var(--accent-blue);
-}
-
-.action-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.action-title {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0 0 0.25rem;
-}
-
-.action-desc {
-  font-size: 0.8125rem;
-  color: var(--text-secondary);
-  margin: 0;
-}
-
-.action-arrow {
-  width: 18px;
-  height: 18px;
-  color: var(--text-muted);
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-}
-</style>

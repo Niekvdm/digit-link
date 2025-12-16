@@ -122,7 +122,7 @@ async function handleDelete() {
 </script>
 
 <template>
-  <div class="whitelist-page">
+  <div class="max-w-[1000px]">
     <PageHeader 
       title="IP Whitelist" 
       description="Control which IP addresses can access your tunnels"
@@ -136,18 +136,22 @@ async function handleDelete() {
     </PageHeader>
 
     <!-- View Mode Tabs -->
-    <div class="view-tabs">
+    <div class="flex gap-2 mb-6">
       <button 
-        class="view-tab"
-        :class="{ 'view-tab--active': viewMode === 'org' }"
+        class="flex items-center gap-2 py-3 px-5 bg-bg-surface border rounded-xs text-sm font-medium cursor-pointer transition-all duration-200"
+        :class="viewMode === 'org' 
+          ? 'bg-[rgba(var(--accent-secondary-rgb),0.1)] border-accent-secondary text-accent-secondary' 
+          : 'border-border-subtle text-text-secondary hover:bg-bg-elevated hover:border-border-accent'"
         @click="viewMode = 'org'"
       >
         <Building2 class="w-4 h-4" />
         Organization
       </button>
       <button 
-        class="view-tab"
-        :class="{ 'view-tab--active': viewMode === 'app' }"
+        class="flex items-center gap-2 py-3 px-5 bg-bg-surface border rounded-xs text-sm font-medium cursor-pointer transition-all duration-200"
+        :class="viewMode === 'app' 
+          ? 'bg-[rgba(var(--accent-secondary-rgb),0.1)] border-accent-secondary text-accent-secondary' 
+          : 'border-border-subtle text-text-secondary hover:bg-bg-elevated hover:border-border-accent'"
         @click="viewMode = 'app'"
       >
         <AppWindow class="w-4 h-4" />
@@ -156,8 +160,8 @@ async function handleDelete() {
     </div>
 
     <!-- App Selector (when in app mode) -->
-    <div v-if="viewMode === 'app'" class="app-selector">
-      <select v-model="selectedAppId" class="form-input">
+    <div v-if="viewMode === 'app'" class="mb-6">
+      <select v-model="selectedAppId" class="form-input max-w-[400px]">
         <option value="" disabled>Select an application</option>
         <option v-for="app in applications" :key="app.id" :value="app.id">
           {{ app.name }} ({{ app.subdomain }})
@@ -166,21 +170,21 @@ async function handleDelete() {
     </div>
 
     <!-- Info banner -->
-    <div class="info-banner">
-      <ShieldCheck class="w-5 h-5" />
+    <div class="flex gap-4 py-5 px-6 bg-[rgba(var(--accent-secondary-rgb),0.1)] border border-[rgba(var(--accent-secondary-rgb),0.2)] rounded-xs mb-6 text-accent-secondary">
+      <ShieldCheck class="w-5 h-5 shrink-0 mt-0.5" />
       <div>
-        <strong>{{ viewMode === 'org' ? 'Organization Whitelist' : 'Application Whitelist' }}</strong>
-        <p v-if="viewMode === 'org'">
+        <strong class="block text-text-primary mb-1">{{ viewMode === 'org' ? 'Organization Whitelist' : 'Application Whitelist' }}</strong>
+        <p v-if="viewMode === 'org'" class="text-sm text-text-secondary m-0 leading-relaxed">
           These IP ranges can access all tunnels in your organization.
         </p>
-        <p v-else>
+        <p v-else class="text-sm text-text-secondary m-0 leading-relaxed">
           These IP ranges can only access the selected application's tunnels.
         </p>
       </div>
     </div>
 
     <!-- Search -->
-    <div class="toolbar">
+    <div class="mb-6">
       <SearchInput v-model="searchQuery" placeholder="Search IP ranges..." />
     </div>
 
@@ -190,10 +194,13 @@ async function handleDelete() {
     </div>
 
     <!-- No app selected message -->
-    <div v-if="viewMode === 'app' && !selectedAppId" class="select-app-message">
+    <div 
+      v-if="viewMode === 'app' && !selectedAppId" 
+      class="flex flex-col items-center justify-center text-center py-16 px-8 bg-bg-surface border border-border-subtle rounded-xs text-text-muted"
+    >
       <AppWindow class="w-12 h-12" />
-      <h3>Select an Application</h3>
-      <p>Choose an application to manage its IP whitelist.</p>
+      <h3 class="text-lg font-semibold text-text-primary mt-4 mb-2">Select an Application</h3>
+      <p class="text-[0.9375rem] m-0 max-w-[280px]">Choose an application to manage its IP whitelist.</p>
     </div>
 
     <!-- Table -->
@@ -207,9 +214,9 @@ async function handleDelete() {
       row-key="id"
     >
       <template #cell-ipRange="{ value }">
-        <div class="ip-range">
+        <div class="flex items-center gap-2.5 text-accent-secondary">
           <ShieldCheck class="w-4 h-4" />
-          <code>{{ value }}</code>
+          <code class="font-mono text-sm">{{ value }}</code>
         </div>
       </template>
       
@@ -222,9 +229,9 @@ async function handleDelete() {
       </template>
       
       <template #actions="{ row }">
-        <div class="action-buttons">
+        <div class="flex items-center gap-1">
           <button 
-            class="icon-btn icon-btn--danger" 
+            class="w-8 h-8 flex items-center justify-center border-none rounded-xs bg-transparent text-text-muted cursor-pointer transition-all duration-150 hover:bg-[rgba(var(--accent-red-rgb),0.1)] hover:text-accent-red"
             title="Remove" 
             @click.stop="openDeleteConfirm(row)"
           >
@@ -243,10 +250,10 @@ async function handleDelete() {
 
     <!-- Add Modal -->
     <Modal v-model="showAddModal" title="Add IP Range">
-      <form @submit.prevent="handleAdd" class="form">
+      <form @submit.prevent="handleAdd" class="flex flex-col gap-5">
         <div v-if="formError" class="error-message mb-4">{{ formError }}</div>
         
-        <div class="form-group">
+        <div class="flex flex-col gap-2">
           <label class="form-label" for="ip-range">IP Range</label>
           <input
             id="ip-range"
@@ -259,10 +266,10 @@ async function handleDelete() {
           <p class="form-hint">Enter a single IP or CIDR range</p>
         </div>
         
-        <div class="form-group">
+        <div class="flex flex-col gap-2">
           <label class="form-label" for="ip-desc">
             Description
-            <span class="form-label-optional">(optional)</span>
+            <span class="font-normal normal-case tracking-normal text-text-muted">(optional)</span>
           </label>
           <input
             id="ip-desc"
@@ -299,168 +306,3 @@ async function handleDelete() {
     />
   </div>
 </template>
-
-<style scoped>
-.whitelist-page {
-  max-width: 1000px;
-}
-
-.view-tabs {
-  display: flex;
-  gap: 0.5rem;
-  margin-bottom: 1.5rem;
-}
-
-.view-tab {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1.25rem;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.view-tab:hover {
-  background: var(--bg-elevated);
-  border-color: var(--border-accent);
-}
-
-.view-tab--active {
-  background: rgba(var(--accent-secondary-rgb), 0.1);
-  border-color: var(--accent-secondary);
-  color: var(--accent-secondary);
-}
-
-.app-selector {
-  margin-bottom: 1.5rem;
-}
-
-.app-selector .form-input {
-  max-width: 400px;
-}
-
-.info-banner {
-  display: flex;
-  gap: 1rem;
-  padding: 1.25rem 1.5rem;
-  background: rgba(var(--accent-secondary-rgb), 0.1);
-  border: 1px solid rgba(var(--accent-secondary-rgb), 0.2);
-  border-radius: 12px;
-  margin-bottom: 1.5rem;
-  color: var(--accent-secondary);
-}
-
-.info-banner strong {
-  display: block;
-  color: var(--text-primary);
-  margin-bottom: 0.25rem;
-}
-
-.info-banner p {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-  margin: 0;
-  line-height: 1.5;
-}
-
-.toolbar {
-  margin-bottom: 1.5rem;
-}
-
-.select-app-message {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 4rem 2rem;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  color: var(--text-muted);
-}
-
-.select-app-message h3 {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 1rem 0 0.5rem;
-}
-
-.select-app-message p {
-  font-size: 0.9375rem;
-  margin: 0;
-  max-width: 280px;
-}
-
-.ip-range {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  color: var(--accent-secondary);
-}
-
-.ip-range code {
-  font-family: var(--font-mono);
-  font-size: 0.875rem;
-}
-
-.action-buttons {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.icon-btn {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.icon-btn:hover:not(:disabled) {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-}
-
-.icon-btn--danger:hover:not(:disabled) {
-  background: rgba(var(--accent-red-rgb), 0.1);
-  color: var(--accent-red);
-}
-
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.form-label-optional {
-  font-weight: 400;
-  text-transform: none;
-  letter-spacing: normal;
-  color: var(--text-muted);
-}
-
-.mb-4 {
-  margin-bottom: 1rem;
-}
-</style>

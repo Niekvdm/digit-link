@@ -10,57 +10,14 @@ defineProps<{
 </script>
 
 <template>
-  <div class="empty-state">
-    <div class="empty-icon">
+  <div class="flex flex-col items-center justify-center text-center py-12 px-8 min-h-60">
+    <div class="w-20 h-20 rounded-full bg-bg-elevated flex items-center justify-center text-text-muted mb-5">
       <component :is="icon || Inbox" class="w-10 h-10" />
     </div>
-    <h3 class="empty-title">{{ title }}</h3>
-    <p v-if="description" class="empty-description">{{ description }}</p>
-    <div v-if="$slots.action" class="empty-action">
+    <h3 class="text-lg font-semibold text-text-primary m-0 mb-2">{{ title }}</h3>
+    <p v-if="description" class="text-sm text-text-secondary m-0 max-w-xs leading-relaxed">{{ description }}</p>
+    <div v-if="$slots.action" class="mt-6">
       <slot name="action" />
     </div>
   </div>
 </template>
-
-<style scoped>
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 3rem 2rem;
-  min-height: 240px;
-}
-
-.empty-icon {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
-  background: var(--bg-elevated);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  margin-bottom: 1.25rem;
-}
-
-.empty-title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0 0 0.5rem;
-}
-
-.empty-description {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-  margin: 0;
-  max-width: 320px;
-  line-height: 1.5;
-}
-
-.empty-action {
-  margin-top: 1.5rem;
-}
-</style>

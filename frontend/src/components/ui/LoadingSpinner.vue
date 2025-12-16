@@ -7,54 +7,19 @@ const props = defineProps<{
   label?: string
 }>()
 
-const sizeClass = computed(() => `spinner--${props.size || 'md'}`)
+const iconSizeClass = computed(() => {
+  const sizes = {
+    sm: 'w-5 h-5',
+    md: 'w-8 h-8',
+    lg: 'w-12 h-12'
+  }
+  return sizes[props.size || 'md']
+})
 </script>
 
 <template>
-  <div class="loading-spinner" :class="sizeClass">
-    <Loader2 class="spinner-icon" />
-    <span v-if="label" class="spinner-label">{{ label }}</span>
+  <div class="flex flex-col items-center justify-center gap-3 p-8 text-text-muted">
+    <Loader2 class="animate-spin" :class="iconSizeClass" />
+    <span v-if="label" class="text-sm text-text-secondary">{{ label }}</span>
   </div>
 </template>
-
-<style scoped>
-.loading-spinner {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.75rem;
-  padding: 2rem;
-  color: var(--text-muted);
-}
-
-.spinner-icon {
-  animation: spin 0.8s linear infinite;
-}
-
-.spinner--sm .spinner-icon {
-  width: 20px;
-  height: 20px;
-}
-
-.spinner--md .spinner-icon {
-  width: 32px;
-  height: 32px;
-}
-
-.spinner--lg .spinner-icon {
-  width: 48px;
-  height: 48px;
-}
-
-.spinner-label {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-</style>

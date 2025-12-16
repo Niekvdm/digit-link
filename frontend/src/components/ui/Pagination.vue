@@ -71,14 +71,14 @@ function nextPage() {
 </script>
 
 <template>
-  <div v-if="total > 0" class="pagination">
-    <div class="pagination-info">
+  <div v-if="total > 0" class="flex items-center justify-between gap-4 py-4 flex-wrap">
+    <div class="text-[0.8125rem] text-text-secondary">
       Showing {{ startItem }}-{{ endItem }} of {{ total }}
     </div>
     
-    <div class="pagination-controls">
+    <div class="flex items-center gap-1">
       <button 
-        class="pagination-btn pagination-btn--nav"
+        class="min-w-8 h-8 px-2 flex items-center justify-center border border-border-subtle rounded-xs bg-transparent text-text-secondary text-[0.8125rem] font-medium cursor-pointer transition-all duration-200 hover:bg-bg-elevated hover:text-text-primary hover:border-border-accent disabled:opacity-40 disabled:cursor-not-allowed"
         :disabled="currentPage === 1"
         @click="prevPage"
       >
@@ -86,11 +86,13 @@ function nextPage() {
       </button>
       
       <template v-for="page in visiblePages" :key="page">
-        <span v-if="page === 'ellipsis'" class="pagination-ellipsis">...</span>
+        <span v-if="page === 'ellipsis'" class="px-1 text-text-muted">...</span>
         <button
           v-else
-          class="pagination-btn"
-          :class="{ 'pagination-btn--active': page === currentPage }"
+          class="min-w-8 h-8 px-2 flex items-center justify-center border rounded-xs text-[0.8125rem] font-medium cursor-pointer transition-all duration-200"
+          :class="page === currentPage 
+            ? 'bg-[rgba(var(--accent-primary-rgb),0.15)] border-accent-primary text-accent-primary hover:bg-[rgba(var(--accent-primary-rgb),0.2)]' 
+            : 'border-border-subtle bg-transparent text-text-secondary hover:bg-bg-elevated hover:text-text-primary hover:border-border-accent'"
           @click="goToPage(page)"
         >
           {{ page }}
@@ -98,7 +100,7 @@ function nextPage() {
       </template>
       
       <button 
-        class="pagination-btn pagination-btn--nav"
+        class="min-w-8 h-8 px-2 flex items-center justify-center border border-border-subtle rounded-xs bg-transparent text-text-secondary text-[0.8125rem] font-medium cursor-pointer transition-all duration-200 hover:bg-bg-elevated hover:text-text-primary hover:border-border-accent disabled:opacity-40 disabled:cursor-not-allowed"
         :disabled="currentPage === totalPages"
         @click="nextPage"
       >
@@ -107,70 +109,3 @@ function nextPage() {
     </div>
   </div>
 </template>
-
-<style scoped>
-.pagination {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 1rem 0;
-  flex-wrap: wrap;
-}
-
-.pagination-info {
-  font-size: 0.8125rem;
-  color: var(--text-secondary);
-}
-
-.pagination-controls {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.pagination-btn {
-  min-width: 32px;
-  height: 32px;
-  padding: 0 0.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.pagination-btn:hover:not(:disabled) {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  border-color: var(--border-accent);
-}
-
-.pagination-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.pagination-btn--active {
-  background: rgba(var(--accent-primary-rgb), 0.15);
-  border-color: var(--accent-primary);
-  color: var(--accent-primary);
-}
-
-.pagination-btn--active:hover:not(:disabled) {
-  background: rgba(var(--accent-primary-rgb), 0.2);
-  color: var(--accent-primary);
-  border-color: var(--accent-primary);
-}
-
-.pagination-ellipsis {
-  padding: 0 0.25rem;
-  color: var(--text-muted);
-}
-</style>

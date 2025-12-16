@@ -35,7 +35,7 @@ function handleRefresh() {
 </script>
 
 <template>
-  <div class="tunnels-page">
+  <div class="max-w-[1000px]">
     <PageHeader 
       title="Active Tunnels" 
       description="Monitor currently active tunnel connections"
@@ -49,11 +49,11 @@ function handleRefresh() {
     </PageHeader>
 
     <!-- Stats banner -->
-    <div class="stats-banner">
+    <div class="flex items-center gap-4 py-5 px-6 bg-bg-surface border border-border-subtle rounded-xs mb-6 text-accent-secondary">
       <Cable class="w-6 h-6" />
-      <div class="stats-content">
-        <span class="stats-value">{{ tunnels.length }}</span>
-        <span class="stats-label">Active Connections</span>
+      <div class="flex-1">
+        <span class="font-display text-[1.75rem] font-semibold text-text-primary mr-2">{{ tunnels.length }}</span>
+        <span class="text-[0.9375rem] text-text-secondary">Active Connections</span>
       </div>
       <div class="live-indicator">
         <span class="live-dot" />
@@ -76,14 +76,18 @@ function handleRefresh() {
       row-key="subdomain"
     >
       <template #cell-subdomain="{ value }">
-        <div class="tunnel-subdomain">
+        <div class="flex items-center gap-3">
           <div class="tunnel-status" />
-          <code>{{ value }}</code>
+          <code class="font-mono text-sm text-accent-secondary">{{ value }}</code>
         </div>
       </template>
       
       <template #cell-url="{ value }">
-        <a :href="value" target="_blank" class="tunnel-url">
+        <a 
+          :href="value" 
+          target="_blank" 
+          class="flex items-center gap-2 text-text-secondary text-sm no-underline transition-colors duration-150 hover:text-accent-primary"
+        >
           {{ value }}
           <ExternalLink class="w-3.5 h-3.5" />
         </a>
@@ -96,107 +100,10 @@ function handleRefresh() {
   </div>
 </template>
 
-<style scoped>
-.tunnels-page {
-  max-width: 1000px;
-}
-
-.stats-banner {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 1.25rem 1.5rem;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  margin-bottom: 1.5rem;
-  color: var(--accent-secondary);
-}
-
-.stats-content {
-  flex: 1;
-}
-
-.stats-value {
-  font-family: var(--font-display);
-  font-size: 1.75rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin-right: 0.5rem;
-}
-
-.stats-label {
-  font-size: 0.9375rem;
-  color: var(--text-secondary);
-}
-
-.live-indicator {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.75rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--accent-secondary);
-}
-
-.live-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent-secondary);
-  animation: pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-.tunnel-subdomain {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.tunnel-status {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--accent-secondary);
-  box-shadow: 0 0 8px var(--accent-secondary);
-}
-
-.tunnel-subdomain code {
-  font-family: var(--font-mono);
-  font-size: 0.875rem;
-  color: var(--accent-secondary);
-}
-
-.tunnel-url {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-  text-decoration: none;
-  transition: color 0.15s ease;
-}
-
-.tunnel-url:hover {
-  color: var(--accent-primary);
-}
-
-.animate-spin {
-  animation: spin 0.6s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.mb-4 {
-  margin-bottom: 1rem;
-}
+<style>
+  @reference "../../style.css";
+	.tunnel-status {
+	@apply w-2.5 h-2.5 rounded-full bg-accent-secondary;
+	box-shadow: 0 0 8px var(--accent-secondary);
+	}
 </style>

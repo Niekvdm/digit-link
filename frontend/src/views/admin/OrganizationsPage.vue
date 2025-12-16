@@ -157,7 +157,7 @@ async function handleDelete() {
 </script>
 
 <template>
-  <div class="organizations-page">
+  <div class="max-w-[1200px]">
     <PageHeader 
       title="Organizations" 
       description="Manage organizations and their authentication policies"
@@ -171,7 +171,7 @@ async function handleDelete() {
     </PageHeader>
 
     <!-- Search -->
-    <div class="toolbar">
+    <div class="mb-6">
       <SearchInput v-model="searchQuery" placeholder="Search organizations..." />
     </div>
 
@@ -190,8 +190,8 @@ async function handleDelete() {
       row-key="id"
     >
       <template #cell-name="{ row }">
-        <div class="org-name">
-          <div class="org-icon">
+        <div class="flex items-center gap-3">
+          <div class="w-8 h-8 rounded-xs bg-[rgba(var(--accent-primary-rgb),0.1)] text-accent-primary flex items-center justify-center">
             <Building2 class="w-4 h-4" />
           </div>
           <span>{{ row.name }}</span>
@@ -211,15 +211,23 @@ async function handleDelete() {
       </template>
       
       <template #actions="{ row }">
-        <div class="action-buttons">
-          <button class="icon-btn" title="Configure Policy" @click.stop="openPolicyModal(row)">
+        <div class="flex items-center gap-1">
+          <button 
+            class="w-8 h-8 flex items-center justify-center border-none rounded-xs bg-transparent text-text-muted cursor-pointer transition-all duration-150 hover:bg-bg-elevated hover:text-text-primary"
+            title="Configure Policy" 
+            @click.stop="openPolicyModal(row)"
+          >
             <Settings class="w-4 h-4" />
           </button>
-          <button class="icon-btn" title="Edit" @click.stop="openEditModal(row)">
+          <button 
+            class="w-8 h-8 flex items-center justify-center border-none rounded-xs bg-transparent text-text-muted cursor-pointer transition-all duration-150 hover:bg-bg-elevated hover:text-text-primary"
+            title="Edit" 
+            @click.stop="openEditModal(row)"
+          >
             <Pencil class="w-4 h-4" />
           </button>
           <button 
-            class="icon-btn icon-btn--danger" 
+            class="w-8 h-8 flex items-center justify-center border-none rounded-xs bg-transparent text-text-muted cursor-pointer transition-all duration-150 hover:bg-[rgba(var(--accent-red-rgb),0.1)] hover:text-accent-red disabled:opacity-30 disabled:cursor-not-allowed"
             title="Delete" 
             @click.stop="openDeleteConfirm(row)"
             :disabled="row.appCount > 0"
@@ -239,10 +247,10 @@ async function handleDelete() {
 
     <!-- Create Modal -->
     <Modal v-model="showCreateModal" title="New Organization">
-      <form @submit.prevent="handleCreate" class="form">
+      <form @submit.prevent="handleCreate" class="flex flex-col gap-4">
         <div v-if="formError" class="error-message mb-4">{{ formError }}</div>
         
-        <div class="form-group">
+        <div class="flex flex-col gap-2">
           <label class="form-label" for="org-name">Organization Name</label>
           <input
             id="org-name"
@@ -267,10 +275,10 @@ async function handleDelete() {
 
     <!-- Edit Modal -->
     <Modal v-model="showEditModal" title="Edit Organization">
-      <form @submit.prevent="handleUpdate" class="form">
+      <form @submit.prevent="handleUpdate" class="flex flex-col gap-4">
         <div v-if="formError" class="error-message mb-4">{{ formError }}</div>
         
-        <div class="form-group">
+        <div class="flex flex-col gap-2">
           <label class="form-label" for="edit-org-name">Organization Name</label>
           <input
             id="edit-org-name"
@@ -314,81 +322,3 @@ async function handleDelete() {
     />
   </div>
 </template>
-
-<style scoped>
-.organizations-page {
-  max-width: 1200px;
-}
-
-.toolbar {
-  margin-bottom: 1.5rem;
-}
-
-.org-name {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.org-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: rgba(var(--accent-primary-rgb), 0.1);
-  color: var(--accent-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.action-buttons {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.icon-btn {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.icon-btn:hover:not(:disabled) {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-}
-
-.icon-btn--danger:hover:not(:disabled) {
-  background: rgba(var(--accent-red-rgb), 0.1);
-  color: var(--accent-red);
-}
-
-.icon-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.mb-4 {
-  margin-bottom: 1rem;
-}
-</style>

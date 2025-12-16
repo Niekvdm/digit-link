@@ -295,51 +295,66 @@ function handleSubmit() {
 </script>
 
 <template>
-  <div class="login-container">
+  <div class="min-h-screen flex items-center justify-center relative overflow-hidden p-8">
     <!-- Animated background -->
     <div class="bg-pattern" />
-    <div class="bg-gradient" :class="`bg-gradient--${accentColor}`" />
+    <div 
+      class="fixed inset-0 pointer-events-none z-0 transition-[background] duration-600"
+      :class="accentColor === 'primary' ? 'bg-gradient-primary' : 'bg-gradient-secondary'"
+    />
     
     <!-- Decorative elements -->
     <div class="corner corner-tl" />
     <div class="corner corner-br" />
 
     <!-- Main login card -->
-    <div class="login-wrapper">
+    <div class="relative z-10 w-full max-w-[400px] animate-fade-in">
       <!-- Logo -->
-      <div class="logo-container">
-        <div class="logo" :class="`logo--${accentColor}`">
-          <div class="logo-inner" />
-          <div class="logo-ring" />
+      <div class="text-center mb-10">
+        <div 
+          class="relative w-14 h-14 mx-auto mb-5 border-2 rounded-[14px] flex items-center justify-center transition-colors duration-300"
+          :class="accentColor === 'primary' ? 'border-accent-primary' : 'border-accent-secondary'"
+        >
+          <div 
+            class="w-5 h-5 rounded rotate-45 transition-colors duration-300"
+            :class="accentColor === 'primary' ? 'bg-accent-primary' : 'bg-accent-secondary'"
+          />
+          <div 
+            class="absolute -inset-1 border rounded-2xl opacity-30 transition-colors duration-300"
+            :class="accentColor === 'primary' ? 'border-accent-primary' : 'border-accent-secondary'"
+          />
         </div>
-        <h1 class="brand-title">digit-link</h1>
-        <p class="brand-subtitle">Secure Tunnel Infrastructure</p>
+        <h1 class="font-display text-[2rem] font-semibold tracking-tight mb-1">digit-link</h1>
+        <p class="text-sm text-text-secondary">Secure Tunnel Infrastructure</p>
       </div>
 
       <!-- Login card -->
-      <div class="login-card">
+      <div class="bg-bg-surface border border-border-subtle rounded-2xl overflow-hidden relative">
         <!-- Top accent line -->
-        <div class="card-accent" :class="`card-accent--${accentColor}`" />
+        <div 
+          class="absolute top-0 left-8 right-8 h-0.5 transition-colors duration-300"
+          :class="accentColor === 'primary' ? 'card-accent-primary' : 'card-accent-secondary'"
+        />
         
         <!-- Header with back button -->
-        <div class="card-header">
+        <div class="pt-6 px-6 flex items-start gap-3">
           <button 
             v-if="currentStep !== 'username'" 
-            class="back-btn"
+            class="w-8 h-8 flex items-center justify-center border border-border-subtle rounded-xs bg-transparent text-text-secondary cursor-pointer transition-all duration-200 shrink-0 mt-0.5 hover:bg-bg-elevated hover:text-text-primary hover:border-border-accent disabled:opacity-50 disabled:cursor-not-allowed"
             @click="goBack"
             :disabled="loading"
           >
             <ArrowLeft class="w-4 h-4" />
           </button>
-          <div class="header-text">
-            <h2 class="step-title">{{ stepTitle }}</h2>
-            <p class="step-desc">{{ stepDescription }}</p>
+          <div class="flex-1 min-w-0">
+            <h2 class="text-xl font-semibold mb-1">{{ stepTitle }}</h2>
+            <p class="text-sm text-text-secondary">{{ stepDescription }}</p>
           </div>
           <!-- Account type badge -->
           <div 
             v-if="currentStep !== 'username' && accountType" 
-            class="account-badge"
-            :class="`account-badge--${accentColor}`"
+            class="flex items-center gap-1.5 py-1.5 px-2.5 rounded-xs text-xs font-medium shrink-0"
+            :class="accentColor === 'primary' ? 'bg-[rgba(var(--accent-primary-rgb),0.15)] text-accent-primary' : 'bg-[rgba(var(--accent-secondary-rgb),0.15)] text-accent-secondary'"
           >
             <Shield v-if="accountType === 'admin'" class="w-3.5 h-3.5" />
             <Building2 v-else class="w-3.5 h-3.5" />
@@ -348,27 +363,30 @@ function handleSubmit() {
         </div>
 
         <!-- Form content -->
-        <form @submit.prevent="handleSubmit" class="card-body">
+        <form @submit.prevent="handleSubmit" class="p-6">
           <!-- Error message -->
           <Transition name="shake">
-            <div v-if="error" class="error-box">
-              <AlertCircle class="w-4 h-4 flex-shrink-0" />
+            <div 
+              v-if="error" 
+              class="flex items-start gap-2.5 py-3.5 px-4 bg-[rgba(var(--accent-red-rgb),0.1)] border border-[rgba(var(--accent-red-rgb),0.3)] rounded-[10px] mb-5 text-sm text-accent-red"
+            >
+              <AlertCircle class="w-4 h-4 shrink-0" />
               <span>{{ error }}</span>
             </div>
           </Transition>
 
           <!-- Step: Username -->
           <Transition name="slide" mode="out-in">
-            <div v-if="currentStep === 'username'" key="username" class="step-content">
-              <div class="input-group">
-                <label class="input-label" for="username">Username</label>
-                <div class="input-wrapper">
-                  <User class="input-icon" />
+            <div v-if="currentStep === 'username'" key="username" class="mb-6">
+              <div class="mb-4">
+                <label class="block text-xs font-medium uppercase tracking-wider text-text-secondary mb-2.5" for="username">Username</label>
+                <div class="relative">
+                  <User class="absolute left-4 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-text-muted pointer-events-none" />
                   <input
                     id="username"
                     v-model="username"
                     type="text"
-                    class="form-input form-input--icon"
+                    class="w-full py-3.5 pl-11 pr-4 bg-bg-deep border border-border-subtle rounded-[10px] font-body text-[0.9375rem] text-text-primary transition-all duration-200 placeholder:text-text-muted focus:outline-none focus:border-accent-primary focus:shadow-[0_0_0_3px_rgba(var(--accent-primary-rgb),0.12)]"
                     placeholder="Enter your username"
                     autocomplete="username"
                     autofocus
@@ -379,24 +397,27 @@ function handleSubmit() {
             </div>
 
             <!-- Step: Password -->
-            <div v-else-if="currentStep === 'password'" key="password" class="step-content">
+            <div v-else-if="currentStep === 'password'" key="password" class="mb-6">
               <!-- Username display -->
-              <div class="user-info">
-                <div class="user-avatar" :class="`user-avatar--${accentColor}`">
+              <div class="flex items-center gap-3 py-3.5 px-4 bg-bg-deep border border-border-subtle rounded-[10px] mb-5">
+                <div 
+                  class="w-9 h-9 rounded-xs flex items-center justify-center font-semibold text-sm"
+                  :class="accentColor === 'primary' ? 'bg-[rgba(var(--accent-primary-rgb),0.2)] text-accent-primary' : 'bg-[rgba(var(--accent-secondary-rgb),0.2)] text-accent-secondary'"
+                >
                   {{ username.charAt(0).toUpperCase() }}
                 </div>
-                <span class="user-name">{{ username }}</span>
+                <span class="font-medium text-text-primary">{{ username }}</span>
               </div>
 
-              <div class="input-group">
-                <label class="input-label" for="password">Password</label>
-                <div class="input-wrapper">
-                  <Lock class="input-icon" />
+              <div class="mb-4">
+                <label class="block text-xs font-medium uppercase tracking-wider text-text-secondary mb-2.5" for="password">Password</label>
+                <div class="relative">
+                  <Lock class="absolute left-4 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-text-muted pointer-events-none" />
                   <input
                     id="password"
                     v-model="password"
                     type="password"
-                    class="form-input form-input--icon"
+                    class="w-full py-3.5 pl-11 pr-4 bg-bg-deep border border-border-subtle rounded-[10px] font-body text-[0.9375rem] text-text-primary transition-all duration-200 placeholder:text-text-muted focus:outline-none focus:border-accent-primary focus:shadow-[0_0_0_3px_rgba(var(--accent-primary-rgb),0.12)]"
                     placeholder="Enter your password"
                     autocomplete="current-password"
                     autofocus
@@ -407,78 +428,80 @@ function handleSubmit() {
             </div>
 
             <!-- Step: TOTP Verify -->
-            <div v-else-if="currentStep === 'totp'" key="totp" class="step-content">
-              <div class="totp-icon-wrapper">
-                <div class="totp-icon" :class="`totp-icon--${accentColor}`">
+            <div v-else-if="currentStep === 'totp'" key="totp" class="mb-6">
+              <div class="flex justify-center mb-6">
+                <div 
+                  class="w-16 h-16 rounded-2xl flex items-center justify-center"
+                  :class="accentColor === 'primary' ? 'bg-[rgba(var(--accent-primary-rgb),0.15)] text-accent-primary' : 'bg-[rgba(var(--accent-secondary-rgb),0.15)] text-accent-secondary'"
+                >
                   <Key class="w-6 h-6" />
                 </div>
               </div>
 
-              <div class="input-group">
-                <label class="input-label" for="totp-code">Authentication Code</label>
-                <div class="input-wrapper">
-                  <input
-                    id="totp-code"
-                    v-model="totpCode"
-                    type="text"
-                    inputmode="numeric"
-                    pattern="[0-9]*"
-                    maxlength="6"
-                    class="form-input form-input--totp"
-                    placeholder="000000"
-                    autocomplete="one-time-code"
-                    autofocus
-                    :disabled="loading"
-                  />
-                </div>
-                <p class="input-hint">Enter the 6-digit code from your authenticator app</p>
+              <div class="mb-4">
+                <label class="block text-xs font-medium uppercase tracking-wider text-text-secondary mb-2.5" for="totp-code">Authentication Code</label>
+                <input
+                  id="totp-code"
+                  v-model="totpCode"
+                  type="text"
+                  inputmode="numeric"
+                  pattern="[0-9]*"
+                  maxlength="6"
+                  class="w-full py-4 px-4 bg-bg-deep border border-border-subtle rounded-[10px] font-mono text-2xl text-center tracking-[0.5em] text-text-primary transition-all duration-200 placeholder:text-text-muted focus:outline-none focus:border-accent-primary focus:shadow-[0_0_0_3px_rgba(var(--accent-primary-rgb),0.12)]"
+                  placeholder="000000"
+                  autocomplete="one-time-code"
+                  autofocus
+                  :disabled="loading"
+                />
+                <p class="text-xs text-text-muted mt-2">Enter the 6-digit code from your authenticator app</p>
               </div>
             </div>
 
             <!-- Step: TOTP Setup -->
-            <div v-else-if="currentStep === 'totp-setup'" key="totp-setup" class="step-content">
-              <div class="setup-instructions">
-                <p class="setup-text">
+            <div v-else-if="currentStep === 'totp-setup'" key="totp-setup" class="mb-6">
+              <div class="mb-6">
+                <p class="text-sm text-text-secondary text-center mb-5 leading-relaxed">
                   Scan the QR code below with your authenticator app (Google Authenticator, Authy, etc.)
                 </p>
                 
-                <!-- QR Code placeholder - in production, use a QR library -->
-                <div class="qr-container">
-                  <div class="qr-placeholder" :class="`qr-placeholder--${accentColor}`">
+                <!-- QR Code placeholder -->
+                <div class="flex justify-center mb-5">
+                  <div 
+                    class="w-[180px] h-[180px] bg-bg-deep border-2 rounded-xs flex items-center justify-center overflow-hidden"
+                    :class="accentColor === 'primary' ? 'border-[rgba(var(--accent-primary-rgb),0.3)]' : 'border-[rgba(var(--accent-secondary-rgb),0.3)]'"
+                  >
                     <img 
                       v-if="totpUrl"
                       :src="`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(totpUrl)}`"
                       alt="TOTP QR Code"
-                      class="qr-image"
+                      class="w-[150px] h-[150px] rounded"
                     />
                     <Loader2 v-else class="w-8 h-8 animate-spin" />
                   </div>
                 </div>
 
                 <!-- Manual entry secret -->
-                <div v-if="totpSecret" class="secret-box">
-                  <p class="secret-label">Or enter this code manually:</p>
-                  <code class="secret-code">{{ totpSecret }}</code>
+                <div v-if="totpSecret" class="text-center p-4 bg-bg-deep border border-dashed border-border-accent rounded-xs">
+                  <p class="text-xs text-text-muted mb-2">Or enter this code manually:</p>
+                  <code class="font-mono text-[0.8125rem] text-accent-amber tracking-wide break-all">{{ totpSecret }}</code>
                 </div>
               </div>
 
-              <div class="input-group">
-                <label class="input-label" for="setup-code">Verification Code</label>
-                <div class="input-wrapper">
-                  <input
-                    id="setup-code"
-                    v-model="totpCode"
-                    type="text"
-                    inputmode="numeric"
-                    pattern="[0-9]*"
-                    maxlength="6"
-                    class="form-input form-input--totp"
-                    placeholder="000000"
-                    autocomplete="one-time-code"
-                    :disabled="loading"
-                  />
-                </div>
-                <p class="input-hint">Enter the code shown in your authenticator to complete setup</p>
+              <div class="mb-4">
+                <label class="block text-xs font-medium uppercase tracking-wider text-text-secondary mb-2.5" for="setup-code">Verification Code</label>
+                <input
+                  id="setup-code"
+                  v-model="totpCode"
+                  type="text"
+                  inputmode="numeric"
+                  pattern="[0-9]*"
+                  maxlength="6"
+                  class="w-full py-4 px-4 bg-bg-deep border border-border-subtle rounded-[10px] font-mono text-2xl text-center tracking-[0.5em] text-text-primary transition-all duration-200 placeholder:text-text-muted focus:outline-none focus:border-accent-primary focus:shadow-[0_0_0_3px_rgba(var(--accent-primary-rgb),0.12)]"
+                  placeholder="000000"
+                  autocomplete="one-time-code"
+                  :disabled="loading"
+                />
+                <p class="text-xs text-text-muted mt-2">Enter the code shown in your authenticator to complete setup</p>
               </div>
             </div>
           </Transition>
@@ -486,11 +509,13 @@ function handleSubmit() {
           <!-- Submit button -->
           <button
             type="submit"
-            class="submit-btn"
-            :class="[`submit-btn--${accentColor}`, { 'submit-btn--loading': loading }]"
+            class="w-full py-[0.9375rem] px-6 border-none rounded-[10px] font-body text-[0.9375rem] font-medium cursor-pointer transition-all duration-200 relative disabled:opacity-70 disabled:cursor-not-allowed disabled:transform-none"
+            :class="accentColor === 'primary' 
+              ? 'bg-accent-primary text-bg-deep hover:bg-accent-primary-dim hover:-translate-y-px' 
+              : 'bg-accent-secondary text-bg-deep hover:bg-accent-secondary-dim hover:-translate-y-px'"
             :disabled="loading"
           >
-            <span class="btn-content">
+            <span class="flex items-center justify-center gap-2">
               <template v-if="loading">
                 <Loader2 class="w-4 h-4 animate-spin" />
                 <span>Please wait...</span>
@@ -517,11 +542,11 @@ function handleSubmit() {
       </div>
 
       <!-- Footer -->
-      <div class="login-footer">
+      <div class="text-center mt-6 text-xs text-text-muted flex flex-col items-center gap-4">
         <ThemeSwitcher />
         <p>
           Secure infrastructure by 
-          <a href="https://digit.zone" target="_blank" rel="noopener">digit.zone</a>
+          <a href="https://digit.zone" target="_blank" rel="noopener" class="text-accent-primary no-underline transition-colors duration-200 hover:text-text-primary hover:underline">digit.zone</a>
         </p>
       </div>
     </div>
@@ -529,576 +554,33 @@ function handleSubmit() {
 </template>
 
 <style scoped>
-/* Container */
-.login-container {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  overflow: hidden;
-  padding: 2rem;
-}
-
-/* Background effects */
+/* Background pattern - needs pseudo-element */
 .bg-pattern {
-  position: fixed;
-  inset: 0;
+	@reference "../style.css";
+  @apply fixed inset-0 pointer-events-none z-0 opacity-[0.12];
   background-image: 
     linear-gradient(var(--border-subtle) 1px, transparent 1px),
     linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
   background-size: 60px 60px;
-  opacity: 0.12;
-  pointer-events: none;
-  z-index: 0;
 }
 
-.bg-gradient {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  transition: background 0.6s ease;
-}
-
-.bg-gradient--primary {
+/* Background gradients */
+.bg-gradient-primary {
   background: radial-gradient(ellipse at 30% 20%, rgba(var(--accent-primary-rgb), 0.08) 0%, transparent 50%),
               radial-gradient(ellipse at 70% 80%, rgba(var(--accent-primary-rgb), 0.05) 0%, transparent 50%);
 }
 
-.bg-gradient--secondary {
+.bg-gradient-secondary {
   background: radial-gradient(ellipse at 30% 20%, rgba(var(--accent-secondary-rgb), 0.08) 0%, transparent 50%),
               radial-gradient(ellipse at 70% 80%, rgba(var(--accent-secondary-rgb), 0.05) 0%, transparent 50%);
 }
 
-/* Decorative corners */
-.corner {
-  position: fixed;
-  width: 100px;
-  height: 100px;
-  pointer-events: none;
-  z-index: 1;
-}
-
-.corner::before,
-.corner::after {
-  content: '';
-  position: absolute;
-  background: var(--accent-primary);
-  opacity: 0.25;
-  transition: background 0.3s ease;
-}
-
-.corner-tl { top: 2rem; left: 2rem; }
-.corner-tl::before { top: 0; left: 0; width: 50px; height: 2px; }
-.corner-tl::after { top: 0; left: 0; width: 2px; height: 50px; }
-
-.corner-br { bottom: 2rem; right: 2rem; }
-.corner-br::before { bottom: 0; right: 0; width: 50px; height: 2px; }
-.corner-br::after { bottom: 0; right: 0; width: 2px; height: 50px; }
-
-/* Main wrapper */
-.login-wrapper {
-  position: relative;
-  z-index: 10;
-  width: 100%;
-  max-width: 400px;
-  animation: fadeIn 0.6s ease-out;
-}
-
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* Logo */
-.logo-container {
-  text-align: center;
-  margin-bottom: 2.5rem;
-}
-
-.logo {
-  position: relative;
-  width: 56px;
-  height: 56px;
-  margin: 0 auto 1.25rem;
-  border: 2px solid var(--accent-primary);
-  border-radius: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: border-color 0.3s ease;
-}
-
-.logo--secondary {
-  border-color: var(--accent-secondary);
-}
-
-.logo-inner {
-  width: 20px;
-  height: 20px;
-  background: var(--accent-primary);
-  border-radius: 4px;
-  transform: rotate(45deg);
-  transition: background 0.3s ease;
-}
-
-.logo--secondary .logo-inner {
-  background: var(--accent-secondary);
-}
-
-.logo-ring {
-  position: absolute;
-  inset: -4px;
-  border: 1px solid var(--accent-primary);
-  border-radius: 16px;
-  opacity: 0.3;
-  transition: border-color 0.3s ease;
-}
-
-.logo--secondary .logo-ring {
-  border-color: var(--accent-secondary);
-}
-
-.brand-title {
-  font-family: var(--font-display);
-  font-size: 2rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  margin-bottom: 0.25rem;
-}
-
-.brand-subtitle {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-}
-
-/* Login card */
-.login-card {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: 16px;
-  overflow: hidden;
-  position: relative;
-}
-
-.card-accent {
-  position: absolute;
-  top: 0;
-  left: 2rem;
-  right: 2rem;
-  height: 2px;
+/* Card accent gradients */
+.card-accent-primary {
   background: linear-gradient(90deg, transparent, var(--accent-primary), transparent);
-  transition: background 0.3s ease;
 }
 
-.card-accent--secondary {
+.card-accent-secondary {
   background: linear-gradient(90deg, transparent, var(--accent-secondary), transparent);
-}
-
-/* Card header */
-.card-header {
-  padding: 1.5rem 1.5rem 0;
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-}
-
-.back-btn {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.back-btn:hover:not(:disabled) {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  border-color: var(--border-accent);
-}
-
-.back-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.header-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.step-title {
-  font-size: 1.25rem;
-  font-weight: 600;
-  margin-bottom: 0.25rem;
-}
-
-.step-desc {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-}
-
-.account-badge {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.375rem 0.625rem;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  flex-shrink: 0;
-}
-
-.account-badge--primary {
-  background: rgba(var(--accent-primary-rgb), 0.15);
-  color: var(--accent-primary);
-}
-
-.account-badge--secondary {
-  background: rgba(var(--accent-secondary-rgb), 0.15);
-  color: var(--accent-secondary);
-}
-
-/* Card body */
-.card-body {
-  padding: 1.5rem;
-}
-
-/* Error box */
-.error-box {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.625rem;
-  padding: 0.875rem 1rem;
-  background: rgba(var(--accent-red-rgb), 0.1);
-  border: 1px solid rgba(var(--accent-red-rgb), 0.3);
-  border-radius: 10px;
-  margin-bottom: 1.25rem;
-  font-size: 0.875rem;
-  color: var(--accent-red);
-}
-
-/* Step content */
-.step-content {
-  margin-bottom: 1.5rem;
-}
-
-/* Input groups */
-.input-group {
-  margin-bottom: 1rem;
-}
-
-.input-group:last-child {
-  margin-bottom: 0;
-}
-
-.input-label {
-  display: block;
-  font-size: 0.75rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-secondary);
-  margin-bottom: 0.625rem;
-}
-
-.input-wrapper {
-  position: relative;
-}
-
-.input-icon {
-  position: absolute;
-  left: 1rem;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 18px;
-  height: 18px;
-  color: var(--text-muted);
-  pointer-events: none;
-}
-
-.form-input {
-  width: 100%;
-  padding: 0.875rem 1rem;
-  background: var(--bg-deep);
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  font-family: var(--font-body);
-  font-size: 0.9375rem;
-  color: var(--text-primary);
-  transition: all 0.2s ease;
-}
-
-.form-input::placeholder {
-  color: var(--text-muted);
-}
-
-.form-input:focus {
-  outline: none;
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px rgba(var(--accent-primary-rgb), 0.12);
-}
-
-.form-input--icon {
-  padding-left: 2.75rem;
-}
-
-.form-input--totp {
-  text-align: center;
-  font-family: var(--font-mono);
-  font-size: 1.5rem;
-  letter-spacing: 0.5em;
-  padding: 1rem;
-}
-
-.input-hint {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  margin-top: 0.5rem;
-}
-
-/* User info display */
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.875rem 1rem;
-  background: var(--bg-deep);
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  margin-bottom: 1.25rem;
-}
-
-.user-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  font-size: 0.875rem;
-}
-
-.user-avatar--primary {
-  background: rgba(var(--accent-primary-rgb), 0.2);
-  color: var(--accent-primary);
-}
-
-.user-avatar--secondary {
-  background: rgba(var(--accent-secondary-rgb), 0.2);
-  color: var(--accent-secondary);
-}
-
-.user-name {
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-/* TOTP icon */
-.totp-icon-wrapper {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 1.5rem;
-}
-
-.totp-icon {
-  width: 64px;
-  height: 64px;
-  border-radius: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.totp-icon--primary {
-  background: rgba(var(--accent-primary-rgb), 0.15);
-  color: var(--accent-primary);
-}
-
-.totp-icon--secondary {
-  background: rgba(var(--accent-secondary-rgb), 0.15);
-  color: var(--accent-secondary);
-}
-
-/* TOTP Setup */
-.setup-instructions {
-  margin-bottom: 1.5rem;
-}
-
-.setup-text {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-  text-align: center;
-  margin-bottom: 1.25rem;
-  line-height: 1.5;
-}
-
-.qr-container {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 1.25rem;
-}
-
-.qr-placeholder {
-  width: 180px;
-  height: 180px;
-  background: var(--bg-deep);
-  border: 2px solid var(--border-subtle);
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-}
-
-.qr-placeholder--primary {
-  border-color: rgba(var(--accent-primary-rgb), 0.3);
-}
-
-.qr-placeholder--secondary {
-  border-color: rgba(var(--accent-secondary-rgb), 0.3);
-}
-
-.qr-image {
-  width: 150px;
-  height: 150px;
-  border-radius: 4px;
-}
-
-.secret-box {
-  text-align: center;
-  padding: 1rem;
-  background: var(--bg-deep);
-  border: 1px dashed var(--border-accent);
-  border-radius: 8px;
-}
-
-.secret-label {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  margin-bottom: 0.5rem;
-}
-
-.secret-code {
-  font-family: var(--font-mono);
-  font-size: 0.8125rem;
-  color: var(--accent-amber);
-  letter-spacing: 0.05em;
-  word-break: break-all;
-}
-
-/* Submit button */
-.submit-btn {
-  width: 100%;
-  padding: 0.9375rem 1.5rem;
-  border: none;
-  border-radius: 10px;
-  font-family: var(--font-body);
-  font-size: 0.9375rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  position: relative;
-}
-
-.submit-btn--primary {
-  background: var(--accent-primary);
-  color: var(--bg-deep);
-}
-
-.submit-btn--primary:hover:not(:disabled) {
-  background: var(--accent-primary-dim);
-  transform: translateY(-1px);
-}
-
-.submit-btn--secondary {
-  background: var(--accent-secondary);
-  color: var(--bg-deep);
-}
-
-.submit-btn--secondary:hover:not(:disabled) {
-  background: var(--accent-secondary-dim);
-  transform: translateY(-1px);
-}
-
-.submit-btn:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-  transform: none !important;
-}
-
-.btn-content {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-}
-
-/* Footer */
-.login-footer {
-  text-align: center;
-  margin-top: 1.5rem;
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
-}
-
-.login-footer a {
-  color: var(--accent-primary);
-  text-decoration: none;
-  transition: color 0.2s ease;
-}
-
-.login-footer a:hover {
-  color: var(--text-primary);
-  text-decoration: underline;
-}
-
-/* Transitions */
-.slide-enter-active,
-.slide-leave-active {
-  transition: all 0.25s ease;
-}
-
-.slide-enter-from {
-  opacity: 0;
-  transform: translateX(20px);
-}
-
-.slide-leave-to {
-  opacity: 0;
-  transform: translateX(-20px);
-}
-
-.shake-enter-active {
-  animation: shake 0.4s ease;
-}
-
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-6px); }
-  75% { transform: translateX(6px); }
-}
-
-/* Utility */
-.animate-spin {
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
 }
 </style>

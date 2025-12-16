@@ -123,23 +123,28 @@ function handleCancel() {
 </script>
 
 <template>
-  <form @submit.prevent="handleSubmit" class="policy-editor">
+  <form @submit.prevent="handleSubmit" class="flex flex-col gap-6">
     <!-- Auth type selector -->
-    <div class="form-group">
-      <label class="form-label">Authentication Type</label>
-      <div class="auth-type-grid">
+    <div class="flex flex-col gap-2">
+      <label class="text-xs font-medium uppercase tracking-wider text-text-secondary flex items-center gap-2">Authentication Type</label>
+      <div class="flex flex-col gap-2">
         <button
           v-for="type in authTypes"
           :key="type.value"
           type="button"
-          class="auth-type-option"
-          :class="{ 'auth-type-option--active': authType === type.value }"
+          class="flex items-center gap-3.5 py-4 px-5 bg-bg-deep border rounded-[10px] cursor-pointer transition-all duration-200 text-left"
+          :class="authType === type.value 
+            ? 'border-accent-primary bg-[rgba(var(--accent-primary-rgb),0.05)] text-accent-primary' 
+            : 'border-border-subtle text-text-secondary hover:border-border-accent hover:bg-bg-elevated'"
           @click="authType = type.value"
         >
           <component :is="type.icon" class="w-5 h-5" />
-          <div class="auth-type-text">
-            <span class="auth-type-label">{{ type.label }}</span>
-            <span class="auth-type-desc">{{ type.description }}</span>
+          <div class="flex flex-col gap-0.5">
+            <span 
+              class="font-medium"
+              :class="authType === type.value ? 'text-accent-primary' : 'text-text-primary'"
+            >{{ type.label }}</span>
+            <span class="text-[0.8125rem] text-text-muted">{{ type.description }}</span>
           </div>
         </button>
       </div>
@@ -147,8 +152,8 @@ function handleCancel() {
 
     <!-- Basic Auth fields -->
     <template v-if="authType === 'basic'">
-      <div class="form-group">
-        <label class="form-label" for="basic-username">Username</label>
+      <div class="flex flex-col gap-2">
+        <label class="text-xs font-medium uppercase tracking-wider text-text-secondary" for="basic-username">Username</label>
         <input
           id="basic-username"
           v-model="basicUsername"
@@ -157,11 +162,11 @@ function handleCancel() {
           placeholder="Enter username (min 8 characters)"
           autocomplete="username"
         />
-        <p class="form-hint">Must be at least 8 characters</p>
+        <p class="text-xs text-text-muted m-0">Must be at least 8 characters</p>
       </div>
       
-      <div class="form-group">
-        <label class="form-label" for="basic-password">Password</label>
+      <div class="flex flex-col gap-2">
+        <label class="text-xs font-medium uppercase tracking-wider text-text-secondary" for="basic-password">Password</label>
         <input
           id="basic-password"
           v-model="basicPassword"
@@ -170,22 +175,22 @@ function handleCancel() {
           placeholder="Enter password (min 8 characters)"
           autocomplete="new-password"
         />
-        <p class="form-hint">Must be at least 8 characters</p>
+        <p class="text-xs text-text-muted m-0">Must be at least 8 characters</p>
       </div>
     </template>
 
     <!-- API Key info -->
     <template v-if="authType === 'api_key'">
-      <div class="info-box">
-        <Info class="w-4 h-4 flex-shrink-0" />
+      <div class="info-box leading-relaxed">
+        <Info class="w-4 h-4 shrink-0" />
         <span>API key authentication is automatically enabled. Create and manage API keys in the API Keys section.</span>
       </div>
     </template>
 
     <!-- OIDC fields -->
     <template v-if="authType === 'oidc'">
-      <div class="form-group">
-        <label class="form-label" for="oidc-issuer">Issuer URL</label>
+      <div class="flex flex-col gap-2">
+        <label class="text-xs font-medium uppercase tracking-wider text-text-secondary" for="oidc-issuer">Issuer URL</label>
         <input
           id="oidc-issuer"
           v-model="oidcIssuerUrl"
@@ -193,11 +198,11 @@ function handleCancel() {
           class="form-input"
           placeholder="https://accounts.google.com"
         />
-        <p class="form-hint">The OIDC provider's issuer URL</p>
+        <p class="text-xs text-text-muted m-0">The OIDC provider's issuer URL</p>
       </div>
       
-      <div class="form-group">
-        <label class="form-label" for="oidc-client-id">Client ID</label>
+      <div class="flex flex-col gap-2">
+        <label class="text-xs font-medium uppercase tracking-wider text-text-secondary" for="oidc-client-id">Client ID</label>
         <input
           id="oidc-client-id"
           v-model="oidcClientId"
@@ -207,10 +212,10 @@ function handleCancel() {
         />
       </div>
       
-      <div class="form-group">
-        <label class="form-label" for="oidc-client-secret">
+      <div class="flex flex-col gap-2">
+        <label class="text-xs font-medium uppercase tracking-wider text-text-secondary flex items-center gap-2" for="oidc-client-secret">
           Client Secret
-          <span class="form-label-optional">(optional)</span>
+          <span class="font-normal normal-case tracking-normal text-text-muted">(optional)</span>
         </label>
         <input
           id="oidc-client-secret"
@@ -221,57 +226,81 @@ function handleCancel() {
         />
       </div>
       
-      <div class="form-group">
-        <label class="form-label">Scopes</label>
-        <div class="tag-input">
-          <div v-for="scope in oidcScopes" :key="scope" class="tag">
+      <div class="flex flex-col gap-2">
+        <label class="text-xs font-medium uppercase tracking-wider text-text-secondary">Scopes</label>
+        <div class="flex flex-wrap gap-2 p-2 bg-bg-deep border border-border-subtle rounded-xs min-h-12 items-center">
+          <div 
+            v-for="scope in oidcScopes" 
+            :key="scope" 
+            class="flex items-center gap-1 py-1 pl-3 pr-2 bg-bg-elevated border border-border-subtle rounded-xs text-[0.8125rem] text-text-primary"
+          >
             <span>{{ scope }}</span>
-            <button type="button" class="tag-remove" @click="removeScope(scope)">
+            <button 
+              type="button" 
+              class="w-[18px] h-[18px] flex items-center justify-center border-none rounded bg-transparent text-text-muted cursor-pointer transition-all duration-150 hover:bg-accent-red hover:text-white"
+              @click="removeScope(scope)"
+            >
               <X class="w-3 h-3" />
             </button>
           </div>
           <input
             v-model="newScope"
             type="text"
-            class="tag-field"
+            class="flex-1 min-w-[100px] py-1 px-2 bg-transparent border-none font-body text-sm text-text-primary outline-none placeholder:text-text-muted"
             placeholder="Add scope..."
             @keydown.enter.prevent="addScope"
           />
-          <button type="button" class="tag-add" @click="addScope">
+          <button 
+            type="button" 
+            class="w-7 h-7 flex items-center justify-center border border-border-subtle rounded-xs bg-transparent text-text-muted cursor-pointer transition-all duration-200 hover:bg-bg-elevated hover:text-text-primary hover:border-border-accent"
+            @click="addScope"
+          >
             <Plus class="w-4 h-4" />
           </button>
         </div>
       </div>
       
-      <div class="form-group">
-        <label class="form-label">
+      <div class="flex flex-col gap-2">
+        <label class="text-xs font-medium uppercase tracking-wider text-text-secondary flex items-center gap-2">
           Allowed Email Domains
-          <span class="form-label-optional">(optional)</span>
+          <span class="font-normal normal-case tracking-normal text-text-muted">(optional)</span>
         </label>
-        <div class="tag-input">
-          <div v-for="domain in oidcAllowedDomains" :key="domain" class="tag">
+        <div class="flex flex-wrap gap-2 p-2 bg-bg-deep border border-border-subtle rounded-xs min-h-12 items-center">
+          <div 
+            v-for="domain in oidcAllowedDomains" 
+            :key="domain" 
+            class="flex items-center gap-1 py-1 pl-3 pr-2 bg-bg-elevated border border-border-subtle rounded-xs text-[0.8125rem] text-text-primary"
+          >
             <span>{{ domain }}</span>
-            <button type="button" class="tag-remove" @click="removeDomain(domain)">
+            <button 
+              type="button" 
+              class="w-[18px] h-[18px] flex items-center justify-center border-none rounded bg-transparent text-text-muted cursor-pointer transition-all duration-150 hover:bg-accent-red hover:text-white"
+              @click="removeDomain(domain)"
+            >
               <X class="w-3 h-3" />
             </button>
           </div>
           <input
             v-model="newDomain"
             type="text"
-            class="tag-field"
+            class="flex-1 min-w-[100px] py-1 px-2 bg-transparent border-none font-body text-sm text-text-primary outline-none placeholder:text-text-muted"
             placeholder="example.com"
             @keydown.enter.prevent="addDomain"
           />
-          <button type="button" class="tag-add" @click="addDomain">
+          <button 
+            type="button" 
+            class="w-7 h-7 flex items-center justify-center border border-border-subtle rounded-xs bg-transparent text-text-muted cursor-pointer transition-all duration-200 hover:bg-bg-elevated hover:text-text-primary hover:border-border-accent"
+            @click="addDomain"
+          >
             <Plus class="w-4 h-4" />
           </button>
         </div>
-        <p class="form-hint">Leave empty to allow all domains</p>
+        <p class="text-xs text-text-muted m-0">Leave empty to allow all domains</p>
       </div>
     </template>
 
     <!-- Actions -->
-    <div class="form-actions">
+    <div class="flex justify-end gap-3 pt-4 border-t border-border-subtle mt-2">
       <button type="button" class="btn btn-secondary" @click="handleCancel">
         Cancel
       </button>
@@ -281,196 +310,3 @@ function handleCancel() {
     </div>
   </form>
 </template>
-
-<style scoped>
-.policy-editor {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.form-label {
-  font-size: 0.75rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-secondary);
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.form-label-optional {
-  font-weight: 400;
-  text-transform: none;
-  letter-spacing: normal;
-  color: var(--text-muted);
-}
-
-.form-hint {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  margin: 0;
-}
-
-/* Auth type selector */
-.auth-type-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.auth-type-option {
-  display: flex;
-  align-items: center;
-  gap: 0.875rem;
-  padding: 1rem 1.25rem;
-  background: var(--bg-deep);
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-align: left;
-  color: var(--text-secondary);
-}
-
-.auth-type-option:hover {
-  border-color: var(--border-accent);
-  background: var(--bg-elevated);
-}
-
-.auth-type-option--active {
-  border-color: var(--accent-primary);
-  background: rgba(var(--accent-primary-rgb), 0.05);
-  color: var(--accent-primary);
-}
-
-.auth-type-text {
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
-}
-
-.auth-type-label {
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.auth-type-option--active .auth-type-label {
-  color: var(--accent-primary);
-}
-
-.auth-type-desc {
-  font-size: 0.8125rem;
-  color: var(--text-muted);
-}
-
-/* Tag input */
-.tag-input {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  padding: 0.5rem;
-  background: var(--bg-deep);
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  min-height: 48px;
-  align-items: center;
-}
-
-.tag {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem 0.5rem 0.25rem 0.75rem;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  font-size: 0.8125rem;
-  color: var(--text-primary);
-}
-
-.tag-remove {
-  width: 18px;
-  height: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.tag-remove:hover {
-  background: var(--accent-red);
-  color: white;
-}
-
-.tag-field {
-  flex: 1;
-  min-width: 100px;
-  padding: 0.25rem 0.5rem;
-  background: transparent;
-  border: none;
-  font-family: var(--font-body);
-  font-size: 0.875rem;
-  color: var(--text-primary);
-  outline: none;
-}
-
-.tag-field::placeholder {
-  color: var(--text-muted);
-}
-
-.tag-add {
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.tag-add:hover {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-  border-color: var(--border-accent);
-}
-
-/* Info box */
-.info-box {
-  display: flex;
-  gap: 0.75rem;
-  padding: 1rem 1.25rem;
-  background: rgba(var(--accent-blue-rgb), 0.1);
-  border: 1px solid rgba(var(--accent-blue-rgb), 0.3);
-  border-radius: 8px;
-  font-size: 0.875rem;
-  color: var(--accent-blue);
-  line-height: 1.5;
-}
-
-/* Form actions */
-.form-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.75rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--border-subtle);
-  margin-top: 0.5rem;
-}
-</style>

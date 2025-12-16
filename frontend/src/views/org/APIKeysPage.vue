@@ -130,7 +130,7 @@ function getKeyScope(key: APIKey): string {
 </script>
 
 <template>
-  <div class="api-keys-page">
+  <div class="max-w-[1200px]">
     <PageHeader 
       title="API Keys" 
       description="Manage API keys for tunnel authentication"
@@ -144,7 +144,7 @@ function getKeyScope(key: APIKey): string {
     </PageHeader>
 
     <!-- Search -->
-    <div class="toolbar">
+    <div class="mb-6">
       <SearchInput v-model="searchQuery" placeholder="Search keys..." />
     </div>
 
@@ -163,11 +163,11 @@ function getKeyScope(key: APIKey): string {
       row-key="id"
     >
       <template #cell-keyPrefix="{ value }">
-        <code class="key-prefix">{{ value }}...</code>
+        <code class="font-mono text-[0.8125rem] text-accent-amber bg-[rgba(var(--accent-amber-rgb),0.1)] py-1 px-2 rounded">{{ value }}...</code>
       </template>
       
       <template #cell-scope="{ row }">
-        <div class="key-scope">
+        <div class="flex items-center gap-2 text-text-secondary">
           <AppWindow v-if="row.appId" class="w-4 h-4" />
           <Building2 v-else class="w-4 h-4" />
           <span>{{ getKeyScope(row) }}</span>
@@ -183,16 +183,16 @@ function getKeyScope(key: APIKey): string {
       </template>
       
       <template #cell-expiresAt="{ value }">
-        <span v-if="value" :class="{ 'text-warning': new Date(value) < new Date() }">
+        <span v-if="value" :class="new Date(value) < new Date() ? 'text-accent-amber' : ''">
           {{ formatDate(value) }}
         </span>
-        <span v-else class="text-muted">Never</span>
+        <span v-else class="text-text-muted">Never</span>
       </template>
       
       <template #actions="{ row }">
-        <div class="action-buttons">
+        <div class="flex items-center gap-1">
           <button 
-            class="icon-btn icon-btn--danger" 
+            class="w-8 h-8 flex items-center justify-center border-none rounded-xs bg-transparent text-text-muted cursor-pointer transition-all duration-150 hover:bg-[rgba(var(--accent-red-rgb),0.1)] hover:text-accent-red"
             title="Revoke" 
             @click.stop="openDeleteConfirm(row)"
           >
@@ -211,13 +211,13 @@ function getKeyScope(key: APIKey): string {
 
     <!-- Create Modal -->
     <Modal v-model="showCreateModal" title="New API Key">
-      <form @submit.prevent="handleCreate" class="form">
+      <form @submit.prevent="handleCreate" class="flex flex-col gap-5">
         <div v-if="formError" class="error-message mb-4">{{ formError }}</div>
         
-        <div class="form-group">
+        <div class="flex flex-col gap-2">
           <label class="form-label" for="key-app">
             Application
-            <span class="form-label-optional">(optional)</span>
+            <span class="font-normal normal-case tracking-normal text-text-muted">(optional)</span>
           </label>
           <select
             id="key-app"
@@ -236,7 +236,7 @@ function getKeyScope(key: APIKey): string {
           <p class="form-hint">Leave empty for org-wide access, or select an app for app-specific key</p>
         </div>
         
-        <div class="form-group">
+        <div class="flex flex-col gap-2">
           <label class="form-label" for="key-desc">Description</label>
           <input
             id="key-desc"
@@ -248,10 +248,10 @@ function getKeyScope(key: APIKey): string {
           />
         </div>
         
-        <div class="form-group">
+        <div class="flex flex-col gap-2">
           <label class="form-label" for="key-expires">
             Expires In
-            <span class="form-label-optional">(optional)</span>
+            <span class="font-normal normal-case tracking-normal text-text-muted">(optional)</span>
           </label>
           <select
             id="key-expires"
@@ -308,90 +308,3 @@ function getKeyScope(key: APIKey): string {
     />
   </div>
 </template>
-
-<style scoped>
-.api-keys-page {
-  max-width: 1200px;
-}
-
-.toolbar {
-  margin-bottom: 1.5rem;
-}
-
-.key-prefix {
-  font-family: var(--font-mono);
-  font-size: 0.8125rem;
-  color: var(--accent-amber);
-  background: rgba(var(--accent-amber-rgb), 0.1);
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-}
-
-.key-scope {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--text-secondary);
-}
-
-.text-warning {
-  color: var(--accent-amber);
-}
-
-.text-muted {
-  color: var(--text-muted);
-}
-
-.action-buttons {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.icon-btn {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.icon-btn:hover:not(:disabled) {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-}
-
-.icon-btn--danger:hover:not(:disabled) {
-  background: rgba(var(--accent-red-rgb), 0.1);
-  color: var(--accent-red);
-}
-
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.form-label-optional {
-  font-weight: 400;
-  text-transform: none;
-  letter-spacing: normal;
-  color: var(--text-muted);
-}
-
-.mb-4 {
-  margin-bottom: 1rem;
-}
-</style>

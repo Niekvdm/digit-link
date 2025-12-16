@@ -129,10 +129,16 @@ function cancelEdit() {
   }
   editMode.value = false
 }
+
+const authModeClasses: Record<string, string> = {
+  inherit: 'bg-bg-elevated text-text-secondary',
+  disabled: 'bg-[rgba(var(--accent-amber-rgb),0.1)] text-accent-amber',
+  custom: 'bg-[rgba(var(--accent-secondary-rgb),0.1)] text-accent-secondary'
+}
 </script>
 
 <template>
-  <div class="application-detail">
+  <div class="max-w-[1000px]">
     <PageHeader 
       :title="application?.name || 'Application'"
       :description="application ? `Subdomain: ${application.subdomain}` : ''"
@@ -161,7 +167,7 @@ function cancelEdit() {
     </PageHeader>
 
     <!-- Loading -->
-    <div v-if="loading" class="loading-state">
+    <div v-if="loading" class="p-12 text-center text-text-secondary">
       Loading application...
     </div>
 
@@ -172,7 +178,7 @@ function cancelEdit() {
 
     <template v-else-if="application">
       <!-- Stats -->
-      <div class="stats-grid">
+      <div class="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-5 mb-8">
         <StatCard
           label="Active Tunnels"
           :value="application.activeTunnelCount ?? 0"
@@ -194,32 +200,32 @@ function cancelEdit() {
       </div>
 
       <!-- Details Card -->
-      <div class="detail-card">
-        <div class="detail-header">
-          <h3 class="detail-title">Application Details</h3>
+      <div class="bg-bg-surface border border-border-subtle rounded-xs overflow-hidden">
+        <div class="flex items-center justify-between py-5 px-6 border-b border-border-subtle bg-bg-elevated">
+          <h3 class="text-base font-semibold m-0">Application Details</h3>
           <StatusBadge 
             :status="application.isActive ? 'active' : 'inactive'"
             :label="application.isActive ? 'Active' : 'Inactive'"
           />
         </div>
 
-        <div class="detail-grid">
-          <div class="detail-item">
-            <span class="detail-label">Subdomain</span>
-            <div class="detail-value">
-              <code class="subdomain-code">{{ application.subdomain }}</code>
+        <div class="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-px bg-border-subtle">
+          <div class="flex flex-col gap-2 py-5 px-6 bg-bg-surface">
+            <span class="text-xs font-medium uppercase tracking-wider text-text-secondary">Subdomain</span>
+            <div class="text-[0.9375rem] text-text-primary flex items-center gap-2">
+              <code class="font-mono text-accent-secondary">{{ application.subdomain }}</code>
               <a 
                 :href="`https://${application.subdomain}.tunnel.digit.zone`" 
                 target="_blank"
-                class="external-link"
+                class="text-text-muted transition-colors hover:text-accent-secondary"
               >
                 <ExternalLink class="w-4 h-4" />
               </a>
             </div>
           </div>
 
-          <div class="detail-item">
-            <span class="detail-label">Display Name</span>
+          <div class="flex flex-col gap-2 py-5 px-6 bg-bg-surface">
+            <span class="text-xs font-medium uppercase tracking-wider text-text-secondary">Display Name</span>
             <template v-if="editMode">
               <input 
                 v-model="editName" 
@@ -228,11 +234,11 @@ function cancelEdit() {
                 placeholder="Application name"
               />
             </template>
-            <span v-else class="detail-value">{{ application.name }}</span>
+            <span v-else class="text-[0.9375rem] text-text-primary">{{ application.name }}</span>
           </div>
 
-          <div class="detail-item">
-            <span class="detail-label">Auth Mode</span>
+          <div class="flex flex-col gap-2 py-5 px-6 bg-bg-surface">
+            <span class="text-xs font-medium uppercase tracking-wider text-text-secondary">Auth Mode</span>
             <template v-if="editMode">
               <select v-model="editAuthMode" class="form-input">
                 <option value="inherit">Inherit from Organization</option>
@@ -240,19 +246,23 @@ function cancelEdit() {
                 <option value="custom">Custom Policy</option>
               </select>
             </template>
-            <span v-else class="detail-value auth-mode" :class="`auth-mode--${application.authMode}`">
+            <span 
+              v-else 
+              class="text-[0.8125rem] font-medium py-1 px-2.5 rounded inline-block w-fit"
+              :class="authModeClasses[application.authMode]"
+            >
               {{ application.authMode === 'inherit' ? 'Inherit' : application.authMode === 'disabled' ? 'Disabled' : 'Custom' }}
             </span>
           </div>
 
-          <div class="detail-item">
-            <span class="detail-label">Created</span>
-            <span class="detail-value">{{ formatDate(application.createdAt) }}</span>
+          <div class="flex flex-col gap-2 py-5 px-6 bg-bg-surface">
+            <span class="text-xs font-medium uppercase tracking-wider text-text-secondary">Created</span>
+            <span class="text-[0.9375rem] text-text-primary">{{ formatDate(application.createdAt) }}</span>
           </div>
 
-          <div class="detail-item">
-            <span class="detail-label">Auth Policy</span>
-            <div class="detail-value">
+          <div class="flex flex-col gap-2 py-5 px-6 bg-bg-surface">
+            <span class="text-xs font-medium uppercase tracking-wider text-text-secondary">Auth Policy</span>
+            <div class="text-[0.9375rem] text-text-primary flex items-center gap-2">
               <StatusBadge 
                 :status="application.hasPolicy ? 'active' : 'inactive'"
                 :label="application.hasPolicy ? 'Configured' : 'Not Set'"
@@ -292,121 +302,3 @@ function cancelEdit() {
     />
   </div>
 </template>
-
-<style scoped>
-.application-detail {
-  max-width: 1000px;
-}
-
-.loading-state {
-  padding: 3rem;
-  text-align: center;
-  color: var(--text-secondary);
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1.25rem;
-  margin-bottom: 2rem;
-}
-
-.detail-card {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.detail-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1.25rem 1.5rem;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-elevated);
-}
-
-.detail-title {
-  font-size: 1rem;
-  font-weight: 600;
-  margin: 0;
-}
-
-.detail-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1px;
-  background: var(--border-subtle);
-}
-
-.detail-item {
-  padding: 1.25rem 1.5rem;
-  background: var(--bg-surface);
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.detail-label {
-  font-size: 0.75rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--text-secondary);
-}
-
-.detail-value {
-  font-size: 0.9375rem;
-  color: var(--text-primary);
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.subdomain-code {
-  font-family: var(--font-mono);
-  color: var(--accent-secondary);
-}
-
-.external-link {
-  color: var(--text-muted);
-  transition: color 0.15s ease;
-}
-
-.external-link:hover {
-  color: var(--accent-secondary);
-}
-
-.auth-mode {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  padding: 0.25rem 0.625rem;
-  border-radius: 4px;
-  display: inline-block;
-}
-
-.auth-mode--inherit {
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
-}
-
-.auth-mode--disabled {
-  background: rgba(var(--accent-amber-rgb), 0.1);
-  color: var(--accent-amber);
-}
-
-.auth-mode--custom {
-  background: rgba(var(--accent-secondary-rgb), 0.1);
-  color: var(--accent-secondary);
-}
-
-.btn-sm {
-  padding: 0.375rem 0.75rem;
-  font-size: 0.75rem;
-}
-
-.ml-2 {
-  margin-left: 0.5rem;
-}
-</style>

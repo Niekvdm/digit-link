@@ -215,7 +215,7 @@ async function handleDelete() {
 </script>
 
 <template>
-  <div class="accounts-page">
+  <div class="max-w-[1200px]">
     <PageHeader 
       title="Accounts" 
       description="Manage user accounts and access permissions"
@@ -229,10 +229,10 @@ async function handleDelete() {
     </PageHeader>
 
     <!-- Toolbar -->
-    <div class="toolbar">
+    <div class="flex items-center gap-6 mb-6 flex-wrap">
       <SearchInput v-model="searchQuery" placeholder="Search accounts..." />
-      <label class="checkbox-label">
-        <input type="checkbox" v-model="showInactive" />
+      <label class="flex items-center gap-2 text-sm text-text-secondary cursor-pointer">
+        <input type="checkbox" v-model="showInactive" class="accent-accent-primary" />
         <span>Show inactive</span>
       </label>
     </div>
@@ -252,8 +252,13 @@ async function handleDelete() {
       row-key="id"
     >
       <template #cell-username="{ row }">
-        <div class="account-name">
-          <div class="account-icon" :class="row.isAdmin ? 'account-icon--admin' : 'account-icon--user'">
+        <div class="flex items-center gap-3">
+          <div 
+            class="w-8 h-8 rounded-xs flex items-center justify-center"
+            :class="row.isAdmin 
+              ? 'bg-[rgba(var(--accent-primary-rgb),0.1)] text-accent-primary' 
+              : 'bg-[rgba(var(--accent-secondary-rgb),0.1)] text-accent-secondary'"
+          >
             <Shield v-if="row.isAdmin" class="w-4 h-4" />
             <Building2 v-else-if="row.orgId" class="w-4 h-4" />
             <UserCheck v-else class="w-4 h-4" />
@@ -263,7 +268,12 @@ async function handleDelete() {
       </template>
       
       <template #cell-isAdmin="{ value }">
-        <span class="role-badge" :class="value ? 'role-badge--admin' : 'role-badge--user'">
+        <span 
+          class="text-xs font-medium py-1 px-2 rounded"
+          :class="value 
+            ? 'bg-[rgba(var(--accent-primary-rgb),0.15)] text-accent-primary' 
+            : 'bg-bg-elevated text-text-secondary'"
+        >
           {{ value ? 'Admin' : 'User' }}
         </span>
       </template>
@@ -280,7 +290,7 @@ async function handleDelete() {
       </template>
       
       <template #cell-hasPassword="{ value }">
-        <span class="auth-type">
+        <span class="flex items-center gap-1.5 text-[0.8125rem] text-text-secondary">
           <Key v-if="!value" class="w-3.5 h-3.5" title="Token Auth" />
           <Lock v-else class="w-3.5 h-3.5" title="Password Auth" />
           {{ value ? 'Password' : 'Token' }}
@@ -292,16 +302,16 @@ async function handleDelete() {
       </template>
       
       <template #actions="{ row }">
-        <div class="action-buttons">
+        <div class="flex items-center gap-1">
           <button 
-            class="icon-btn" 
+            class="w-8 h-8 flex items-center justify-center border-none rounded-xs bg-transparent text-text-muted cursor-pointer transition-all duration-150 hover:bg-bg-elevated hover:text-text-primary" 
             title="Regenerate Token" 
             @click.stop="handleRegenerateToken(row)"
           >
             <RotateCcw class="w-4 h-4" />
           </button>
           <button 
-            class="icon-btn" 
+            class="w-8 h-8 flex items-center justify-center border-none rounded-xs bg-transparent text-text-muted cursor-pointer transition-all duration-150 hover:bg-bg-elevated hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed" 
             title="Set Organization" 
             @click.stop="openOrgModal(row)"
             :disabled="row.isAdmin"
@@ -309,7 +319,7 @@ async function handleDelete() {
             <Building2 class="w-4 h-4" />
           </button>
           <button 
-            class="icon-btn" 
+            class="w-8 h-8 flex items-center justify-center border-none rounded-xs bg-transparent text-text-muted cursor-pointer transition-all duration-150 hover:bg-bg-elevated hover:text-text-primary" 
             title="Set Password" 
             @click.stop="openPasswordModal(row)"
           >
@@ -317,7 +327,7 @@ async function handleDelete() {
           </button>
           <button 
             v-if="!row.active"
-            class="icon-btn icon-btn--success" 
+            class="w-8 h-8 flex items-center justify-center border-none rounded-xs bg-transparent text-text-muted cursor-pointer transition-all duration-150 hover:bg-[rgba(var(--accent-secondary-rgb),0.1)] hover:text-accent-secondary" 
             title="Activate" 
             @click.stop="handleActivate(row)"
           >
@@ -325,7 +335,7 @@ async function handleDelete() {
           </button>
           <button 
             v-else
-            class="icon-btn icon-btn--danger" 
+            class="w-8 h-8 flex items-center justify-center border-none rounded-xs bg-transparent text-text-muted cursor-pointer transition-all duration-150 hover:bg-[rgba(var(--accent-red-rgb),0.1)] hover:text-accent-red" 
             title="Deactivate" 
             @click.stop="openDeleteConfirm(row)"
           >
@@ -344,10 +354,10 @@ async function handleDelete() {
 
     <!-- Create Modal -->
     <Modal v-model="showCreateModal" title="New Account">
-      <form @submit.prevent="handleCreate" class="form">
+      <form @submit.prevent="handleCreate" class="flex flex-col gap-5">
         <div v-if="formError" class="error-message mb-4">{{ formError }}</div>
         
-        <div class="form-group">
+        <div class="flex flex-col gap-2">
           <label class="form-label" for="acc-username">Username</label>
           <input
             id="acc-username"
@@ -359,10 +369,10 @@ async function handleDelete() {
           />
         </div>
         
-        <div class="form-group">
+        <div class="flex flex-col gap-2">
           <label class="form-label" for="acc-password">
             Password
-            <span class="form-label-optional">(optional)</span>
+            <span class="font-normal normal-case tracking-normal text-text-muted">(optional)</span>
           </label>
           <input
             id="acc-password"
@@ -375,10 +385,10 @@ async function handleDelete() {
           <p class="form-hint">If set, user can login with password. Min 8 characters.</p>
         </div>
         
-        <div class="form-group">
+        <div class="flex flex-col gap-2">
           <label class="form-label" for="acc-org">
             Organization
-            <span class="form-label-optional">(optional)</span>
+            <span class="font-normal normal-case tracking-normal text-text-muted">(optional)</span>
           </label>
           <select
             id="acc-org"
@@ -393,13 +403,13 @@ async function handleDelete() {
           </select>
         </div>
         
-        <label class="checkbox-card">
-          <input type="checkbox" v-model="formIsAdmin" />
-          <div class="checkbox-content">
+        <label class="flex items-center gap-4 p-4 bg-bg-deep border border-border-subtle rounded-[10px] cursor-pointer transition-colors duration-200 has-[:checked]:border-accent-primary has-[:checked]:bg-[rgba(var(--accent-primary-rgb),0.05)]">
+          <input type="checkbox" v-model="formIsAdmin" class="accent-accent-primary w-[18px] h-[18px]" />
+          <div class="flex items-center gap-3 flex-1 text-text-secondary">
             <Shield class="w-5 h-5" />
             <div>
-              <strong>Administrator</strong>
-              <p>Full access to all system features</p>
+              <strong class="block text-text-primary text-[0.9375rem]">Administrator</strong>
+              <p class="text-[0.8125rem] mt-1 mb-0 text-text-muted">Full access to all system features</p>
             </div>
           </div>
         </label>
@@ -437,8 +447,8 @@ async function handleDelete() {
 
     <!-- Organization Modal -->
     <Modal v-model="showOrgModal" title="Set Organization">
-      <form @submit.prevent="handleSetOrg" class="form">
-        <div class="form-group">
+      <form @submit.prevent="handleSetOrg" class="flex flex-col gap-5">
+        <div class="flex flex-col gap-2">
           <label class="form-label" for="set-org">Organization</label>
           <select
             id="set-org"
@@ -465,10 +475,10 @@ async function handleDelete() {
 
     <!-- Password Modal -->
     <Modal v-model="showPasswordModal" title="Set Password">
-      <form @submit.prevent="handleSetPassword" class="form">
+      <form @submit.prevent="handleSetPassword" class="flex flex-col gap-5">
         <div v-if="formError" class="error-message mb-4">{{ formError }}</div>
         
-        <div class="form-group">
+        <div class="flex flex-col gap-2">
           <label class="form-label" for="new-password">New Password</label>
           <input
             id="new-password"
@@ -507,186 +517,3 @@ async function handleDelete() {
     />
   </div>
 </template>
-
-<style scoped>
-.accounts-page {
-  max-width: 1200px;
-}
-
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  margin-bottom: 1.5rem;
-  flex-wrap: wrap;
-}
-
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.checkbox-label input {
-  accent-color: var(--accent-primary);
-}
-
-.account-name {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.account-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.account-icon--admin {
-  background: rgba(var(--accent-primary-rgb), 0.1);
-  color: var(--accent-primary);
-}
-
-.account-icon--user {
-  background: rgba(var(--accent-secondary-rgb), 0.1);
-  color: var(--accent-secondary);
-}
-
-.role-badge {
-  font-size: 0.75rem;
-  font-weight: 500;
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-}
-
-.role-badge--admin {
-  background: rgba(var(--accent-primary-rgb), 0.15);
-  color: var(--accent-primary);
-}
-
-.role-badge--user {
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
-}
-
-.auth-type {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  font-size: 0.8125rem;
-  color: var(--text-secondary);
-}
-
-.action-buttons {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.icon-btn {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.icon-btn:hover:not(:disabled) {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-}
-
-.icon-btn--danger:hover:not(:disabled) {
-  background: rgba(var(--accent-red-rgb), 0.1);
-  color: var(--accent-red);
-}
-
-.icon-btn--success:hover:not(:disabled) {
-  background: rgba(var(--accent-secondary-rgb), 0.1);
-  color: var(--accent-secondary);
-}
-
-.icon-btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.form-label-optional {
-  font-weight: 400;
-  text-transform: none;
-  letter-spacing: normal;
-  color: var(--text-muted);
-}
-
-.checkbox-card {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 1rem 1.25rem;
-  background: var(--bg-deep);
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  cursor: pointer;
-  transition: border-color 0.2s ease;
-}
-
-.checkbox-card:has(input:checked) {
-  border-color: var(--accent-primary);
-  background: rgba(var(--accent-primary-rgb), 0.05);
-}
-
-.checkbox-card input {
-  accent-color: var(--accent-primary);
-  width: 18px;
-  height: 18px;
-}
-
-.checkbox-content {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex: 1;
-  color: var(--text-secondary);
-}
-
-.checkbox-content strong {
-  display: block;
-  color: var(--text-primary);
-  font-size: 0.9375rem;
-}
-
-.checkbox-content p {
-  font-size: 0.8125rem;
-  margin: 0.25rem 0 0;
-  color: var(--text-muted);
-}
-
-.mb-4 {
-  margin-bottom: 1rem;
-}
-</style>

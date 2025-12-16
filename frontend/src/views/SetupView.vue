@@ -184,6 +184,24 @@ function showToast() {
   showingToast.value = true
   setTimeout(() => { showingToast.value = false }, 2000)
 }
+
+const strengthColorClass = computed(() => {
+  const colors = {
+    red: 'bg-accent-red',
+    amber: 'bg-accent-amber',
+    secondary: 'bg-accent-secondary'
+  }
+  return colors[passwordStrength.value.color as keyof typeof colors]
+})
+
+const strengthTextClass = computed(() => {
+  const colors = {
+    red: 'text-accent-red',
+    amber: 'text-accent-amber',
+    secondary: 'text-accent-secondary'
+  }
+  return colors[passwordStrength.value.color as keyof typeof colors]
+})
 </script>
 
 <template>
@@ -198,42 +216,40 @@ function showToast() {
         <div
           v-for="dot in stepDots"
           :key="dot.step"
-          class="step-dot"
+          class="w-2 h-2 rounded-full transition-all duration-300"
           :class="{
-            'step-dot--active': dot.isActive,
-            'step-dot--completed': dot.isCompleted
+            'bg-accent-primary shadow-[0_0_12px_rgba(var(--accent-primary-rgb),0.4)]': dot.isActive,
+            'bg-accent-secondary': dot.isCompleted,
+            'bg-border-accent': !dot.isActive && !dot.isCompleted
           }"
         />
       </div>
 
       <!-- Brand -->
       <div class="text-center mb-8">
-        <div 
-          class="brand-logo"
-          style="animation: iconFloat 4s ease-in-out infinite;"
-        >
-          <div class="brand-logo-inner" />
-          <div 
-            class="brand-logo-ring"
-            style="animation: iconRing 2s ease-out infinite;"
-          />
+        <div class="relative w-16 h-16 mx-auto mb-6 border-2 border-accent-primary rounded-2xl flex items-center justify-center animate-icon-float">
+          <div class="w-6 h-6 bg-accent-primary rounded-[0.375rem] rotate-45" />
+          <div class="absolute -inset-1.5 border border-accent-primary rounded-[1.25rem] opacity-30 animate-[icon-ring_2s_ease-out_infinite]" />
         </div>
         
-        <h1 class="font-[var(--font-display)] text-[2.25rem] font-semibold tracking-tight mb-2">
+        <h1 class="font-display text-4xl font-semibold tracking-tight mb-2">
           digit-link
         </h1>
-        <p class="text-[var(--text-secondary)]">Tunnel Administration</p>
+        <p class="text-text-secondary">Tunnel Administration</p>
       </div>
 
       <!-- Setup Card -->
-      <div class="setup-card">
+      <div class="relative bg-bg-surface border border-border-subtle rounded-2xl p-10 overflow-hidden">
         <!-- Gradient line -->
-        <div class="setup-card-accent" />
+        <div class="absolute top-0 left-8 right-8 h-0.5 bg-gradient-to-r from-transparent via-accent-primary to-transparent" />
 
         <!-- Error message -->
         <Transition name="shake">
-          <div v-if="error" class="error-box mb-6">
-            <AlertCircle class="w-4 h-4 flex-shrink-0" />
+          <div 
+            v-if="error" 
+            class="flex items-start gap-2.5 py-3.5 px-4 bg-[rgba(var(--accent-red-rgb),0.1)] border border-[rgba(var(--accent-red-rgb),0.3)] rounded-[10px] mb-6 text-sm text-accent-red"
+          >
+            <AlertCircle class="w-4 h-4 shrink-0" />
             <span>{{ error }}</span>
           </div>
         </Transition>
@@ -241,15 +257,15 @@ function showToast() {
         <!-- Step 1: Credentials -->
         <Transition name="slide" mode="out-in">
           <div v-if="currentStep === 1" key="credentials" class="animate-fade-in-slide">
-            <div class="setup-badge setup-badge--primary">
+            <div class="inline-flex items-center gap-2 py-2 px-4 rounded-full text-xs font-medium uppercase tracking-widest mb-6 bg-[rgba(var(--accent-primary-rgb),0.1)] border border-[rgba(var(--accent-primary-rgb),0.3)] text-accent-primary">
               <Shield class="w-3.5 h-3.5" />
               Administrator Setup
             </div>
 
-            <h2 class="font-[var(--font-display)] text-2xl font-semibold mb-3">
+            <h2 class="font-display text-2xl font-semibold mb-3">
               Create Admin Account
             </h2>
-            <p class="text-sm text-[var(--text-secondary)] leading-relaxed mb-8">
+            <p class="text-sm text-text-secondary leading-relaxed mb-8">
               Set up your administrator credentials. You'll use these to sign in to the management dashboard.
             </p>
 
@@ -258,7 +274,7 @@ function showToast() {
               <div>
                 <label class="form-label" for="username">Username</label>
                 <div class="relative">
-                  <User class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+                  <User class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
                   <input
                     id="username"
                     v-model="username"
@@ -274,7 +290,7 @@ function showToast() {
               <div>
                 <label class="form-label" for="password">Password</label>
                 <div class="relative">
-                  <Lock class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+                  <Lock class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
                   <input
                     id="password"
                     v-model="password"
@@ -285,7 +301,7 @@ function showToast() {
                   />
                   <button
                     type="button"
-                    class="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                    class="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors"
                     @click="showPassword = !showPassword"
                   >
                     <EyeOff v-if="showPassword" class="w-4 h-4" />
@@ -295,25 +311,14 @@ function showToast() {
                 <!-- Password strength indicator -->
                 <div v-if="password.length > 0" class="mt-2">
                   <div class="flex items-center gap-2">
-                    <div class="flex-1 h-1 bg-[var(--bg-deep)] rounded overflow-hidden">
+                    <div class="flex-1 h-1 bg-bg-deep rounded overflow-hidden">
                       <div 
                         class="h-full transition-all duration-300"
-                        :class="{
-                          'bg-[var(--accent-red)]': passwordStrength.color === 'red',
-                          'bg-[var(--accent-amber)]': passwordStrength.color === 'amber',
-                          'bg-[var(--accent-secondary)]': passwordStrength.color === 'secondary'
-                        }"
+                        :class="strengthColorClass"
                         :style="{ width: `${passwordStrength.level * 25}%` }"
                       />
                     </div>
-                    <span 
-                      class="text-xs font-medium"
-                      :class="{
-                        'text-[var(--accent-red)]': passwordStrength.color === 'red',
-                        'text-[var(--accent-amber)]': passwordStrength.color === 'amber',
-                        'text-[var(--accent-secondary)]': passwordStrength.color === 'secondary'
-                      }"
-                    >
+                    <span class="text-xs font-medium" :class="strengthTextClass">
                       {{ passwordStrength.text }}
                     </span>
                   </div>
@@ -324,7 +329,7 @@ function showToast() {
               <div>
                 <label class="form-label" for="confirm-password">Confirm Password</label>
                 <div class="relative">
-                  <Lock class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+                  <Lock class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
                   <input
                     id="confirm-password"
                     v-model="confirmPassword"
@@ -336,34 +341,33 @@ function showToast() {
                 </div>
                 <p 
                   v-if="confirmPassword.length > 0 && !passwordsMatch"
-                  class="text-xs text-[var(--accent-red)] mt-1"
+                  class="text-xs text-accent-red mt-1"
                 >
                   Passwords do not match
                 </p>
               </div>
 
               <!-- Auto-whitelist -->
-              <label class="checkbox-card">
+              <label class="flex items-start gap-3 p-4 bg-bg-deep border border-border-subtle rounded-xs cursor-pointer transition-colors hover:border-border-accent">
                 <input v-model="autoWhitelist" type="checkbox" class="hidden" />
                 <div 
-                  class="checkbox-box"
-                  :class="autoWhitelist ? 'checkbox-box--checked' : ''"
+                  class="w-5 h-5 border-2 rounded flex items-center justify-center shrink-0 mt-0.5 transition-all duration-200"
+                  :class="autoWhitelist ? 'bg-accent-primary border-accent-primary' : 'border-border-accent'"
                 >
-                  <Check v-if="autoWhitelist" class="w-3 h-3 text-[var(--bg-deep)]" />
+                  <Check v-if="autoWhitelist" class="w-3 h-3 text-bg-deep" />
                 </div>
                 <div class="flex-1">
                   <strong class="block text-sm mb-1">Auto-whitelist my current IP</strong>
-                  <span class="text-xs text-[var(--text-muted)]">Allow tunnel connections from your current location</span>
+                  <span class="text-xs text-text-muted">Allow tunnel connections from your current location</span>
                 </div>
               </label>
 
               <button
                 type="submit"
                 class="btn btn-primary w-full"
-                :class="{ 'btn-loading': loading }"
                 :disabled="loading || !canProceedStep1"
               >
-                <span class="btn-text flex items-center justify-center gap-2">
+                <span class="flex items-center justify-center gap-2">
                   <template v-if="loading">
                     <Loader2 class="w-4 h-4 animate-spin" />
                     Creating account...
@@ -379,40 +383,40 @@ function showToast() {
 
           <!-- Step 2: TOTP Setup -->
           <div v-else-if="currentStep === 2" key="totp" class="animate-fade-in-slide">
-            <div class="setup-badge setup-badge--secondary">
+            <div class="inline-flex items-center gap-2 py-2 px-4 rounded-full text-xs font-medium uppercase tracking-widest mb-6 bg-[rgba(var(--accent-secondary-rgb),0.1)] border border-[rgba(var(--accent-secondary-rgb),0.3)] text-accent-secondary">
               <Key class="w-3.5 h-3.5" />
               Two-Factor Authentication
             </div>
 
-            <h2 class="font-[var(--font-display)] text-2xl font-semibold mb-3">
+            <h2 class="font-display text-2xl font-semibold mb-3">
               Setup Authenticator
             </h2>
-            <p class="text-sm text-[var(--text-secondary)] leading-relaxed mb-6">
+            <p class="text-sm text-text-secondary leading-relaxed mb-6">
               Scan the QR code with your authenticator app (Google Authenticator, Authy, etc.) to enable two-factor authentication.
             </p>
 
             <!-- QR Code -->
             <div class="flex justify-center mb-6">
-              <div class="w-[180px] h-[180px] bg-white rounded-xl flex items-center justify-center overflow-hidden">
+              <div class="w-[180px] h-[180px] bg-white rounded-xs flex items-center justify-center overflow-hidden">
                 <img 
                   v-if="totpUrl"
                   :src="`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(totpUrl)}`"
                   alt="TOTP QR Code"
                   class="w-[160px] h-[160px]"
                 />
-                <Loader2 v-else class="w-8 h-8 text-[var(--text-muted)] animate-spin" />
+                <Loader2 v-else class="w-8 h-8 text-text-muted animate-spin" />
               </div>
             </div>
 
             <!-- Manual entry secret -->
             <div v-if="totpSecret" class="mb-6">
-              <p class="text-xs text-[var(--text-muted)] text-center mb-2">Can't scan? Enter this code manually:</p>
-              <div class="secret-box-inline">
-                <code class="secret-code">
+              <p class="text-xs text-text-muted text-center mb-2">Can't scan? Enter this code manually:</p>
+              <div class="flex items-center gap-2 p-3 bg-bg-deep border border-dashed border-border-accent rounded-xs">
+                <code class="flex-1 font-mono text-[0.8125rem] text-accent-amber text-center tracking-wider break-all">
                   {{ totpSecret }}
                 </code>
                 <button 
-                  class="p-1.5 text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+                  class="p-1.5 text-text-muted hover:text-text-secondary transition-colors"
                   @click="copySecret"
                   title="Copy secret"
                 >
@@ -446,10 +450,9 @@ function showToast() {
               <button
                 type="submit"
                 class="btn btn-success w-full"
-                :class="{ 'btn-loading': loading }"
                 :disabled="loading || totpCode.length !== 6"
               >
-                <span class="btn-text flex items-center justify-center gap-2">
+                <span class="flex items-center justify-center gap-2">
                   <template v-if="loading">
                     <Loader2 class="w-4 h-4 animate-spin" />
                     Verifying...
@@ -465,20 +468,20 @@ function showToast() {
 
           <!-- Step 3: Complete -->
           <div v-else-if="currentStep === 3" key="complete" class="animate-fade-in-slide text-center">
-            <div class="success-icon">
-              <Check class="w-10 h-10 text-[var(--accent-secondary)]" />
+            <div class="w-20 h-20 mx-auto mb-6 bg-[rgba(var(--accent-secondary-rgb),0.15)] border-2 border-accent-secondary rounded-full flex items-center justify-center animate-success-pop">
+              <Check class="w-10 h-10 text-accent-secondary" />
             </div>
 
-            <h2 class="font-[var(--font-display)] text-2xl font-semibold mb-3">
+            <h2 class="font-display text-2xl font-semibold mb-3">
               Setup Complete!
             </h2>
-            <p class="text-sm text-[var(--text-secondary)] leading-relaxed mb-6">
+            <p class="text-sm text-text-secondary leading-relaxed mb-6">
               Your digit-link server is ready. Your admin account is secured with two-factor authentication.
             </p>
 
-            <div class="quickstart-box">
-              <p class="text-[0.8rem] text-[var(--text-secondary)] mb-4">Quick start guide:</p>
-              <ol class="text-[0.8rem] text-[var(--text-muted)] pl-5 leading-loose list-decimal">
+            <div class="bg-bg-deep rounded-xs p-5 mb-6 text-left">
+              <p class="text-[0.8rem] text-text-secondary mb-4">Quick start guide:</p>
+              <ol class="text-[0.8rem] text-text-muted pl-5 leading-loose list-decimal">
                 <li>Add IP addresses to the whitelist</li>
                 <li>Create organizations and applications</li>
                 <li>Generate API keys for tunnel clients</li>
@@ -486,7 +489,7 @@ function showToast() {
             </div>
 
             <button class="btn btn-primary w-full" @click="goToDashboard">
-              <span class="btn-text flex items-center justify-center gap-2">
+              <span class="flex items-center justify-center gap-2">
                 Open Dashboard
                 <ArrowRight class="w-4 h-4" />
               </span>
@@ -496,13 +499,13 @@ function showToast() {
       </div>
 
       <!-- Footer -->
-      <div class="setup-footer">
+      <div class="text-center mt-8 text-xs text-text-muted flex flex-col items-center gap-4">
         <ThemeSwitcher />
         <p>
           Secure tunnel infrastructure by 
           <a 
             href="https://digit.zone" 
-            class="text-[var(--accent-primary)] hover:underline"
+            class="text-accent-primary hover:underline"
             target="_blank"
           >
             digit.zone
@@ -520,227 +523,3 @@ function showToast() {
     </div>
   </div>
 </template>
-
-<style scoped>
-/* Step dots */
-.step-dot {
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 50%;
-  background: var(--border-accent);
-  transition: all 0.3s ease;
-}
-
-.step-dot--active {
-  background: var(--accent-primary);
-  box-shadow: 0 0 12px rgba(var(--accent-primary-rgb), 0.4);
-}
-
-.step-dot--completed {
-  background: var(--accent-secondary);
-}
-
-/* Brand logo */
-.brand-logo {
-  position: relative;
-  width: 4rem;
-  height: 4rem;
-  margin: 0 auto 1.5rem;
-  border: 2px solid var(--accent-primary);
-  border-radius: 1rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.brand-logo-inner {
-  width: 1.5rem;
-  height: 1.5rem;
-  background: var(--accent-primary);
-  border-radius: 0.375rem;
-  transform: rotate(45deg);
-}
-
-.brand-logo-ring {
-  position: absolute;
-  inset: -0.375rem;
-  border: 1px solid var(--accent-primary);
-  border-radius: 1.25rem;
-  opacity: 0.3;
-}
-
-/* Setup card */
-.setup-card {
-  position: relative;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: 1rem;
-  padding: 2.5rem;
-  overflow: hidden;
-}
-
-.setup-card-accent {
-  position: absolute;
-  top: 0;
-  left: 2rem;
-  right: 2rem;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--accent-primary), transparent);
-}
-
-/* Setup badge */
-.setup-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  border-radius: 9999px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  margin-bottom: 1.5rem;
-}
-
-.setup-badge--primary {
-  background: rgba(var(--accent-primary-rgb), 0.1);
-  border: 1px solid rgba(var(--accent-primary-rgb), 0.3);
-  color: var(--accent-primary);
-}
-
-.setup-badge--secondary {
-  background: rgba(var(--accent-secondary-rgb), 0.1);
-  border: 1px solid rgba(var(--accent-secondary-rgb), 0.3);
-  color: var(--accent-secondary);
-}
-
-/* Error box */
-.error-box {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.625rem;
-  padding: 0.875rem 1rem;
-  background: rgba(var(--accent-red-rgb), 0.1);
-  border: 1px solid rgba(var(--accent-red-rgb), 0.3);
-  border-radius: 10px;
-  font-size: 0.875rem;
-  color: var(--accent-red);
-}
-
-/* Checkbox card */
-.checkbox-card {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 1rem;
-  background: var(--bg-deep);
-  border: 1px solid var(--border-subtle);
-  border-radius: 0.5rem;
-  cursor: pointer;
-  transition: border-color 0.2s ease;
-}
-
-.checkbox-card:hover {
-  border-color: var(--border-accent);
-}
-
-.checkbox-box {
-  width: 1.25rem;
-  height: 1.25rem;
-  border: 2px solid var(--border-accent);
-  border-radius: 0.25rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  margin-top: 0.125rem;
-  transition: all 0.2s ease;
-}
-
-.checkbox-box--checked {
-  background: var(--accent-primary);
-  border-color: var(--accent-primary);
-}
-
-/* Secret box inline */
-.secret-box-inline {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem;
-  background: var(--bg-deep);
-  border: 1px dashed var(--border-accent);
-  border-radius: 0.5rem;
-}
-
-.secret-code {
-  flex: 1;
-  font-family: var(--font-mono);
-  font-size: 0.8125rem;
-  color: var(--accent-amber);
-  text-align: center;
-  letter-spacing: 0.1em;
-  word-break: break-all;
-}
-
-/* Success icon */
-.success-icon {
-  width: 5rem;
-  height: 5rem;
-  margin: 0 auto 1.5rem;
-  background: rgba(var(--accent-secondary-rgb), 0.15);
-  border: 2px solid var(--accent-secondary);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  animation: successPop 0.5s ease-out;
-}
-
-/* Quickstart box */
-.quickstart-box {
-  background: var(--bg-deep);
-  border-radius: 0.5rem;
-  padding: 1.25rem;
-  margin-bottom: 1.5rem;
-  text-align: left;
-}
-
-/* Footer */
-.setup-footer {
-  text-align: center;
-  margin-top: 2rem;
-  font-size: 0.75rem;
-  color: var(--text-muted);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 1rem;
-}
-
-/* Transitions */
-.slide-enter-active,
-.slide-leave-active {
-  transition: all 0.25s ease;
-}
-
-.slide-enter-from {
-  opacity: 0;
-  transform: translateX(20px);
-}
-
-.slide-leave-to {
-  opacity: 0;
-  transform: translateX(-20px);
-}
-
-.shake-enter-active {
-  animation: shake 0.4s ease;
-}
-
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-6px); }
-  75% { transform: translateX(6px); }
-}
-</style>

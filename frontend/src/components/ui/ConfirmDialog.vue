@@ -33,15 +33,25 @@ function handleCancel() {
   open.value = false
   emit('cancel')
 }
+
+const iconBgClass = {
+  danger: 'bg-[rgba(var(--accent-red-rgb),0.15)] text-accent-red',
+  warning: 'bg-[rgba(var(--accent-amber-rgb),0.15)] text-accent-amber',
+  default: ''
+}
 </script>
 
 <template>
   <Modal v-model="open" :title="title" size="sm" :close-on-backdrop="!loading">
-    <div class="confirm-content">
-      <div v-if="variant === 'danger' || variant === 'warning'" class="confirm-icon" :class="`confirm-icon--${variant}`">
+    <div class="text-center py-2">
+      <div 
+        v-if="variant === 'danger' || variant === 'warning'" 
+        class="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4"
+        :class="iconBgClass[variant]"
+      >
         <AlertTriangle class="w-6 h-6" />
       </div>
-      <p class="confirm-message">{{ message }}</p>
+      <p class="text-[0.9375rem] text-text-secondary leading-relaxed m-0">{{ message }}</p>
     </div>
     
     <template #footer>
@@ -54,7 +64,7 @@ function handleCancel() {
       </button>
       <button 
         class="btn"
-        :class="variant === 'danger' ? 'btn-danger-solid' : 'btn-primary'"
+        :class="variant === 'danger' ? 'bg-accent-red text-white border-none hover:brightness-90' : 'btn-primary'"
         @click="handleConfirm"
         :disabled="loading"
       >
@@ -64,55 +74,3 @@ function handleCancel() {
     </template>
   </Modal>
 </template>
-
-<style scoped>
-.confirm-content {
-  text-align: center;
-  padding: 0.5rem 0;
-}
-
-.confirm-icon {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto 1rem;
-}
-
-.confirm-icon--danger {
-  background: rgba(var(--accent-red-rgb), 0.15);
-  color: var(--accent-red);
-}
-
-.confirm-icon--warning {
-  background: rgba(var(--accent-amber-rgb), 0.15);
-  color: var(--accent-amber);
-}
-
-.confirm-message {
-  font-size: 0.9375rem;
-  color: var(--text-secondary);
-  line-height: 1.6;
-  margin: 0;
-}
-
-.btn-danger-solid {
-  background: var(--accent-red);
-  color: white;
-  border: none;
-}
-
-.btn-danger-solid:hover:not(:disabled) {
-  filter: brightness(0.9);
-}
-
-.animate-spin {
-  animation: spin 0.6s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-</style>

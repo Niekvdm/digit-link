@@ -79,10 +79,27 @@ function getAuthTypeLabel(type: string): string {
     default: return type
   }
 }
+
+function getFilterBtnClass(value: boolean | null, type: 'all' | 'success' | 'failure') {
+  const isActive = filterSuccess.value === value
+  const base = 'py-2 px-4 text-[0.8125rem] font-medium border-none cursor-pointer transition-all duration-150'
+  
+  if (!isActive) {
+    return `${base} bg-bg-surface text-text-secondary hover:bg-bg-elevated hover:text-text-primary`
+  }
+  
+  if (type === 'success') {
+    return `${base} bg-[rgba(var(--accent-secondary-rgb),0.1)] text-accent-secondary`
+  }
+  if (type === 'failure') {
+    return `${base} bg-[rgba(var(--accent-red-rgb),0.1)] text-accent-red`
+  }
+  return `${base} bg-[rgba(var(--accent-primary-rgb),0.1)] text-accent-primary`
+}
 </script>
 
 <template>
-  <div class="audit-page">
+  <div class="max-w-[1400px]">
     <PageHeader 
       title="Audit Logs" 
       description="View authentication attempts and security events"
@@ -96,7 +113,7 @@ function getAuthTypeLabel(type: string): string {
     </PageHeader>
 
     <!-- Stats Grid -->
-    <div class="stats-grid" v-if="stats">
+    <div class="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4 mb-6" v-if="stats">
       <StatCard
         label="Total Attempts"
         :value="stats.totalAttempts"
@@ -124,26 +141,25 @@ function getAuthTypeLabel(type: string): string {
     </div>
 
     <!-- Toolbar -->
-    <div class="toolbar">
+    <div class="flex items-center gap-4 mb-6 flex-wrap">
       <SearchInput v-model="searchQuery" placeholder="Search by user or IP..." />
-      <div class="filter-buttons">
+      <div class="flex border border-border-subtle rounded-xs overflow-hidden">
         <button 
-          class="filter-btn"
-          :class="{ 'filter-btn--active': filterSuccess === null }"
+          :class="getFilterBtnClass(null, 'all')"
           @click="filterSuccess = null"
         >
           All
         </button>
         <button 
-          class="filter-btn filter-btn--success"
-          :class="{ 'filter-btn--active': filterSuccess === true }"
+          class="border-l border-border-subtle"
+          :class="getFilterBtnClass(true, 'success')"
           @click="filterSuccess = true"
         >
           Success
         </button>
         <button 
-          class="filter-btn filter-btn--failure"
-          :class="{ 'filter-btn--active': filterSuccess === false }"
+          class="border-l border-border-subtle"
+          :class="getFilterBtnClass(false, 'failure')"
           @click="filterSuccess = false"
         >
           Failed
@@ -170,7 +186,7 @@ function getAuthTypeLabel(type: string): string {
       </template>
       
       <template #cell-authType="{ value }">
-        <span class="auth-type-badge">
+        <span class="text-xs font-medium py-1 px-2 rounded bg-bg-elevated text-text-secondary">
           {{ getAuthTypeLabel(value) }}
         </span>
       </template>
@@ -184,17 +200,17 @@ function getAuthTypeLabel(type: string): string {
       </template>
       
       <template #cell-userIdentity="{ value }">
-        <code v-if="value" class="user-identity">{{ value }}</code>
-        <span v-else class="text-muted">—</span>
+        <code v-if="value" class="font-mono text-[0.8125rem] text-text-primary">{{ value }}</code>
+        <span v-else class="text-text-muted">—</span>
       </template>
       
       <template #cell-sourceIp="{ value }">
-        <code class="source-ip">{{ value }}</code>
+        <code class="font-mono text-[0.8125rem] text-text-secondary">{{ value }}</code>
       </template>
       
       <template #cell-failureReason="{ value, row }">
-        <span v-if="!row.success && value" class="failure-reason">{{ value }}</span>
-        <span v-else class="text-muted">—</span>
+        <span v-if="!row.success && value" class="text-[0.8125rem] text-accent-red">{{ value }}</span>
+        <span v-else class="text-text-muted">—</span>
       </template>
     </DataTable>
 
@@ -207,108 +223,3 @@ function getAuthTypeLabel(type: string): string {
     />
   </div>
 </template>
-
-<style scoped>
-.audit-page {
-  max-width: 1400px;
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-}
-
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-  flex-wrap: wrap;
-}
-
-.filter-buttons {
-  display: flex;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.filter-btn {
-  padding: 0.5rem 1rem;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  border: none;
-  background: var(--bg-surface);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.filter-btn:not(:last-child) {
-  border-right: 1px solid var(--border-subtle);
-}
-
-.filter-btn:hover {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-}
-
-.filter-btn--active {
-  background: rgba(var(--accent-primary-rgb), 0.1);
-  color: var(--accent-primary);
-}
-
-.filter-btn--success.filter-btn--active {
-  background: rgba(var(--accent-secondary-rgb), 0.1);
-  color: var(--accent-secondary);
-}
-
-.filter-btn--failure.filter-btn--active {
-  background: rgba(var(--accent-red-rgb), 0.1);
-  color: var(--accent-red);
-}
-
-.auth-type-badge {
-  font-size: 0.75rem;
-  font-weight: 500;
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-  background: var(--bg-elevated);
-  color: var(--text-secondary);
-}
-
-.user-identity {
-  font-family: var(--font-mono);
-  font-size: 0.8125rem;
-  color: var(--text-primary);
-}
-
-.source-ip {
-  font-family: var(--font-mono);
-  font-size: 0.8125rem;
-  color: var(--text-secondary);
-}
-
-.failure-reason {
-  font-size: 0.8125rem;
-  color: var(--accent-red);
-}
-
-.text-muted {
-  color: var(--text-muted);
-}
-
-.animate-spin {
-  animation: spin 0.6s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.mb-4 {
-  margin-bottom: 1rem;
-}
-</style>

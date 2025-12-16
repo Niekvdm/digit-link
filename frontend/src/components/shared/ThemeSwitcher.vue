@@ -55,19 +55,19 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="dropdownRef" class="theme-switcher">
+  <div ref="dropdownRef" class="relative">
     <button 
       ref="triggerRef"
-      class="theme-trigger"
-      :class="{ 'theme-trigger--active': isOpen }"
+      class="flex items-center gap-2 py-2 px-3 rounded-xs bg-transparent border border-border-subtle text-text-secondary text-[0.8125rem] cursor-pointer transition-all duration-200 hover:bg-bg-elevated hover:border-border-accent hover:text-text-primary"
+      :class="{ 'bg-bg-elevated border-border-accent text-text-primary': isOpen }"
       @click="toggleDropdown"
       aria-label="Change theme"
       title="Change theme"
     >
       <Palette class="w-4 h-4" />
-      <span class="theme-trigger-label">Theme</span>
+      <span class="hidden sm:inline">Theme</span>
       <div 
-        class="theme-trigger-swatch"
+        class="w-3.5 h-3.5 rounded border border-white/15"
         :style="{ background: currentTheme.colors.primary }"
       />
     </button>
@@ -75,41 +75,41 @@ onUnmounted(() => {
     <Transition :name="openAbove ? 'dropdown-up' : 'dropdown-down'">
       <div 
         v-if="isOpen" 
-        class="theme-dropdown"
-        :class="{ 'theme-dropdown--above': openAbove }"
+        class="absolute right-0 w-60 bg-bg-surface border border-border-subtle rounded-xs overflow-hidden shadow-[0_10px_40px_rgba(0,0,0,0.4)] z-[100]"
+        :class="openAbove ? 'bottom-[calc(100%+8px)]' : 'top-[calc(100%+8px)]'"
       >
-        <div class="theme-dropdown-header">
-          <span class="theme-dropdown-title">Select Theme</span>
+        <div class="py-3.5 px-4 border-b border-border-subtle">
+          <span class="text-xs font-medium uppercase tracking-wider text-text-secondary">Select Theme</span>
         </div>
-        <div class="theme-dropdown-list">
+        <div class="p-2 flex flex-col gap-1">
           <button
             v-for="theme in themes"
             :key="theme.id"
-            class="theme-option"
-            :class="{ 'theme-option--active': theme.id === currentTheme.id }"
+            class="flex items-center gap-3 w-full p-3 rounded-xs bg-transparent border-none cursor-pointer transition-all duration-150 text-left hover:bg-bg-elevated"
+            :class="{ 'bg-[rgba(var(--accent-primary-rgb),0.1)] hover:bg-[rgba(var(--accent-primary-rgb),0.15)]': theme.id === currentTheme.id }"
             @click="selectTheme(theme.id)"
           >
-            <div class="theme-option-swatches">
+            <div class="flex gap-0.5 p-[3px] bg-bg-deep rounded-xs">
               <div 
-                class="theme-swatch theme-swatch--bg"
+                class="w-4 h-6 rounded-l"
                 :style="{ background: theme.colors.background }"
               />
               <div 
-                class="theme-swatch theme-swatch--primary"
+                class="w-4 h-6"
                 :style="{ background: theme.colors.primary }"
               />
               <div 
-                class="theme-swatch theme-swatch--secondary"
+                class="w-4 h-6 rounded-r"
                 :style="{ background: theme.colors.secondary }"
               />
             </div>
-            <div class="theme-option-info">
-              <span class="theme-option-name">{{ theme.name }}</span>
-              <span class="theme-option-desc">{{ theme.description }}</span>
+            <div class="flex-1 min-w-0 flex flex-col gap-0.5">
+              <span class="text-[0.8125rem] font-medium text-text-primary">{{ theme.name }}</span>
+              <span class="text-[0.6875rem] text-text-muted">{{ theme.description }}</span>
             </div>
             <Check 
               v-if="theme.id === currentTheme.id"
-              class="theme-option-check"
+              class="w-4 h-4 text-accent-primary shrink-0"
             />
           </button>
         </div>
@@ -119,181 +119,26 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.theme-switcher {
-  position: relative;
-}
-
-.theme-trigger {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
-  border-radius: 8px;
-  background: transparent;
-  border: 1px solid var(--border-subtle);
-  color: var(--text-secondary);
-  font-size: 0.8125rem;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.theme-trigger:hover,
-.theme-trigger--active {
-  background: var(--bg-elevated);
-  border-color: var(--border-accent);
-  color: var(--text-primary);
-}
-
-.theme-trigger-label {
-  display: none;
-}
-
-@media (min-width: 640px) {
-  .theme-trigger-label {
-    display: inline;
-  }
-}
-
-.theme-trigger-swatch {
-  width: 14px;
-  height: 14px;
-  border-radius: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-}
-
-.theme-dropdown {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  width: 240px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
-  z-index: 100;
-}
-
-.theme-dropdown--above {
-  top: auto;
-  bottom: calc(100% + 8px);
-}
-
-.theme-dropdown-header {
-  padding: 0.875rem 1rem;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.theme-dropdown-title {
-  font-size: 0.75rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-secondary);
-}
-
-.theme-dropdown-list {
-  padding: 0.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.theme-option {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  width: 100%;
-  padding: 0.75rem;
-  border-radius: 8px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  text-align: left;
-}
-
-.theme-option:hover {
-  background: var(--bg-elevated);
-}
-
-.theme-option--active {
-  background: rgba(var(--accent-primary-rgb), 0.1);
-}
-
-.theme-option--active:hover {
-  background: rgba(var(--accent-primary-rgb), 0.15);
-}
-
-.theme-option-swatches {
-  display: flex;
-  gap: 2px;
-  padding: 3px;
-  background: var(--bg-deep);
-  border-radius: 6px;
-}
-
-.theme-swatch {
-  width: 16px;
-  height: 24px;
-  border-radius: 3px;
-}
-
-.theme-swatch--bg {
-  border-radius: 3px 0 0 3px;
-}
-
-.theme-swatch--secondary {
-  border-radius: 0 3px 3px 0;
-}
-
-.theme-option-info {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
-}
-
-.theme-option-name {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.theme-option-desc {
-  font-size: 0.6875rem;
-  color: var(--text-muted);
-}
-
-.theme-option-check {
-  width: 16px;
-  height: 16px;
-  color: var(--accent-primary);
-  flex-shrink: 0;
-}
-
+  @reference "../../style.css";
 /* Dropdown transition - opening downward */
 .dropdown-down-enter-active,
 .dropdown-down-leave-active {
-  transition: all 0.2s ease;
+  @apply transition-all duration-200 ease-out;
 }
 
 .dropdown-down-enter-from,
 .dropdown-down-leave-to {
-  opacity: 0;
-  transform: translateY(-8px);
+  @apply opacity-0 -translate-y-2;
 }
 
 /* Dropdown transition - opening upward */
 .dropdown-up-enter-active,
 .dropdown-up-leave-active {
-  transition: all 0.2s ease;
+  @apply transition-all duration-200 ease-out;
 }
 
 .dropdown-up-enter-from,
 .dropdown-up-leave-to {
-  opacity: 0;
-  transform: translateY(8px);
+  @apply opacity-0 translate-y-2;
 }
 </style>

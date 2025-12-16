@@ -23,17 +23,56 @@ onMounted(() => {
 function navigateTo(name: string) {
   router.push({ name })
 }
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`
+}
+
+const actionCards = [
+  { 
+    name: 'admin-organizations', 
+    icon: Building2, 
+    title: 'Organizations', 
+    desc: 'Manage organizations and their policies',
+    colorClass: 'bg-[rgba(var(--accent-primary-rgb),0.15)] text-accent-primary'
+  },
+  { 
+    name: 'admin-applications', 
+    icon: AppWindow, 
+    title: 'Applications', 
+    desc: 'Configure applications and subdomains',
+    colorClass: 'bg-[rgba(var(--accent-secondary-rgb),0.15)] text-accent-secondary'
+  },
+  { 
+    name: 'admin-accounts', 
+    icon: Users, 
+    title: 'Accounts', 
+    desc: 'Manage user accounts and permissions',
+    colorClass: 'bg-[rgba(var(--accent-amber-rgb),0.15)] text-accent-amber'
+  },
+  { 
+    name: 'admin-tunnels', 
+    icon: Cable, 
+    title: 'Tunnels', 
+    desc: 'Monitor active tunnel connections',
+    colorClass: 'bg-[rgba(var(--accent-blue-rgb),0.15)] text-accent-blue'
+  },
+]
 </script>
 
 <template>
-  <div class="dashboard">
+  <div class="max-w-[1200px]">
     <PageHeader 
       title="Dashboard" 
       description="System overview and key metrics"
     />
 
     <!-- Stats Grid -->
-    <div class="stats-grid">
+    <div class="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-5 mb-10">
       <StatCard
         label="Active Tunnels"
         :value="stats?.activeTunnels ?? 0"
@@ -65,224 +104,46 @@ function navigateTo(name: string) {
     </div>
 
     <!-- Quick Actions -->
-    <div class="quick-actions">
-      <h2 class="section-title">Quick Actions</h2>
-      <div class="actions-grid">
-        <button class="action-card" @click="navigateTo('admin-organizations')">
-          <div class="action-icon action-icon--primary">
-            <Building2 class="w-6 h-6" />
+    <div class="mb-10">
+      <h2 class="font-display text-xl font-semibold text-text-primary m-0 mb-5">Quick Actions</h2>
+      <div class="grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-4">
+        <button 
+          v-for="card in actionCards"
+          :key="card.name"
+          class="flex items-center gap-4 py-5 px-6 bg-bg-surface border border-border-subtle rounded-xs cursor-pointer transition-all duration-200 text-left w-full hover:border-border-accent hover:bg-bg-elevated group"
+          @click="navigateTo(card.name)"
+        >
+          <div 
+            class="w-12 h-12 rounded-xs flex items-center justify-center shrink-0"
+            :class="card.colorClass"
+          >
+            <component :is="card.icon" class="w-6 h-6" />
           </div>
-          <div class="action-content">
-            <h3 class="action-title">Organizations</h3>
-            <p class="action-desc">Manage organizations and their policies</p>
+          <div class="flex-1 min-w-0">
+            <h3 class="text-base font-semibold text-text-primary m-0 mb-1">{{ card.title }}</h3>
+            <p class="text-[0.8125rem] text-text-secondary m-0">{{ card.desc }}</p>
           </div>
-          <ArrowUpRight class="action-arrow" />
-        </button>
-        
-        <button class="action-card" @click="navigateTo('admin-applications')">
-          <div class="action-icon action-icon--secondary">
-            <AppWindow class="w-6 h-6" />
-          </div>
-          <div class="action-content">
-            <h3 class="action-title">Applications</h3>
-            <p class="action-desc">Configure applications and subdomains</p>
-          </div>
-          <ArrowUpRight class="action-arrow" />
-        </button>
-        
-        <button class="action-card" @click="navigateTo('admin-accounts')">
-          <div class="action-icon action-icon--amber">
-            <Users class="w-6 h-6" />
-          </div>
-          <div class="action-content">
-            <h3 class="action-title">Accounts</h3>
-            <p class="action-desc">Manage user accounts and permissions</p>
-          </div>
-          <ArrowUpRight class="action-arrow" />
-        </button>
-        
-        <button class="action-card" @click="navigateTo('admin-tunnels')">
-          <div class="action-icon action-icon--blue">
-            <Cable class="w-6 h-6" />
-          </div>
-          <div class="action-content">
-            <h3 class="action-title">Tunnels</h3>
-            <p class="action-desc">Monitor active tunnel connections</p>
-          </div>
-          <ArrowUpRight class="action-arrow" />
+          <ArrowUpRight class="w-[18px] h-[18px] text-text-muted transition-all duration-200 shrink-0 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-accent-primary" />
         </button>
       </div>
     </div>
 
     <!-- Traffic Stats -->
-    <div v-if="stats?.totalBytesSent || stats?.totalBytesReceived" class="traffic-section">
-      <h2 class="section-title">Traffic Overview</h2>
-      <div class="traffic-stats">
-        <div class="traffic-stat">
-          <span class="traffic-label">Total Data Sent</span>
-          <span class="traffic-value">{{ formatBytes(stats.totalBytesSent ?? 0) }}</span>
+    <div 
+      v-if="stats?.totalBytesSent || stats?.totalBytesReceived" 
+      class="bg-bg-surface border border-border-subtle rounded-xs p-6"
+    >
+      <h2 class="font-display text-xl font-semibold text-text-primary m-0 mb-4">Traffic Overview</h2>
+      <div class="flex gap-8 flex-wrap">
+        <div class="flex flex-col gap-1">
+          <span class="text-[0.8125rem] text-text-secondary">Total Data Sent</span>
+          <span class="font-mono text-xl font-semibold text-text-primary">{{ formatBytes(stats.totalBytesSent ?? 0) }}</span>
         </div>
-        <div class="traffic-stat">
-          <span class="traffic-label">Total Data Received</span>
-          <span class="traffic-value">{{ formatBytes(stats.totalBytesReceived ?? 0) }}</span>
+        <div class="flex flex-col gap-1">
+          <span class="text-[0.8125rem] text-text-secondary">Total Data Received</span>
+          <span class="font-mono text-xl font-semibold text-text-primary">{{ formatBytes(stats.totalBytesReceived ?? 0) }}</span>
         </div>
       </div>
     </div>
   </div>
 </template>
-
-<script lang="ts">
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`
-}
-</script>
-
-<style scoped>
-.dashboard {
-  max-width: 1200px;
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 1.25rem;
-  margin-bottom: 2.5rem;
-}
-
-.section-title {
-  font-family: var(--font-display);
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0 0 1.25rem;
-}
-
-.actions-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 1rem;
-}
-
-.action-card {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 1.25rem 1.5rem;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-align: left;
-  width: 100%;
-}
-
-.action-card:hover {
-  border-color: var(--border-accent);
-  background: var(--bg-elevated);
-}
-
-.action-card:hover .action-arrow {
-  transform: translate(2px, -2px);
-  color: var(--accent-primary);
-}
-
-.action-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.action-icon--primary {
-  background: rgba(var(--accent-primary-rgb), 0.15);
-  color: var(--accent-primary);
-}
-
-.action-icon--secondary {
-  background: rgba(var(--accent-secondary-rgb), 0.15);
-  color: var(--accent-secondary);
-}
-
-.action-icon--amber {
-  background: rgba(var(--accent-amber-rgb), 0.15);
-  color: var(--accent-amber);
-}
-
-.action-icon--blue {
-  background: rgba(var(--accent-blue-rgb), 0.15);
-  color: var(--accent-blue);
-}
-
-.action-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.action-title {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--text-primary);
-  margin: 0 0 0.25rem;
-}
-
-.action-desc {
-  font-size: 0.8125rem;
-  color: var(--text-secondary);
-  margin: 0;
-}
-
-.action-arrow {
-  width: 18px;
-  height: 18px;
-  color: var(--text-muted);
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-}
-
-.quick-actions {
-  margin-bottom: 2.5rem;
-}
-
-.traffic-section {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  padding: 1.5rem;
-}
-
-.traffic-section .section-title {
-  margin-bottom: 1rem;
-}
-
-.traffic-stats {
-  display: flex;
-  gap: 2rem;
-  flex-wrap: wrap;
-}
-
-.traffic-stat {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.traffic-label {
-  font-size: 0.8125rem;
-  color: var(--text-secondary);
-}
-
-.traffic-value {
-  font-family: var(--font-mono);
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-</style>

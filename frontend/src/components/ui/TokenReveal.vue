@@ -33,120 +33,42 @@ function toggleReveal() {
 </script>
 
 <template>
-  <div class="token-reveal">
-    <div v-if="label" class="token-label">{{ label }}</div>
+  <div class="flex flex-col gap-3">
+    <div v-if="label" class="text-xs font-medium uppercase tracking-wider text-text-secondary">{{ label }}</div>
     
-    <div v-if="showWarning" class="token-warning">
-      <AlertTriangle class="w-4 h-4" />
+    <div 
+      v-if="showWarning" 
+      class="flex items-start gap-2.5 py-3.5 px-4 rounded-xs text-[0.8125rem] text-accent-amber leading-relaxed bg-[rgba(var(--accent-amber-rgb),0.1)] border border-[rgba(var(--accent-amber-rgb),0.3)]"
+    >
+      <AlertTriangle class="w-4 h-4 shrink-0 mt-0.5" />
       <span>{{ warningText || 'This token will only be shown once. Save it securely.' }}</span>
     </div>
     
-    <div class="token-box">
-      <code class="token-value" :class="{ 'token-value--masked': !revealed }">
+    <div class="token-box flex items-center gap-3">
+      <code 
+        class="flex-1 font-mono text-[0.8125rem] break-all leading-relaxed text-accent-amber"
+        :class="{ 'tracking-wider': !revealed }"
+      >
         {{ maskedValue }}
       </code>
-      <div class="token-actions">
-        <button class="token-btn" @click="toggleReveal" :title="revealed ? 'Hide' : 'Reveal'">
+      <div class="flex gap-1 shrink-0">
+        <button 
+          class="w-8 h-8 flex items-center justify-center border-none rounded-xs bg-transparent text-text-muted cursor-pointer transition-all duration-200 hover:bg-bg-elevated hover:text-text-primary"
+          @click="toggleReveal" 
+          :title="revealed ? 'Hide' : 'Reveal'"
+        >
           <Eye v-if="!revealed" class="w-4 h-4" />
           <EyeOff v-else class="w-4 h-4" />
         </button>
-        <button class="token-btn" @click="copyToClipboard" :title="copied ? 'Copied!' : 'Copy'">
-          <Check v-if="copied" class="w-4 h-4 text-[var(--accent-secondary)]" />
+        <button 
+          class="w-8 h-8 flex items-center justify-center border-none rounded-xs bg-transparent text-text-muted cursor-pointer transition-all duration-200 hover:bg-bg-elevated hover:text-text-primary"
+          @click="copyToClipboard" 
+          :title="copied ? 'Copied!' : 'Copy'"
+        >
+          <Check v-if="copied" class="w-4 h-4 text-accent-secondary" />
           <Copy v-else class="w-4 h-4" />
         </button>
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.token-reveal {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.token-label {
-  font-size: 0.75rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--text-secondary);
-}
-
-.token-warning {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.625rem;
-  padding: 0.875rem 1rem;
-  background: rgba(var(--accent-amber-rgb), 0.1);
-  border: 1px solid rgba(var(--accent-amber-rgb), 0.3);
-  border-radius: 8px;
-  font-size: 0.8125rem;
-  color: var(--accent-amber);
-  line-height: 1.5;
-}
-
-.token-warning svg {
-  flex-shrink: 0;
-  margin-top: 0.125rem;
-}
-
-.token-box {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 1rem 1.25rem;
-  background: var(--bg-deep);
-  border: 2px solid var(--accent-amber);
-  border-radius: 10px;
-  position: relative;
-}
-
-.token-box::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(135deg, rgba(var(--accent-amber-rgb), 0.05), transparent);
-  pointer-events: none;
-  border-radius: 8px;
-}
-
-.token-value {
-  flex: 1;
-  font-family: var(--font-mono);
-  font-size: 0.8125rem;
-  word-break: break-all;
-  line-height: 1.6;
-  color: var(--accent-amber);
-}
-
-.token-value--masked {
-  letter-spacing: 0.1em;
-}
-
-.token-actions {
-  display: flex;
-  gap: 0.25rem;
-  flex-shrink: 0;
-}
-
-.token-btn {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.token-btn:hover {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-}
-</style>

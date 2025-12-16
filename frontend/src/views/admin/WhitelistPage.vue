@@ -90,7 +90,7 @@ async function handleDelete() {
 </script>
 
 <template>
-  <div class="whitelist-page">
+  <div class="max-w-[1000px]">
     <PageHeader 
       title="IP Whitelist" 
       description="Manage global IP whitelist for tunnel connections"
@@ -104,16 +104,16 @@ async function handleDelete() {
     </PageHeader>
 
     <!-- Info banner -->
-    <div class="info-banner">
-      <Globe class="w-5 h-5" />
+    <div class="flex gap-4 py-5 px-6 bg-[rgba(var(--accent-blue-rgb),0.1)] border border-[rgba(var(--accent-blue-rgb),0.2)] rounded-xs mb-6 text-accent-blue">
+      <Globe class="w-5 h-5 shrink-0" />
       <div>
-        <strong>Global Whitelist</strong>
-        <p>These IP ranges are allowed to connect to all tunnels system-wide. Organization and application-specific whitelists can be managed from their respective settings.</p>
+        <strong class="block text-text-primary mb-1">Global Whitelist</strong>
+        <p class="text-sm text-text-secondary m-0 leading-relaxed">These IP ranges are allowed to connect to all tunnels system-wide. Organization and application-specific whitelists can be managed from their respective settings.</p>
       </div>
     </div>
 
     <!-- Search -->
-    <div class="toolbar">
+    <div class="mb-6">
       <SearchInput v-model="searchQuery" placeholder="Search IP ranges..." />
     </div>
 
@@ -132,9 +132,9 @@ async function handleDelete() {
       row-key="id"
     >
       <template #cell-ipRange="{ value }">
-        <div class="ip-range">
+        <div class="flex items-center gap-2.5 text-accent-secondary">
           <ShieldCheck class="w-4 h-4" />
-          <code>{{ value }}</code>
+          <code class="font-mono text-sm">{{ value }}</code>
         </div>
       </template>
       
@@ -147,9 +147,9 @@ async function handleDelete() {
       </template>
       
       <template #actions="{ row }">
-        <div class="action-buttons">
+        <div class="flex items-center gap-1">
           <button 
-            class="icon-btn icon-btn--danger" 
+            class="w-8 h-8 flex items-center justify-center border-none rounded-xs bg-transparent text-text-muted cursor-pointer transition-all duration-150 hover:bg-[rgba(var(--accent-red-rgb),0.1)] hover:text-accent-red" 
             title="Remove" 
             @click.stop="openDeleteConfirm(row)"
           >
@@ -168,25 +168,25 @@ async function handleDelete() {
 
     <!-- Add Modal -->
     <Modal v-model="showAddModal" title="Add IP Range">
-      <form @submit.prevent="handleAdd" class="form">
+      <form @submit.prevent="handleAdd" class="flex flex-col gap-5">
         <div v-if="formError" class="error-message mb-4">{{ formError }}</div>
         
-        <div class="form-group">
+        <div class="flex flex-col gap-2">
           <label class="form-label" for="ip-range">IP Range</label>
           <input
             id="ip-range"
             v-model="formIpRange"
             type="text"
-            class="form-input form-input-mono"
+            class="form-input font-mono"
             placeholder="e.g., 192.168.1.0/24 or 10.0.0.1"
           />
           <p class="form-hint">Enter a single IP or CIDR range</p>
         </div>
         
-        <div class="form-group">
+        <div class="flex flex-col gap-2">
           <label class="form-label" for="ip-desc">
             Description
-            <span class="form-label-optional">(optional)</span>
+            <span class="font-normal normal-case tracking-normal text-text-muted">(optional)</span>
           </label>
           <input
             id="ip-desc"
@@ -223,102 +223,3 @@ async function handleDelete() {
     />
   </div>
 </template>
-
-<style scoped>
-.whitelist-page {
-  max-width: 1000px;
-}
-
-.info-banner {
-  display: flex;
-  gap: 1rem;
-  padding: 1.25rem 1.5rem;
-  background: rgba(var(--accent-blue-rgb), 0.1);
-  border: 1px solid rgba(var(--accent-blue-rgb), 0.2);
-  border-radius: 12px;
-  margin-bottom: 1.5rem;
-  color: var(--accent-blue);
-}
-
-.info-banner strong {
-  display: block;
-  color: var(--text-primary);
-  margin-bottom: 0.25rem;
-}
-
-.info-banner p {
-  font-size: 0.875rem;
-  color: var(--text-secondary);
-  margin: 0;
-  line-height: 1.5;
-}
-
-.toolbar {
-  margin-bottom: 1.5rem;
-}
-
-.ip-range {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  color: var(--accent-secondary);
-}
-
-.ip-range code {
-  font-family: var(--font-mono);
-  font-size: 0.875rem;
-}
-
-.action-buttons {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-}
-
-.icon-btn {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.icon-btn:hover:not(:disabled) {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-}
-
-.icon-btn--danger:hover:not(:disabled) {
-  background: rgba(var(--accent-red-rgb), 0.1);
-  color: var(--accent-red);
-}
-
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.form-label-optional {
-  font-weight: 400;
-  text-transform: none;
-  letter-spacing: normal;
-  color: var(--text-muted);
-}
-
-.mb-4 {
-  margin-bottom: 1rem;
-}
-</style>

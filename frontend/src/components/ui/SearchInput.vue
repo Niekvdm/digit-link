@@ -37,19 +37,19 @@ function clear() {
 </script>
 
 <template>
-  <div class="search-input">
-    <Search class="search-icon" />
+  <div class="relative w-full max-w-xs">
+    <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-text-muted pointer-events-none" />
     <input
       ref="inputRef"
       type="text"
-      class="search-field"
+      class="w-full py-2.5 pl-11 pr-10 bg-bg-deep border border-border-subtle rounded-xs font-body text-sm text-text-primary transition-all duration-200 placeholder:text-text-muted focus:outline-none focus:border-accent-primary focus:shadow-[0_0_0_3px_rgba(var(--accent-primary-rgb),0.12)]"
       :placeholder="placeholder"
       :value="modelValue"
       @input="handleInput"
     />
     <button 
       v-if="modelValue" 
-      class="search-clear" 
+      class="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center border-none rounded-xs bg-transparent text-text-muted cursor-pointer transition-all duration-200 hover:bg-bg-elevated hover:text-text-primary"
       @click="clear"
       type="button"
     >
@@ -57,67 +57,3 @@ function clear() {
     </button>
   </div>
 </template>
-
-<style scoped>
-.search-input {
-  position: relative;
-  width: 100%;
-  max-width: 320px;
-}
-
-.search-icon {
-  position: absolute;
-  left: 0.875rem;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 18px;
-  height: 18px;
-  color: var(--text-muted);
-  pointer-events: none;
-}
-
-.search-field {
-  width: 100%;
-  padding: 0.625rem 2.5rem 0.625rem 2.75rem;
-  background: var(--bg-deep);
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  font-family: var(--font-body);
-  font-size: 0.875rem;
-  color: var(--text-primary);
-  transition: all 0.2s ease;
-}
-
-.search-field::placeholder {
-  color: var(--text-muted);
-}
-
-.search-field:focus {
-  outline: none;
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px rgba(var(--accent-primary-rgb), 0.12);
-}
-
-.search-clear {
-  position: absolute;
-  right: 0.5rem;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 28px;
-  height: 28px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.search-clear:hover {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
-}
-</style>

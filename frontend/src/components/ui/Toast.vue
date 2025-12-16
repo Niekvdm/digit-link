@@ -24,21 +24,42 @@ function getIcon(type: ToastItem['type']) {
     case 'info': return Info
   }
 }
+
+const typeStyles = {
+  success: 'border-accent-secondary toast-gradient-success',
+  error: 'border-accent-red toast-gradient-error',
+  warning: 'border-accent-amber toast-gradient-warning',
+  info: 'border-accent-blue toast-gradient-info'
+}
+
+const iconStyles = {
+  success: 'text-accent-secondary',
+  error: 'text-accent-red',
+  warning: 'text-accent-amber',
+  info: 'text-accent-blue'
+}
 </script>
 
 <template>
   <Teleport to="body">
-    <div class="toast-container">
+    <div class="fixed bottom-6 right-6 z-[9999] flex flex-col gap-3 max-w-[400px] max-sm:left-4 max-sm:right-4 max-sm:bottom-4 max-sm:max-w-none">
       <TransitionGroup name="toast">
         <div 
           v-for="toast in toasts" 
           :key="toast.id"
-          class="toast"
-          :class="`toast--${toast.type}`"
+          class="flex items-start gap-3 py-4 px-5 bg-bg-surface border rounded-[10px] shadow-[0_8px_32px_rgba(0,0,0,0.3)]"
+          :class="typeStyles[toast.type]"
         >
-          <component :is="getIcon(toast.type)" class="toast-icon" />
-          <span class="toast-message">{{ toast.message }}</span>
-          <button class="toast-close" @click="emit('dismiss', toast.id)">
+          <component 
+            :is="getIcon(toast.type)" 
+            class="w-5 h-5 shrink-0"
+            :class="iconStyles[toast.type]"
+          />
+          <span class="flex-1 text-sm text-text-primary leading-relaxed">{{ toast.message }}</span>
+          <button 
+            class="w-6 h-6 flex items-center justify-center border-none rounded bg-transparent text-text-muted cursor-pointer transition-all duration-150 -my-1 -mr-1 shrink-0 hover:bg-bg-elevated hover:text-text-primary"
+            @click="emit('dismiss', toast.id)"
+          >
             <X class="w-4 h-4" />
           </button>
         </div>
@@ -48,108 +69,20 @@ function getIcon(type: ToastItem['type']) {
 </template>
 
 <style scoped>
-.toast-container {
-  position: fixed;
-  bottom: 1.5rem;
-  right: 1.5rem;
-  z-index: 9999;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  max-width: 400px;
+.toast-gradient-success {
+  background: linear-gradient(135deg, rgba(var(--accent-secondary-rgb), 0.1), var(--bg-surface));
 }
 
-.toast {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 1rem 1.25rem;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+.toast-gradient-error {
+  background: linear-gradient(135deg, rgba(var(--accent-red-rgb), 0.1), var(--bg-surface));
 }
 
-.toast--success {
-  border-color: var(--accent-secondary);
-  background: linear-gradient(135deg, 
-    rgba(var(--accent-secondary-rgb), 0.1), 
-    var(--bg-surface)
-  );
+.toast-gradient-warning {
+  background: linear-gradient(135deg, rgba(var(--accent-amber-rgb), 0.1), var(--bg-surface));
 }
 
-.toast--error {
-  border-color: var(--accent-red);
-  background: linear-gradient(135deg, 
-    rgba(var(--accent-red-rgb), 0.1), 
-    var(--bg-surface)
-  );
-}
-
-.toast--warning {
-  border-color: var(--accent-amber);
-  background: linear-gradient(135deg, 
-    rgba(var(--accent-amber-rgb), 0.1), 
-    var(--bg-surface)
-  );
-}
-
-.toast--info {
-  border-color: var(--accent-blue);
-  background: linear-gradient(135deg, 
-    rgba(var(--accent-blue-rgb), 0.1), 
-    var(--bg-surface)
-  );
-}
-
-.toast-icon {
-  width: 20px;
-  height: 20px;
-  flex-shrink: 0;
-}
-
-.toast--success .toast-icon {
-  color: var(--accent-secondary);
-}
-
-.toast--error .toast-icon {
-  color: var(--accent-red);
-}
-
-.toast--warning .toast-icon {
-  color: var(--accent-amber);
-}
-
-.toast--info .toast-icon {
-  color: var(--accent-blue);
-}
-
-.toast-message {
-  flex: 1;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-  line-height: 1.4;
-}
-
-.toast-close {
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  transition: all 0.15s ease;
-  margin: -0.25rem -0.25rem -0.25rem 0;
-  flex-shrink: 0;
-}
-
-.toast-close:hover {
-  background: var(--bg-elevated);
-  color: var(--text-primary);
+.toast-gradient-info {
+  background: linear-gradient(135deg, rgba(var(--accent-blue-rgb), 0.1), var(--bg-surface));
 }
 
 /* Transitions */
@@ -184,15 +117,6 @@ function getIcon(type: ToastItem['type']) {
   to {
     opacity: 0;
     transform: translateX(100%);
-  }
-}
-
-@media (max-width: 640px) {
-  .toast-container {
-    left: 1rem;
-    right: 1rem;
-    bottom: 1rem;
-    max-width: none;
   }
 }
 </style>
