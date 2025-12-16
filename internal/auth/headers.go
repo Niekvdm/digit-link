@@ -2,6 +2,7 @@ package auth
 
 import (
 	"net/http"
+	"strconv"
 )
 
 // SecurityHeaders adds security-related HTTP headers to responses
@@ -57,7 +58,7 @@ func (sh *SecurityHeaders) Apply(w http.ResponseWriter) {
 
 	// Strict-Transport-Security
 	if sh.HSTSEnabled && sh.HSTSMaxAge > 0 {
-		w.Header().Set("Strict-Transport-Security", "max-age="+string(rune(sh.HSTSMaxAge))+"; includeSubDomains")
+		w.Header().Set("Strict-Transport-Security", "max-age="+strconv.Itoa(sh.HSTSMaxAge)+"; includeSubDomains")
 	}
 
 	// X-Frame-Options
@@ -161,7 +162,7 @@ func (c *CORSConfig) Apply(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if c.MaxAge > 0 {
-		w.Header().Set("Access-Control-Max-Age", string(rune(c.MaxAge)))
+		w.Header().Set("Access-Control-Max-Age", strconv.Itoa(c.MaxAge))
 	}
 }
 

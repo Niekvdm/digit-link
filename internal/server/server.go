@@ -34,6 +34,9 @@ type Server struct {
 
 	// OIDC handler for OIDC authentication
 	oidcHandler *auth.OIDCAuthHandler
+
+	// Rate limiter for login endpoints
+	loginRateLimiter *auth.RateLimiter
 }
 
 // New creates a new tunnel server
@@ -47,19 +50,54 @@ func New(domain, scheme, secret string, database *db.DB) *Server {
 		secret:  secret,
 		db:      database,
 		tunnels: make(map[string]*Tunnel),
-		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool {
+	}
+
+	// Initialize WebSocket upgrader with origin validation
+	s.upgrader = websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			origin := r.Header.Get("Origin")
+			// Allow requests without Origin header (non-browser clients like CLI tools)
+			if origin == "" {
 				return true
-			},
-			ReadBufferSize:  1024 * 64,
-			WriteBufferSize: 1024 * 64,
+			}
+
+			// Check if origin matches the expected domain (with any subdomain)
+			// Allow: https://tunnel.digit.zone, https://subdomain.tunnel.digit.zone
+			allowedOrigins := []string{
+				scheme + "://" + domain,
+				scheme + "://localhost",
+				"http://localhost", // Allow localhost for development
+			}
+
+			for _, allowed := range allowedOrigins {
+				if strings.HasPrefix(origin, allowed) {
+					return true
+				}
+			}
+
+			// Also allow any subdomain of the main domain
+			if strings.Contains(origin, "."+domain) {
+				return true
+			}
+
+			log.Printf("WebSocket connection rejected: origin %s not allowed", origin)
+			return false
 		},
+		ReadBufferSize:  1024 * 64,
+		WriteBufferSize: 1024 * 64,
 	}
 
 	// Initialize auth handlers if database is available
 	if database != nil {
 		s.authMiddleware = NewAuthMiddleware(database, WithDefaultDeny(true))
 		s.oidcHandler = auth.NewOIDCAuthHandler(database, domain)
+		// Initialize rate limiter for login endpoints with stricter settings
+		s.loginRateLimiter = auth.NewRateLimiter(database, auth.RateLimiterConfig{
+			WindowDuration:  15 * time.Minute,
+			MaxAttempts:     5, // Stricter than default for login
+			BlockDuration:   30 * time.Minute,
+			CleanupInterval: 5 * time.Minute,
+		})
 	}
 
 	return s
@@ -583,8 +621,20 @@ func (s *Server) sendRegisterResponse(conn *websocket.Conn, success bool, subdom
 	conn.WriteMessage(websocket.TextMessage, data)
 }
 
+// pongWait is the time allowed to read the next pong message from the peer
+const pongWait = 60 * time.Second
+
 // handleTunnelMessages handles messages from a connected tunnel client
 func (s *Server) handleTunnelMessages(tunnel *Tunnel) {
+	// Set initial read deadline
+	tunnel.Conn.SetReadDeadline(time.Now().Add(pongWait))
+
+	// Set pong handler to reset the read deadline on each pong
+	tunnel.Conn.SetPongHandler(func(string) error {
+		tunnel.Conn.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
+
 	for {
 		_, msg, err := tunnel.Conn.ReadMessage()
 		if err != nil {
@@ -593,6 +643,9 @@ func (s *Server) handleTunnelMessages(tunnel *Tunnel) {
 			}
 			return
 		}
+
+		// Reset read deadline on any message received
+		tunnel.Conn.SetReadDeadline(time.Now().Add(pongWait))
 
 		var message protocol.Message
 		if err := json.Unmarshal(msg, &message); err != nil {
@@ -607,7 +660,7 @@ func (s *Server) handleTunnelMessages(tunnel *Tunnel) {
 				ch <- msg
 			}
 		case protocol.TypePong:
-			// Heartbeat response, ignore
+			// Heartbeat response - deadline already reset above
 		}
 	}
 }
@@ -708,11 +761,50 @@ func (s *Server) forwardRequest(w http.ResponseWriter, r *http.Request, tunnel *
 	}
 }
 
+// reservedSubdomains contains subdomains that cannot be registered by users
+// to prevent confusion and potential security issues
+var reservedSubdomains = map[string]bool{
+	"admin":     true,
+	"api":       true,
+	"auth":      true,
+	"www":       true,
+	"mail":      true,
+	"ftp":       true,
+	"static":    true,
+	"assets":    true,
+	"cdn":       true,
+	"health":    true,
+	"status":    true,
+	"setup":     true,
+	"login":     true,
+	"logout":    true,
+	"register":  true,
+	"app":       true,
+	"apps":      true,
+	"dashboard": true,
+	"console":   true,
+	"portal":    true,
+	"org":       true,
+	"internal":  true,
+	"system":    true,
+	"root":      true,
+	"test":      true,
+	"dev":       true,
+	"staging":   true,
+	"prod":      true,
+}
+
 // isValidSubdomain checks if a subdomain name is valid
 func isValidSubdomain(s string) bool {
 	if len(s) < 1 || len(s) > 63 {
 		return false
 	}
+
+	// Check against reserved subdomains
+	if reservedSubdomains[s] {
+		return false
+	}
+
 	for _, c := range s {
 		if !((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-') {
 			return false
@@ -739,9 +831,12 @@ func (s *Server) Run(port int) error {
 	return http.ListenAndServe(addr, s)
 }
 
+// pingPeriod is the period between pings (must be less than pongWait)
+const pingPeriod = 30 * time.Second
+
 // pingRoutine sends periodic pings to keep connections alive
 func (s *Server) pingRoutine() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(pingPeriod)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -752,9 +847,11 @@ func (s *Server) pingRoutine() {
 		}
 		s.mu.RUnlock()
 
-		pingMsg, _ := json.Marshal(protocol.Message{Type: protocol.TypePing})
 		for _, tunnel := range tunnels {
-			tunnel.Conn.WriteMessage(websocket.TextMessage, pingMsg)
+			// Send WebSocket ping frame (triggers pong response)
+			if err := tunnel.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				log.Printf("Failed to send ping to tunnel %s: %v", tunnel.Subdomain, err)
+			}
 		}
 	}
 }

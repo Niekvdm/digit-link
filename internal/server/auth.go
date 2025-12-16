@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -176,6 +177,19 @@ func (s *Server) handleCheckAccount(w http.ResponseWriter, r *http.Request) {
 
 // handleLogin handles username/password authentication for both admin and org accounts
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	// Apply rate limiting
+	if s.loginRateLimiter != nil {
+		clientIP := auth.GetClientIP(r)
+		key := auth.IPRateLimitKey(clientIP)
+		allowed, retryAfter := s.loginRateLimiter.Allow(key)
+		if !allowed {
+			w.Header().Set("Retry-After", fmt.Sprintf("%d", int(retryAfter.Seconds())))
+			w.WriteHeader(http.StatusTooManyRequests)
+			json.NewEncoder(w).Encode(LoginResponse{Error: "Too many login attempts. Please try again later."})
+			return
+		}
+	}
+
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -205,6 +219,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if account == nil || !account.Active {
+		// Record failed attempt for rate limiting
+		if s.loginRateLimiter != nil {
+			clientIP := auth.GetClientIP(r)
+			s.loginRateLimiter.RecordFailure(auth.IPRateLimitKey(clientIP))
+		}
 		// Use same error message to prevent username enumeration
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(LoginResponse{Error: "Invalid credentials"})
@@ -220,10 +239,21 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	// Verify password
 	if !auth.VerifyPassword(req.Password, account.PasswordHash) {
+		// Record failed attempt for rate limiting
+		if s.loginRateLimiter != nil {
+			clientIP := auth.GetClientIP(r)
+			s.loginRateLimiter.RecordFailure(auth.IPRateLimitKey(clientIP))
+		}
 		log.Printf("Failed login attempt for user: %s", req.Username)
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(LoginResponse{Error: "Invalid credentials"})
 		return
+	}
+
+	// Record successful login for rate limiting
+	if s.loginRateLimiter != nil {
+		clientIP := auth.GetClientIP(r)
+		s.loginRateLimiter.RecordSuccess(auth.IPRateLimitKey(clientIP))
 	}
 
 	// Determine account type
@@ -466,6 +496,20 @@ func (s *Server) handleTOTPSetupPost(w http.ResponseWriter, r *http.Request) {
 
 // handleTOTPVerify verifies the TOTP code and issues JWT
 func (s *Server) handleTOTPVerify(w http.ResponseWriter, r *http.Request) {
+	// Apply rate limiting (use account-specific key if possible, fall back to IP)
+	var rateLimitKey string
+	if s.loginRateLimiter != nil {
+		clientIP := auth.GetClientIP(r)
+		rateLimitKey = auth.IPRateLimitKey(clientIP)
+		allowed, retryAfter := s.loginRateLimiter.Allow(rateLimitKey)
+		if !allowed {
+			w.Header().Set("Retry-After", fmt.Sprintf("%d", int(retryAfter.Seconds())))
+			w.WriteHeader(http.StatusTooManyRequests)
+			json.NewEncoder(w).Encode(TOTPVerifyResponse{Error: "Too many verification attempts. Please try again later."})
+			return
+		}
+	}
+
 	var req TOTPVerifyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -512,10 +556,19 @@ func (s *Server) handleTOTPVerify(w http.ResponseWriter, r *http.Request) {
 
 	// Validate the code
 	if !auth.ValidateTOTPWithWindow(secret, req.Code) {
+		// Record failed attempt for rate limiting
+		if s.loginRateLimiter != nil && rateLimitKey != "" {
+			s.loginRateLimiter.RecordFailure(rateLimitKey)
+		}
 		log.Printf("Invalid TOTP code for user: %s", account.Username)
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(TOTPVerifyResponse{Error: "Invalid TOTP code"})
 		return
+	}
+
+	// Record successful verification for rate limiting
+	if s.loginRateLimiter != nil && rateLimitKey != "" {
+		s.loginRateLimiter.RecordSuccess(rateLimitKey)
 	}
 
 	// Generate JWT token with org context
@@ -575,6 +628,19 @@ type OrgLoginResponse struct {
 // handleOrgLogin handles organization account username/password authentication
 // Org accounts don't require TOTP - they use simpler password-only authentication
 func (s *Server) handleOrgLogin(w http.ResponseWriter, r *http.Request) {
+	// Apply rate limiting
+	if s.loginRateLimiter != nil {
+		clientIP := auth.GetClientIP(r)
+		key := auth.IPRateLimitKey(clientIP)
+		allowed, retryAfter := s.loginRateLimiter.Allow(key)
+		if !allowed {
+			w.Header().Set("Retry-After", fmt.Sprintf("%d", int(retryAfter.Seconds())))
+			w.WriteHeader(http.StatusTooManyRequests)
+			json.NewEncoder(w).Encode(OrgLoginResponse{Error: "Too many login attempts. Please try again later."})
+			return
+		}
+	}
+
 	var req OrgLoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -605,6 +671,11 @@ func (s *Server) handleOrgLogin(w http.ResponseWriter, r *http.Request) {
 
 	// Org accounts must NOT be admin and MUST have org_id
 	if account == nil || !account.Active || account.IsAdmin || account.OrgID == "" {
+		// Record failed attempt for rate limiting
+		if s.loginRateLimiter != nil {
+			clientIP := auth.GetClientIP(r)
+			s.loginRateLimiter.RecordFailure(auth.IPRateLimitKey(clientIP))
+		}
 		// Use same error message to prevent username enumeration
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(OrgLoginResponse{Error: "Invalid credentials"})
@@ -620,6 +691,11 @@ func (s *Server) handleOrgLogin(w http.ResponseWriter, r *http.Request) {
 
 	// Verify password
 	if !auth.VerifyPassword(req.Password, account.PasswordHash) {
+		// Record failed attempt for rate limiting
+		if s.loginRateLimiter != nil {
+			clientIP := auth.GetClientIP(r)
+			s.loginRateLimiter.RecordFailure(auth.IPRateLimitKey(clientIP))
+		}
 		log.Printf("Failed org login attempt for user: %s", req.Username)
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(OrgLoginResponse{Error: "Invalid credentials"})
@@ -633,6 +709,12 @@ func (s *Server) handleOrgLogin(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(OrgLoginResponse{Error: "Internal error"})
 		return
+	}
+
+	// Record successful login for rate limiting
+	if s.loginRateLimiter != nil {
+		clientIP := auth.GetClientIP(r)
+		s.loginRateLimiter.RecordSuccess(auth.IPRateLimitKey(clientIP))
 	}
 
 	log.Printf("Successful org login for user: %s (org: %s)", account.Username, account.OrgID)

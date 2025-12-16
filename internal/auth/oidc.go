@@ -93,6 +93,15 @@ func (h *OIDCAuthHandler) HandleLogin(w http.ResponseWriter, r *http.Request, p 
 		return
 	}
 
+	// Get subdomain from context for redirect URL
+	subdomain := ""
+	if ctx != nil {
+		subdomain = ctx.Subdomain
+	}
+
+	// Create request-scoped OAuth2 config with correct redirect URL
+	oauth2Config := h.getOAuth2ConfigForSubdomain(provider, subdomain)
+
 	// Generate PKCE verifier and challenge
 	verifier, challenge, err := generatePKCE()
 	if err != nil {
@@ -119,8 +128,8 @@ func (h *OIDCAuthHandler) HandleLogin(w http.ResponseWriter, r *http.Request, p 
 		return
 	}
 
-	// Build authorization URL with PKCE
-	authURL := provider.oauth2Config.AuthCodeURL(
+	// Build authorization URL with PKCE using request-scoped config
+	authURL := oauth2Config.AuthCodeURL(
 		state.State,
 		oauth2.SetAuthURLParam("nonce", state.Nonce),
 		oauth2.SetAuthURLParam("code_challenge", challenge),
@@ -174,8 +183,17 @@ func (h *OIDCAuthHandler) HandleCallback(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	// Exchange code for token with PKCE verifier
-	token, err := provider.oauth2Config.Exchange(
+	// Get subdomain from context for redirect URL
+	subdomain := ""
+	if ctx != nil {
+		subdomain = ctx.Subdomain
+	}
+
+	// Create request-scoped OAuth2 config with correct redirect URL
+	oauth2Config := h.getOAuth2ConfigForSubdomain(provider, subdomain)
+
+	// Exchange code for token with PKCE verifier using request-scoped config
+	token, err := oauth2Config.Exchange(
 		r.Context(),
 		code,
 		oauth2.SetAuthURLParam("code_verifier", state.PKCEVerifier),
@@ -501,12 +519,21 @@ func (h *OIDCAuthHandler) GetRedirectURLForSubdomain(subdomain string) string {
 	return fmt.Sprintf("https://%s.%s/__auth/callback", subdomain, h.domain)
 }
 
-// UpdateProviderRedirectURL updates the OAuth2 config redirect URL for a specific subdomain
-func (h *OIDCAuthHandler) UpdateProviderRedirectURL(issuerURL, subdomain string) {
-	h.providersMu.Lock()
-	defer h.providersMu.Unlock()
-
-	if provider, ok := h.providers[issuerURL]; ok {
-		provider.oauth2Config.RedirectURL = h.GetRedirectURLForSubdomain(subdomain)
+// getOAuth2ConfigForSubdomain creates a request-scoped OAuth2 config with the correct redirect URL
+// This avoids race conditions by not mutating the shared cached provider
+func (h *OIDCAuthHandler) getOAuth2ConfigForSubdomain(provider *cachedOIDCProvider, subdomain string) *oauth2.Config {
+	return &oauth2.Config{
+		ClientID:     provider.oauth2Config.ClientID,
+		ClientSecret: provider.oauth2Config.ClientSecret,
+		Endpoint:     provider.oauth2Config.Endpoint,
+		RedirectURL:  h.GetRedirectURLForSubdomain(subdomain),
+		Scopes:       provider.oauth2Config.Scopes,
 	}
+}
+
+// UpdateProviderRedirectURL is deprecated - use getOAuth2ConfigForSubdomain instead
+// Kept for backward compatibility but is now a no-op to avoid race conditions
+func (h *OIDCAuthHandler) UpdateProviderRedirectURL(issuerURL, subdomain string) {
+	// No-op: redirect URLs are now set per-request to avoid race conditions
+	// See getOAuth2ConfigForSubdomain for the correct approach
 }

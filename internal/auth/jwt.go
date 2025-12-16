@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"os"
 	"time"
 
@@ -35,14 +36,20 @@ func getJWTSecret() ([]byte, error) {
 
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
-		// Generate a random secret if not provided
+		// Check if we're in production mode - fail if so
+		env := os.Getenv("ENV")
+		if env == "production" || os.Getenv("PRODUCTION") == "true" {
+			return nil, fmt.Errorf("JWT_SECRET environment variable must be set in production mode")
+		}
+
+		// Generate a random secret if not provided (development only)
 		randomBytes := make([]byte, 32)
 		if _, err := rand.Read(randomBytes); err != nil {
 			return nil, fmt.Errorf("failed to generate JWT secret: %w", err)
 		}
 		secret = hex.EncodeToString(randomBytes)
-		// Log warning in production
-		fmt.Println("WARNING: JWT_SECRET not set, using auto-generated secret. Sessions will not persist across restarts.")
+		// Log warning using structured logging
+		log.Printf("WARNING: JWT_SECRET not set, using auto-generated secret. Sessions will not persist across restarts.")
 	}
 
 	jwtSecret = []byte(secret)

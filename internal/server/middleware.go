@@ -91,7 +91,11 @@ func WithRateLimiter(rl *auth.RateLimiter) AuthMiddlewareOption {
 
 // NewAuthMiddleware creates a new auth middleware
 func NewAuthMiddleware(database *db.DB, opts ...AuthMiddlewareOption) *AuthMiddleware {
-	resolver := policy.NewResolver(database, policy.WithDefaultDenyOnError(true))
+	resolver := policy.NewResolver(
+		database,
+		policy.WithDefaultDenyOnError(true),
+		policy.WithSecretDecryptor(auth.DecryptTOTPSecret),
+	)
 	loader := policy.NewLoader(database, resolver)
 
 	m := &AuthMiddleware{

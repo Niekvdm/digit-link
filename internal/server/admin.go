@@ -16,7 +16,17 @@ import (
 func jsonError(w http.ResponseWriter, message string, code int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": message}); err != nil {
+		log.Printf("Failed to encode error response: %v", err)
+	}
+}
+
+// jsonResponse writes a JSON response with error logging
+func jsonResponse(w http.ResponseWriter, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		log.Printf("Failed to encode JSON response: %v", err)
+	}
 }
 
 // handleAdmin routes admin API requests
@@ -1158,8 +1168,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(stats)
+	jsonResponse(w, stats)
 }
 
 // ============================================
@@ -1402,7 +1411,16 @@ func (s *Server) handleSetOrgPolicy(w http.ResponseWriter, r *http.Request, orgI
 		}
 		policy.OIDCIssuerURL = req.OIDCIssuerURL
 		policy.OIDCClientID = req.OIDCClientID
-		policy.OIDCClientSecretEnc = req.OIDCClientSecret // TODO: encrypt
+		// Encrypt the OIDC client secret for secure storage
+		if req.OIDCClientSecret != "" {
+			encryptedSecret, err := auth.EncryptTOTPSecret(req.OIDCClientSecret)
+			if err != nil {
+				log.Printf("Failed to encrypt OIDC client secret: %v", err)
+				jsonError(w, "Failed to encrypt client secret", http.StatusInternalServerError)
+				return
+			}
+			policy.OIDCClientSecretEnc = encryptedSecret
+		}
 		policy.OIDCScopes = req.OIDCScopes
 		policy.OIDCAllowedDomains = req.OIDCAllowedDomains
 		policy.OIDCRequiredClaims = req.OIDCRequiredClaims
@@ -1821,7 +1839,16 @@ func (s *Server) handleSetAppPolicy(w http.ResponseWriter, r *http.Request, appI
 		}
 		policy.OIDCIssuerURL = req.OIDCIssuerURL
 		policy.OIDCClientID = req.OIDCClientID
-		policy.OIDCClientSecretEnc = req.OIDCClientSecret // TODO: encrypt
+		// Encrypt the OIDC client secret for secure storage
+		if req.OIDCClientSecret != "" {
+			encryptedSecret, err := auth.EncryptTOTPSecret(req.OIDCClientSecret)
+			if err != nil {
+				log.Printf("Failed to encrypt OIDC client secret: %v", err)
+				jsonError(w, "Failed to encrypt client secret", http.StatusInternalServerError)
+				return
+			}
+			policy.OIDCClientSecretEnc = encryptedSecret
+		}
 		policy.OIDCScopes = req.OIDCScopes
 		policy.OIDCAllowedDomains = req.OIDCAllowedDomains
 		policy.OIDCRequiredClaims = req.OIDCRequiredClaims
