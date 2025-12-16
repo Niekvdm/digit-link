@@ -48,17 +48,18 @@ func (qc *QuotaChecker) CheckQuota(orgID string, quotaType QuotaType) QuotaResul
 		Limit:     -1,
 	}
 
-	// Get organization and plan
-	org, err := qc.db.GetOrganizationByID(orgID)
-	if err != nil || org == nil || org.PlanID == nil {
+	// Get cached plan ID (no DB query - fast path)
+	planID := qc.cache.GetOrgPlanID(orgID)
+	if planID == nil {
 		// No plan = no limits
 		return result
 	}
 
-	plan := qc.cache.GetPlan(*org.PlanID)
+	plan := qc.cache.GetPlan(*planID)
 	if plan == nil {
-		// Plan not found in cache, try to reload
-		plan, err = qc.db.GetPlan(*org.PlanID)
+		// Plan not found in cache, try to reload from DB
+		var err error
+		plan, err = qc.db.GetPlan(*planID)
 		if err != nil || plan == nil {
 			return result
 		}

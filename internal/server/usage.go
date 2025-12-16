@@ -26,6 +26,9 @@ type UsageCache struct {
 type OrgUsage struct {
 	mu sync.RWMutex
 
+	// Cached plan ID for this org (avoids DB lookup on every request)
+	planID *string
+
 	// Baseline from DB (set on init, updated after each flush)
 	dbBandwidthBytes int64
 	dbTunnelSeconds  int64
@@ -208,9 +211,19 @@ func (uc *UsageCache) getOrCreateOrgUsage(orgID string) *OrgUsage {
 		log.Printf("Failed to load existing usage for org %s: %v", orgID, err)
 	}
 
+	// Load organization to get planID (cached to avoid DB query on every request)
+	var planID *string
+	org, err := uc.db.GetOrganizationByID(orgID)
+	if err != nil {
+		log.Printf("Failed to load organization for org %s: %v", orgID, err)
+	} else if org != nil {
+		planID = org.PlanID
+	}
+
 	usage = &OrgUsage{
 		PeriodStart: periodStart,
 		lastFlush:   now,
+		planID:      planID,
 	}
 
 	// Load DB totals into baseline fields (delta starts at 0)
@@ -264,6 +277,14 @@ func (uc *UsageCache) DecrementConcurrentTunnels(orgID string) int32 {
 func (uc *UsageCache) GetConcurrentTunnels(orgID string) int32 {
 	usage := uc.getOrCreateOrgUsage(orgID)
 	return atomic.LoadInt32(&usage.ConcurrentTunnels)
+}
+
+// GetOrgPlanID returns the cached plan ID for an organization
+func (uc *UsageCache) GetOrgPlanID(orgID string) *string {
+	usage := uc.getOrCreateOrgUsage(orgID)
+	usage.mu.RLock()
+	defer usage.mu.RUnlock()
+	return usage.planID
 }
 
 // GetCurrentUsage returns current usage for an organization (db baseline + unflushed delta)
