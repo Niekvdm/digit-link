@@ -121,6 +121,19 @@ func (s *Server) handleAuth(w http.ResponseWriter, r *http.Request) {
 
 // handleCheckAccount validates username and returns account metadata for login flow
 func (s *Server) handleCheckAccount(w http.ResponseWriter, r *http.Request) {
+	// Apply rate limiting to prevent username enumeration attacks
+	if s.loginRateLimiter != nil {
+		clientIP := auth.GetClientIP(r)
+		key := auth.IPRateLimitKey(clientIP)
+		allowed, retryAfter := s.loginRateLimiter.Allow(key)
+		if !allowed {
+			w.Header().Set("Retry-After", fmt.Sprintf("%d", int(retryAfter.Seconds())))
+			w.WriteHeader(http.StatusTooManyRequests)
+			json.NewEncoder(w).Encode(map[string]string{"error": "Too many requests. Please try again later."})
+			return
+		}
+	}
+
 	var req CheckAccountRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)

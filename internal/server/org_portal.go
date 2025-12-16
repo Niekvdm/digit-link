@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -10,6 +11,21 @@ import (
 	"github.com/niekvdm/digit-link/internal/auth"
 	"github.com/niekvdm/digit-link/internal/db"
 )
+
+// maxOrgRequestBodySize is the maximum allowed request body size for org endpoints (1MB)
+const maxOrgRequestBodySize = 1 << 20
+
+// validateOrgJSONRequest validates Content-Type and limits request body size for org endpoints
+// Returns true if valid, false otherwise (and sends error response)
+func validateOrgJSONRequest(w http.ResponseWriter, r *http.Request) bool {
+	contentType := r.Header.Get("Content-Type")
+	if contentType == "" || (!strings.HasPrefix(contentType, "application/json") && !strings.HasPrefix(contentType, "text/json")) {
+		jsonError(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
+		return false
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxOrgRequestBodySize)
+	return true
+}
 
 // handleOrg routes org portal API requests
 func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
@@ -128,7 +144,7 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 		s.handleOrgDeactivateAccount(w, r, orgCtx, accountID)
 
 	default:
-		http.Error(w, "Not found", http.StatusNotFound)
+		jsonError(w, "Not found", http.StatusNotFound)
 	}
 }
 
@@ -250,6 +266,10 @@ func (s *Server) handleOrgGetOrgPolicy(w http.ResponseWriter, r *http.Request, o
 }
 
 func (s *Server) handleOrgSetOrgPolicy(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	if !validateOrgJSONRequest(w, r) {
+		return
+	}
+
 	var req struct {
 		AuthType           string            `json:"authType"`
 		BasicUsername      string            `json:"basicUsername,omitempty"`
@@ -423,6 +443,10 @@ func (s *Server) handleOrgGetApplication(w http.ResponseWriter, r *http.Request,
 }
 
 func (s *Server) handleOrgCreateApplication(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	if !validateOrgJSONRequest(w, r) {
+		return
+	}
+
 	var req struct {
 		Subdomain string `json:"subdomain"`
 		Name      string `json:"name"`
@@ -475,6 +499,10 @@ func (s *Server) handleOrgUpdateApplication(w http.ResponseWriter, r *http.Reque
 	}
 	if app == nil {
 		jsonError(w, "Application not found", http.StatusNotFound)
+		return
+	}
+
+	if !validateOrgJSONRequest(w, r) {
 		return
 	}
 
@@ -616,6 +644,10 @@ func (s *Server) handleOrgSetAppPolicy(w http.ResponseWriter, r *http.Request, o
 	}
 	if app == nil {
 		jsonError(w, "Application not found", http.StatusNotFound)
+		return
+	}
+
+	if !validateOrgJSONRequest(w, r) {
 		return
 	}
 
@@ -761,6 +793,10 @@ func (s *Server) handleOrgListWhitelist(w http.ResponseWriter, r *http.Request, 
 }
 
 func (s *Server) handleOrgAddWhitelist(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	if !validateOrgJSONRequest(w, r) {
+		return
+	}
+
 	var req struct {
 		IPRange     string `json:"ipRange"`
 		Description string `json:"description"`
@@ -820,6 +856,10 @@ func (s *Server) handleOrgDeleteWhitelist(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleOrgAddAppWhitelist(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	if !validateOrgJSONRequest(w, r) {
+		return
+	}
+
 	var req struct {
 		AppID       string `json:"appId"`
 		IPRange     string `json:"ipRange"`
@@ -933,6 +973,10 @@ func (s *Server) handleOrgListAPIKeys(w http.ResponseWriter, r *http.Request, or
 }
 
 func (s *Server) handleOrgCreateAPIKey(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	if !validateOrgJSONRequest(w, r) {
+		return
+	}
+
 	var req struct {
 		AppID       string `json:"appId,omitempty"`
 		Description string `json:"description"`
@@ -1174,6 +1218,10 @@ func (s *Server) handleOrgGetMyAccount(w http.ResponseWriter, r *http.Request, o
 
 // handleOrgUpdateMyAccount updates the current user's account
 func (s *Server) handleOrgUpdateMyAccount(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	if !validateOrgJSONRequest(w, r) {
+		return
+	}
+
 	var req struct {
 		Username string `json:"username"`
 	}
@@ -1213,6 +1261,10 @@ func (s *Server) handleOrgUpdateMyAccount(w http.ResponseWriter, r *http.Request
 
 // handleOrgSetMyPassword sets the current user's password
 func (s *Server) handleOrgSetMyPassword(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	if !validateOrgJSONRequest(w, r) {
+		return
+	}
+
 	var req struct {
 		Password string `json:"password"`
 	}
@@ -1283,6 +1335,23 @@ func (s *Server) handleOrgGetMyTOTPSetup(w http.ResponseWriter, r *http.Request,
 
 // handleOrgEnableMyTOTP verifies the TOTP code and enables TOTP for the current user
 func (s *Server) handleOrgEnableMyTOTP(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	if !validateOrgJSONRequest(w, r) {
+		return
+	}
+
+	// Apply rate limiting to prevent TOTP brute force attacks
+	var rateLimitKey string
+	if s.loginRateLimiter != nil {
+		clientIP := auth.GetClientIP(r)
+		rateLimitKey = auth.IPRateLimitKey(clientIP)
+		allowed, retryAfter := s.loginRateLimiter.Allow(rateLimitKey)
+		if !allowed {
+			w.Header().Set("Retry-After", fmt.Sprintf("%d", int(retryAfter.Seconds())))
+			jsonError(w, "Too many attempts. Please try again later.", http.StatusTooManyRequests)
+			return
+		}
+	}
+
 	var req struct {
 		Code string `json:"code"`
 	}
@@ -1319,8 +1388,18 @@ func (s *Server) handleOrgEnableMyTOTP(w http.ResponseWriter, r *http.Request, o
 
 	// Validate the code
 	if !auth.ValidateTOTPWithWindow(secret, req.Code) {
+		// Record failed attempt for rate limiting
+		if s.loginRateLimiter != nil && rateLimitKey != "" {
+			s.loginRateLimiter.RecordFailure(rateLimitKey)
+		}
+		log.Printf("Invalid TOTP code for org user from IP: %s", auth.GetClientIP(r))
 		jsonError(w, "Invalid TOTP code", http.StatusUnauthorized)
 		return
+	}
+
+	// Record successful verification for rate limiting
+	if s.loginRateLimiter != nil && rateLimitKey != "" {
+		s.loginRateLimiter.RecordSuccess(rateLimitKey)
 	}
 
 	// Enable TOTP
@@ -1340,6 +1419,23 @@ func (s *Server) handleOrgEnableMyTOTP(w http.ResponseWriter, r *http.Request, o
 
 // handleOrgDisableMyTOTP disables TOTP for the current user (requires current TOTP code)
 func (s *Server) handleOrgDisableMyTOTP(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	if !validateOrgJSONRequest(w, r) {
+		return
+	}
+
+	// Apply rate limiting to prevent TOTP brute force attacks
+	var rateLimitKey string
+	if s.loginRateLimiter != nil {
+		clientIP := auth.GetClientIP(r)
+		rateLimitKey = auth.IPRateLimitKey(clientIP)
+		allowed, retryAfter := s.loginRateLimiter.Allow(rateLimitKey)
+		if !allowed {
+			w.Header().Set("Retry-After", fmt.Sprintf("%d", int(retryAfter.Seconds())))
+			jsonError(w, "Too many attempts. Please try again later.", http.StatusTooManyRequests)
+			return
+		}
+	}
+
 	var req struct {
 		Code string `json:"code"`
 	}
@@ -1376,8 +1472,18 @@ func (s *Server) handleOrgDisableMyTOTP(w http.ResponseWriter, r *http.Request, 
 
 	// Validate the code to authorize disabling
 	if !auth.ValidateTOTPWithWindow(secret, req.Code) {
+		// Record failed attempt for rate limiting
+		if s.loginRateLimiter != nil && rateLimitKey != "" {
+			s.loginRateLimiter.RecordFailure(rateLimitKey)
+		}
+		log.Printf("Invalid TOTP code for org user from IP: %s", auth.GetClientIP(r))
 		jsonError(w, "Invalid TOTP code", http.StatusUnauthorized)
 		return
+	}
+
+	// Record successful verification for rate limiting
+	if s.loginRateLimiter != nil && rateLimitKey != "" {
+		s.loginRateLimiter.RecordSuccess(rateLimitKey)
 	}
 
 	// Disable TOTP
@@ -1463,6 +1569,10 @@ func (s *Server) handleOrgGetAccount(w http.ResponseWriter, r *http.Request, org
 // handleOrgCreateAccount creates a new account in the organization (org admin only)
 func (s *Server) handleOrgCreateAccount(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
 	if !s.requireOrgAdmin(w, orgCtx) {
+		return
+	}
+
+	if !validateOrgJSONRequest(w, r) {
 		return
 	}
 
@@ -1559,6 +1669,10 @@ func (s *Server) handleOrgUpdateAccount(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
+	if !validateOrgJSONRequest(w, r) {
+		return
+	}
+
 	var req struct {
 		Username string `json:"username"`
 	}
@@ -1610,6 +1724,10 @@ func (s *Server) handleOrgSetAccountPassword(w http.ResponseWriter, r *http.Requ
 	}
 	if account == nil {
 		jsonError(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	if !validateOrgJSONRequest(w, r) {
 		return
 	}
 
@@ -1708,6 +1826,10 @@ func (s *Server) handleOrgSetAccountOrgAdmin(w http.ResponseWriter, r *http.Requ
 	}
 	if account == nil {
 		jsonError(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	if !validateOrgJSONRequest(w, r) {
 		return
 	}
 
