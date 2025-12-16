@@ -140,7 +140,7 @@ func (db *DB) GetFailedAuthAttemptsForApp(appID, sourceIP string, since time.Tim
 }
 
 func scanAuditEvents(rows *sql.Rows) ([]*AuditEvent, error) {
-	var events []*AuditEvent
+	events := []*AuditEvent{}
 	for rows.Next() {
 		event := &AuditEvent{}
 		var orgID, appID, failureReason, userIdentity, keyID sql.NullString
