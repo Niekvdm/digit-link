@@ -1,0 +1,25 @@
+apiVersion: argocd-image-updater.argoproj.io/v1alpha1
+kind: ImageUpdater
+metadata:
+  name: digit-link-updater
+  namespace: argocd-image-updater-system
+spec:
+  # Reference to the ArgoCD Application
+  applicationRef:
+    name: digit-link
+    namespace: argocd
+
+  # Images to track and update
+  images:
+    - name: app
+      image: ghcr.io/niekvdm/digit-link
+      updateStrategy:
+        type: digest  # Track digest changes for :latest tag
+      # Path to the container in the deployment
+      containerName: digit-link
+
+  # Write back method - update git repo with new image
+  writeBack:
+    method: git
+    git:
+      branch: HEAD

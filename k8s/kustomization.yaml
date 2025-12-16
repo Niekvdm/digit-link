@@ -9,3 +9,5 @@ resources:
   - ingress.yaml
   # Optional: Pre-configure admin token (copy secrets.yaml.example to secrets.yaml)
   # - secrets.yaml
+  # ArgoCD Image Updater CR (v1.0+)
+  - image-updater.yaml

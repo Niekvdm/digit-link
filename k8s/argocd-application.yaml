@@ -3,10 +3,8 @@ kind: Application
 metadata:
   name: digit-link
   namespace: argocd
-  annotations:
-    argocd-image-updater.argoproj.io/image-list: app=ghcr.io/niekvdm/digit-link
-    argocd-image-updater.argoproj.io/app.update-strategy: latest
-    argocd-image-updater.argoproj.io/write-back-method: git
+  # Note: Image updater annotations removed - using ImageUpdater CR (v1.0+)
+  # See image-updater.yaml for configuration
 spec:
   project: default
   source:
