@@ -14,13 +14,85 @@ interface AccountResponse {
   account: Account
 }
 
+interface TOTPSetupResponse {
+  success: boolean
+  secret?: string
+  url?: string
+  error?: string
+}
+
+interface TOTPResponse {
+  success: boolean
+  error?: string
+}
+
 export function useAccounts() {
   const api = useApi()
   
   const accounts = ref<Account[]>([])
   const currentAccount = ref<Account | null>(null)
+  const myAccount = ref<Account | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
+
+  // ============================================
+  // Admin Self-Management
+  // ============================================
+
+  async function fetchMyAccount() {
+    loading.value = true
+    error.value = null
+    
+    try {
+      const res = await api.get<AccountResponse>('/admin/me')
+      myAccount.value = res.account
+      return res.account
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : 'Failed to load account'
+      throw e
+    } finally {
+      loading.value = false
+    }
+  }
+
+  async function setMyPassword(password: string) {
+    await api.put('/admin/me/password', { password })
+    if (myAccount.value) {
+      myAccount.value = { ...myAccount.value, hasPassword: true }
+    }
+  }
+
+  async function setupMyTOTP() {
+    const res = await api.get<TOTPSetupResponse>('/admin/me/totp/setup')
+    if (!res.success) {
+      throw new Error(res.error || 'Failed to setup TOTP')
+    }
+    return { secret: res.secret!, url: res.url! }
+  }
+
+  async function enableMyTOTP(code: string) {
+    const res = await api.post<TOTPResponse>('/admin/me/totp/setup', { code })
+    if (!res.success) {
+      throw new Error(res.error || 'Failed to enable TOTP')
+    }
+    if (myAccount.value) {
+      myAccount.value = { ...myAccount.value, totpEnabled: true }
+    }
+  }
+
+  async function disableMyTOTP(code: string) {
+    const res = await api.del<TOTPResponse>('/admin/me/totp', { code })
+    if (!res.success) {
+      throw new Error(res.error || 'Failed to disable TOTP')
+    }
+    if (myAccount.value) {
+      myAccount.value = { ...myAccount.value, totpEnabled: false }
+    }
+  }
+
+  // ============================================
+  // Account Management (managing other accounts)
+  // ============================================
 
   async function fetchAll() {
     loading.value = true
@@ -129,6 +201,16 @@ export function useAccounts() {
     }
   }
 
+  async function resetTOTP(accountId: string) {
+    await api.del(`/admin/accounts/${accountId}/totp`)
+    accounts.value = accounts.value.map(acc => 
+      acc.id === accountId ? { ...acc, totpEnabled: false } : acc
+    )
+    if (currentAccount.value?.id === accountId) {
+      currentAccount.value = { ...currentAccount.value, totpEnabled: false }
+    }
+  }
+
   async function hardDelete(accountId: string) {
     await api.del(`/admin/accounts/${accountId}/hard`)
     accounts.value = accounts.value.filter(acc => acc.id !== accountId)
@@ -138,10 +220,21 @@ export function useAccounts() {
   }
 
   return {
+    // State
     accounts: readonly(accounts),
     currentAccount: readonly(currentAccount),
+    myAccount: readonly(myAccount),
     loading: readonly(loading),
     error: readonly(error),
+    
+    // Admin self-management
+    fetchMyAccount,
+    setMyPassword,
+    setupMyTOTP,
+    enableMyTOTP,
+    disableMyTOTP,
+    
+    // Account management (other accounts)
     fetchAll,
     fetchOne,
     create,
@@ -152,6 +245,7 @@ export function useAccounts() {
     setPassword,
     updateUsername,
     setOrgAdmin,
+    resetTOTP,
     hardDelete
   }
 }

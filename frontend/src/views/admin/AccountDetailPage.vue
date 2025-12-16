@@ -17,16 +17,18 @@ import {
   Lock, 
   Crown, 
   Shield,
+  ShieldOff,
   UserCheck,
   Building2,
   Trash2,
   AlertTriangle,
-  Key
+  Key,
+  CheckCircle
 } from 'lucide-vue-next'
 
 const route = useRoute()
 const router = useRouter()
-const { currentAccount, loading, error, fetchOne, updateUsername, setPassword, regenerateToken, setOrganization, setOrgAdmin, activate, remove, hardDelete } = useAccounts()
+const { currentAccount, loading, error, fetchOne, updateUsername, setPassword, regenerateToken, setOrganization, setOrgAdmin, activate, remove, hardDelete, resetTOTP } = useAccounts()
 const { organizations, fetchAll: fetchOrgs } = useOrganizations()
 const { formatDate } = useFormatters()
 
@@ -39,6 +41,7 @@ const formOrgId = ref('')
 const editingUsername = ref(false)
 const saving = ref(false)
 const formError = ref('')
+const successMessage = ref('')
 
 // Modals
 const showPasswordModal = ref(false)
@@ -46,6 +49,7 @@ const showOrgModal = ref(false)
 const showTokenModal = ref(false)
 const showDeactivateConfirm = ref(false)
 const showHardDeleteConfirm = ref(false)
+const showResetTOTPConfirm = ref(false)
 const hardDeleteConfirmText = ref('')
 const generatedToken = ref('')
 
@@ -199,6 +203,18 @@ async function handleHardDelete() {
   }
 }
 
+// Reset TOTP
+async function handleResetTOTP() {
+  try {
+    await resetTOTP(accountId.value)
+    showResetTOTPConfirm.value = false
+    successMessage.value = 'Two-factor authentication has been reset'
+    setTimeout(() => { successMessage.value = '' }, 5000)
+  } catch (e) {
+    console.error('Failed to reset TOTP:', e)
+  }
+}
+
 // Helper to get role display
 const roleDisplay = computed(() => {
   if (!currentAccount.value) return { label: 'User', class: 'bg-bg-elevated text-text-secondary' }
@@ -232,6 +248,15 @@ const roleDisplay = computed(() => {
     <!-- Error -->
     <div v-else-if="error" class="error-message mb-4">
       {{ error }}
+    </div>
+
+    <!-- Success message -->
+    <div 
+      v-if="successMessage" 
+      class="flex items-center gap-3 py-4 px-5 bg-[rgba(var(--accent-secondary-rgb),0.1)] border border-[rgba(var(--accent-secondary-rgb),0.3)] rounded-xs text-[0.9375rem] text-accent-secondary mb-6"
+    >
+      <CheckCircle class="w-5 h-5" />
+      {{ successMessage }}
     </div>
 
     <!-- Content -->
@@ -346,12 +371,12 @@ const roleDisplay = computed(() => {
               </div>
             </div>
             <button 
-              class="relative w-12 h-6 rounded-full transition-colors duration-200 cursor-pointer border-none"
+              class="relative w-12 h-6 rounded-sm transition-colors duration-200 cursor-pointer border-none"
               :class="currentAccount.isOrgAdmin ? 'bg-accent-amber' : 'bg-bg-deep'"
               @click="toggleOrgAdmin"
             >
               <span 
-                class="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200"
+                class="absolute top-0.5 w-5 h-5 rounded-sm bg-white shadow transition-transform duration-200"
                 :class="currentAccount.isOrgAdmin ? 'left-[26px]' : 'left-0.5'"
               />
             </button>
@@ -364,15 +389,56 @@ const roleDisplay = computed(() => {
         <div class="p-4 border-b border-border-subtle bg-bg-elevated">
           <h3 class="text-base font-semibold text-text-primary m-0">Authentication</h3>
         </div>
-        <div class="p-6 flex flex-wrap gap-3">
-          <button class="btn btn-secondary" @click="openPasswordModal">
-            <Lock class="w-4 h-4" />
-            {{ currentAccount.hasPassword ? 'Change Password' : 'Set Password' }}
-          </button>
-          <button class="btn btn-secondary" @click="handleRegenerateToken">
-            <RotateCcw class="w-4 h-4" />
-            Regenerate Token
-          </button>
+        <div class="p-6">
+          <!-- TOTP Status -->
+          <div class="flex items-center justify-between mb-6 pb-6 border-b border-border-subtle">
+            <div class="flex items-center gap-4">
+              <div 
+                class="w-10 h-10 rounded-xs flex items-center justify-center shrink-0"
+                :class="currentAccount.totpEnabled 
+                  ? 'bg-[rgba(var(--accent-secondary-rgb),0.15)] text-accent-secondary'
+                  : 'bg-bg-deep text-text-muted'"
+              >
+                <Shield class="w-5 h-5" />
+              </div>
+              <div>
+                <p class="text-sm font-medium text-text-primary m-0">Two-Factor Authentication</p>
+                <p class="text-xs text-text-secondary mt-0.5 mb-0">
+                  {{ currentAccount.totpEnabled ? 'Enabled - Account is protected with TOTP' : 'Disabled - No two-factor authentication' }}
+                </p>
+              </div>
+            </div>
+            <div class="flex items-center gap-3">
+              <span 
+                class="text-xs font-medium py-1 px-2 rounded"
+                :class="currentAccount.totpEnabled 
+                  ? 'bg-[rgba(var(--accent-secondary-rgb),0.15)] text-accent-secondary' 
+                  : 'bg-bg-elevated text-text-muted'"
+              >
+                {{ currentAccount.totpEnabled ? 'Enabled' : 'Disabled' }}
+              </span>
+              <button 
+                v-if="currentAccount.totpEnabled"
+                class="btn btn-sm btn-danger"
+                @click="showResetTOTPConfirm = true"
+              >
+                <ShieldOff class="w-4 h-4" />
+                Reset TOTP
+              </button>
+            </div>
+          </div>
+          
+          <!-- Other auth actions -->
+          <div class="flex flex-wrap gap-3">
+            <button class="btn btn-secondary" @click="openPasswordModal">
+              <Lock class="w-4 h-4" />
+              {{ currentAccount.hasPassword ? 'Change Password' : 'Set Password' }}
+            </button>
+            <button class="btn btn-secondary" @click="handleRegenerateToken">
+              <RotateCcw class="w-4 h-4" />
+              Regenerate Token
+            </button>
+          </div>
         </div>
       </div>
 
@@ -564,5 +630,15 @@ const roleDisplay = computed(() => {
         </button>
       </template>
     </Modal>
+
+    <!-- Reset TOTP Confirmation -->
+    <ConfirmDialog
+      v-model="showResetTOTPConfirm"
+      title="Reset Two-Factor Authentication"
+      :message="`Are you sure you want to reset TOTP for '${currentAccount?.username}'? They will need to set up two-factor authentication again on their next login.`"
+      confirm-text="Reset TOTP"
+      variant="danger"
+      @confirm="handleResetTOTP"
+    />
   </div>
 </template>

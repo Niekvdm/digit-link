@@ -118,7 +118,8 @@ function toggleProfileMenu() {
 }
 
 function goToMyAccount() {
-  router.push({ name: 'org-my-account' })
+  const routeName = isAdmin.value ? 'admin-my-account' : 'org-my-account'
+  router.push({ name: routeName })
   profileMenuOpen.value = false
   mobileMenuOpen.value = false
 }
@@ -303,9 +304,8 @@ onUnmounted(() => {
               class="profile-menu"
               :class="{ 'profile-menu--collapsed': sidebarCollapsed }"
             >
-              <!-- My Account (org users only) -->
+              <!-- My Account (for all users) -->
               <button 
-                v-if="!isAdmin"
                 class="profile-menu-item"
                 @click="goToMyAccount"
               >

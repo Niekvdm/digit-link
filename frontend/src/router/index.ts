@@ -13,6 +13,7 @@ const AdminApplications = () => import('@/views/admin/ApplicationsPage.vue')
 const AdminApplicationDetail = () => import('@/views/admin/ApplicationDetailPage.vue')
 const AdminAccounts = () => import('@/views/admin/AccountsPage.vue')
 const AdminAccountDetail = () => import('@/views/admin/AccountDetailPage.vue')
+const AdminMyAccount = () => import('@/views/admin/MyAccountPage.vue')
 const AdminAPIKeys = () => import('@/views/admin/APIKeysPage.vue')
 const AdminWhitelist = () => import('@/views/admin/WhitelistPage.vue')
 const AdminTunnels = () => import('@/views/admin/TunnelsPage.vue')
@@ -81,6 +82,11 @@ const routes: RouteRecordRaw[] = [
         name: 'admin-account-detail',
         component: AdminAccountDetail,
         props: true
+      },
+      {
+        path: 'my-account',
+        name: 'admin-my-account',
+        component: AdminMyAccount
       },
       {
         path: 'api-keys',

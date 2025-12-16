@@ -297,12 +297,12 @@ async function handleHardDelete() {
             </div>
           </div>
           <button 
-            class="relative w-12 h-6 rounded-full transition-colors duration-200 cursor-pointer border-none"
+            class="relative w-12 h-6 rounded-sm transition-colors duration-200 cursor-pointer border-none"
             :class="currentAccount.isOrgAdmin ? 'bg-accent-amber' : 'bg-bg-deep'"
             @click="toggleOrgAdmin"
           >
             <span 
-              class="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200"
+              class="absolute top-0.5 w-5 h-5 rounded-sm bg-white shadow transition-transform duration-200"
               :class="currentAccount.isOrgAdmin ? 'left-[26px]' : 'left-0.5'"
             />
           </button>

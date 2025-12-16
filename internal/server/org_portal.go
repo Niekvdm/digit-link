@@ -92,6 +92,12 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 		s.handleOrgUpdateMyAccount(w, r, orgCtx)
 	case path == "/accounts/me/password" && r.Method == http.MethodPut:
 		s.handleOrgSetMyPassword(w, r, orgCtx)
+	case path == "/accounts/me/totp/setup" && r.Method == http.MethodGet:
+		s.handleOrgGetMyTOTPSetup(w, r, orgCtx)
+	case path == "/accounts/me/totp/setup" && r.Method == http.MethodPost:
+		s.handleOrgEnableMyTOTP(w, r, orgCtx)
+	case path == "/accounts/me/totp" && r.Method == http.MethodDelete:
+		s.handleOrgDisableMyTOTP(w, r, orgCtx)
 	case path == "/accounts" && r.Method == http.MethodGet:
 		s.handleOrgListAccounts(w, r, orgCtx)
 	case path == "/accounts" && r.Method == http.MethodPost:
@@ -1217,6 +1223,153 @@ func (s *Server) handleOrgSetMyPassword(w http.ResponseWriter, r *http.Request, 
 	}
 
 	log.Printf("Org user %s changed their password", orgCtx.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
+}
+
+// handleOrgGetMyTOTPSetup generates a new TOTP secret for the current user
+func (s *Server) handleOrgGetMyTOTPSetup(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	// Generate TOTP secret
+	totpKey, err := auth.GenerateTOTPSecret(orgCtx.Username)
+	if err != nil {
+		log.Printf("Failed to generate TOTP secret: %v", err)
+		jsonError(w, "Failed to generate TOTP", http.StatusInternalServerError)
+		return
+	}
+
+	// Encrypt and store the secret (but don't enable yet)
+	encryptedSecret, err := auth.EncryptTOTPSecret(totpKey.Secret)
+	if err != nil {
+		log.Printf("Failed to encrypt TOTP secret: %v", err)
+		jsonError(w, "Failed to setup TOTP", http.StatusInternalServerError)
+		return
+	}
+
+	// Store the secret (not enabled until verified)
+	if err := s.db.UpdateAccountTOTP(orgCtx.AccountID, encryptedSecret, false); err != nil {
+		log.Printf("Failed to store TOTP secret: %v", err)
+		jsonError(w, "Failed to setup TOTP", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"secret":  totpKey.Secret,
+		"url":     totpKey.URL,
+	})
+}
+
+// handleOrgEnableMyTOTP verifies the TOTP code and enables TOTP for the current user
+func (s *Server) handleOrgEnableMyTOTP(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	var req struct {
+		Code string `json:"code"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Code == "" || len(req.Code) != 6 {
+		jsonError(w, "Valid 6-digit code required", http.StatusBadRequest)
+		return
+	}
+
+	// Get account
+	account, err := s.db.GetAccountByID(orgCtx.AccountID)
+	if err != nil || account == nil {
+		jsonError(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	if account.TOTPSecret == "" {
+		jsonError(w, "TOTP setup not initiated. Call GET /accounts/me/totp/setup first", http.StatusBadRequest)
+		return
+	}
+
+	// Decrypt the TOTP secret
+	secret, err := auth.DecryptTOTPSecret(account.TOTPSecret)
+	if err != nil {
+		log.Printf("Failed to decrypt TOTP secret: %v", err)
+		jsonError(w, "Failed to verify TOTP", http.StatusInternalServerError)
+		return
+	}
+
+	// Validate the code
+	if !auth.ValidateTOTPWithWindow(secret, req.Code) {
+		jsonError(w, "Invalid TOTP code", http.StatusUnauthorized)
+		return
+	}
+
+	// Enable TOTP
+	if err := s.db.UpdateAccountTOTP(orgCtx.AccountID, account.TOTPSecret, true); err != nil {
+		log.Printf("Failed to enable TOTP: %v", err)
+		jsonError(w, "Failed to enable TOTP", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("TOTP enabled for org user: %s", orgCtx.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
+}
+
+// handleOrgDisableMyTOTP disables TOTP for the current user (requires current TOTP code)
+func (s *Server) handleOrgDisableMyTOTP(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	var req struct {
+		Code string `json:"code"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Code == "" || len(req.Code) != 6 {
+		jsonError(w, "Valid 6-digit code required", http.StatusBadRequest)
+		return
+	}
+
+	// Get account
+	account, err := s.db.GetAccountByID(orgCtx.AccountID)
+	if err != nil || account == nil {
+		jsonError(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	if !account.TOTPEnabled || account.TOTPSecret == "" {
+		jsonError(w, "TOTP is not enabled", http.StatusBadRequest)
+		return
+	}
+
+	// Decrypt the TOTP secret
+	secret, err := auth.DecryptTOTPSecret(account.TOTPSecret)
+	if err != nil {
+		log.Printf("Failed to decrypt TOTP secret: %v", err)
+		jsonError(w, "Failed to verify TOTP", http.StatusInternalServerError)
+		return
+	}
+
+	// Validate the code to authorize disabling
+	if !auth.ValidateTOTPWithWindow(secret, req.Code) {
+		jsonError(w, "Invalid TOTP code", http.StatusUnauthorized)
+		return
+	}
+
+	// Disable TOTP
+	if err := s.db.UpdateAccountTOTP(orgCtx.AccountID, "", false); err != nil {
+		log.Printf("Failed to disable TOTP: %v", err)
+		jsonError(w, "Failed to disable TOTP", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("TOTP disabled for org user: %s", orgCtx.Username)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{

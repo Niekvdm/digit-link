@@ -29,6 +29,18 @@ interface RegenerateTokenResponse {
   error?: string
 }
 
+interface TOTPSetupResponse {
+  success: boolean
+  secret?: string
+  url?: string
+  error?: string
+}
+
+interface TOTPResponse {
+  success: boolean
+  error?: string
+}
+
 export function useOrgAccounts() {
   const api = useApi()
   
@@ -69,6 +81,34 @@ export function useOrgAccounts() {
     await api.put('/org/accounts/me/password', { password })
     if (myAccount.value) {
       myAccount.value = { ...myAccount.value, hasPassword: true }
+    }
+  }
+
+  async function setupMyTOTP() {
+    const res = await api.get<TOTPSetupResponse>('/org/accounts/me/totp/setup')
+    if (!res.success) {
+      throw new Error(res.error || 'Failed to setup TOTP')
+    }
+    return { secret: res.secret!, url: res.url! }
+  }
+
+  async function enableMyTOTP(code: string) {
+    const res = await api.post<TOTPResponse>('/org/accounts/me/totp/setup', { code })
+    if (!res.success) {
+      throw new Error(res.error || 'Failed to enable TOTP')
+    }
+    if (myAccount.value) {
+      myAccount.value = { ...myAccount.value, totpEnabled: true }
+    }
+  }
+
+  async function disableMyTOTP(code: string) {
+    const res = await api.del<TOTPResponse>('/org/accounts/me/totp', { code })
+    if (!res.success) {
+      throw new Error(res.error || 'Failed to disable TOTP')
+    }
+    if (myAccount.value) {
+      myAccount.value = { ...myAccount.value, totpEnabled: false }
     }
   }
 
@@ -193,6 +233,9 @@ export function useOrgAccounts() {
     fetchMyAccount,
     updateMyAccount,
     setMyPassword,
+    setupMyTOTP,
+    enableMyTOTP,
+    disableMyTOTP,
     
     // Org admin
     fetchAll,

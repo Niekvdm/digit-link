@@ -45,7 +45,7 @@ const iconSizeClass = computed(() => {
 
 <template>
   <span 
-    class="inline-flex items-center gap-1.5 rounded-full font-medium whitespace-nowrap"
+    class="inline-flex items-center gap-1.5 rounded-sm font-medium whitespace-nowrap"
     :class="[colorClasses, sizeClasses]"
   >
     <component :is="statusConfig.icon" :class="iconSizeClass" />

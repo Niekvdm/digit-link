@@ -32,6 +32,18 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/admin")
 
 	switch {
+	// Self-management endpoints (admin's own account)
+	case path == "/me" && r.Method == http.MethodGet:
+		s.handleAdminGetMe(w, r, account)
+	case path == "/me/password" && r.Method == http.MethodPut:
+		s.handleAdminSetMyPassword(w, r, account)
+	case path == "/me/totp/setup" && r.Method == http.MethodGet:
+		s.handleAdminGetMyTOTPSetup(w, r, account)
+	case path == "/me/totp/setup" && r.Method == http.MethodPost:
+		s.handleAdminEnableMyTOTP(w, r, account)
+	case path == "/me/totp" && r.Method == http.MethodDelete:
+		s.handleAdminDisableMyTOTP(w, r, account)
+
 	// Account management
 	case path == "/accounts" && r.Method == http.MethodGet:
 		s.handleListAccounts(w, r)
@@ -58,6 +70,9 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(path, "/accounts/") && strings.HasSuffix(path, "/org-admin") && r.Method == http.MethodPut:
 		accountID := strings.TrimSuffix(strings.TrimPrefix(path, "/accounts/"), "/org-admin")
 		s.handleSetAccountOrgAdmin(w, r, accountID)
+	case strings.HasPrefix(path, "/accounts/") && strings.HasSuffix(path, "/totp") && r.Method == http.MethodDelete:
+		accountID := strings.TrimSuffix(strings.TrimPrefix(path, "/accounts/"), "/totp")
+		s.handleResetAccountTOTP(w, r, accountID)
 	case strings.HasPrefix(path, "/accounts/") && r.Method == http.MethodGet:
 		accountID := strings.TrimPrefix(path, "/accounts/")
 		s.handleGetAccount(w, r, accountID)
@@ -215,6 +230,241 @@ func (s *Server) authenticateAdmin(r *http.Request) (*struct {
 		Username: account.Username,
 		IsAdmin:  account.IsAdmin,
 	}, nil
+}
+
+// ============================================
+// Admin Self-Management Handlers
+// ============================================
+
+// handleAdminGetMe returns the current admin's account info
+func (s *Server) handleAdminGetMe(w http.ResponseWriter, r *http.Request, admin *struct {
+	ID       string
+	Username string
+	IsAdmin  bool
+}) {
+	account, err := s.db.GetAccountByID(admin.ID)
+	if err != nil {
+		log.Printf("Failed to get admin account: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if account == nil {
+		jsonError(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"account": map[string]interface{}{
+			"id":          account.ID,
+			"username":    account.Username,
+			"isAdmin":     account.IsAdmin,
+			"totpEnabled": account.TOTPEnabled,
+			"createdAt":   account.CreatedAt,
+			"lastUsed":    account.LastUsed,
+			"hasPassword": account.PasswordHash != "",
+		},
+	})
+}
+
+// handleAdminSetMyPassword sets the current admin's password
+func (s *Server) handleAdminSetMyPassword(w http.ResponseWriter, r *http.Request, admin *struct {
+	ID       string
+	Username string
+	IsAdmin  bool
+}) {
+	var req struct {
+		Password string `json:"password"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Password == "" || len(req.Password) < 8 {
+		jsonError(w, "Password must be at least 8 characters", http.StatusBadRequest)
+		return
+	}
+
+	passwordHash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		log.Printf("Failed to hash password: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	if err := s.db.UpdateAccountPassword(admin.ID, passwordHash); err != nil {
+		log.Printf("Failed to set password: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Admin %s changed their password", admin.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
+}
+
+// handleAdminGetMyTOTPSetup generates a new TOTP secret for the current admin
+func (s *Server) handleAdminGetMyTOTPSetup(w http.ResponseWriter, r *http.Request, admin *struct {
+	ID       string
+	Username string
+	IsAdmin  bool
+}) {
+	// Generate TOTP secret
+	totpKey, err := auth.GenerateTOTPSecret(admin.Username)
+	if err != nil {
+		log.Printf("Failed to generate TOTP secret: %v", err)
+		jsonError(w, "Failed to generate TOTP", http.StatusInternalServerError)
+		return
+	}
+
+	// Encrypt and store the secret (but don't enable yet)
+	encryptedSecret, err := auth.EncryptTOTPSecret(totpKey.Secret)
+	if err != nil {
+		log.Printf("Failed to encrypt TOTP secret: %v", err)
+		jsonError(w, "Failed to setup TOTP", http.StatusInternalServerError)
+		return
+	}
+
+	// Store the secret (not enabled until verified)
+	if err := s.db.UpdateAccountTOTP(admin.ID, encryptedSecret, false); err != nil {
+		log.Printf("Failed to store TOTP secret: %v", err)
+		jsonError(w, "Failed to setup TOTP", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"secret":  totpKey.Secret,
+		"url":     totpKey.URL,
+	})
+}
+
+// handleAdminEnableMyTOTP verifies the TOTP code and enables TOTP for the current admin
+func (s *Server) handleAdminEnableMyTOTP(w http.ResponseWriter, r *http.Request, admin *struct {
+	ID       string
+	Username string
+	IsAdmin  bool
+}) {
+	var req struct {
+		Code string `json:"code"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Code == "" || len(req.Code) != 6 {
+		jsonError(w, "Valid 6-digit code required", http.StatusBadRequest)
+		return
+	}
+
+	// Get account
+	account, err := s.db.GetAccountByID(admin.ID)
+	if err != nil || account == nil {
+		jsonError(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	if account.TOTPSecret == "" {
+		jsonError(w, "TOTP setup not initiated. Call GET /admin/me/totp/setup first", http.StatusBadRequest)
+		return
+	}
+
+	// Decrypt the TOTP secret
+	secret, err := auth.DecryptTOTPSecret(account.TOTPSecret)
+	if err != nil {
+		log.Printf("Failed to decrypt TOTP secret: %v", err)
+		jsonError(w, "Failed to verify TOTP", http.StatusInternalServerError)
+		return
+	}
+
+	// Validate the code
+	if !auth.ValidateTOTPWithWindow(secret, req.Code) {
+		jsonError(w, "Invalid TOTP code", http.StatusUnauthorized)
+		return
+	}
+
+	// Enable TOTP
+	if err := s.db.UpdateAccountTOTP(admin.ID, account.TOTPSecret, true); err != nil {
+		log.Printf("Failed to enable TOTP: %v", err)
+		jsonError(w, "Failed to enable TOTP", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("TOTP enabled for admin: %s", admin.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
+}
+
+// handleAdminDisableMyTOTP disables TOTP for the current admin (requires current TOTP code)
+func (s *Server) handleAdminDisableMyTOTP(w http.ResponseWriter, r *http.Request, admin *struct {
+	ID       string
+	Username string
+	IsAdmin  bool
+}) {
+	var req struct {
+		Code string `json:"code"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if req.Code == "" || len(req.Code) != 6 {
+		jsonError(w, "Valid 6-digit code required", http.StatusBadRequest)
+		return
+	}
+
+	// Get account
+	account, err := s.db.GetAccountByID(admin.ID)
+	if err != nil || account == nil {
+		jsonError(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	if !account.TOTPEnabled || account.TOTPSecret == "" {
+		jsonError(w, "TOTP is not enabled", http.StatusBadRequest)
+		return
+	}
+
+	// Decrypt the TOTP secret
+	secret, err := auth.DecryptTOTPSecret(account.TOTPSecret)
+	if err != nil {
+		log.Printf("Failed to decrypt TOTP secret: %v", err)
+		jsonError(w, "Failed to verify TOTP", http.StatusInternalServerError)
+		return
+	}
+
+	// Validate the code to authorize disabling
+	if !auth.ValidateTOTPWithWindow(secret, req.Code) {
+		jsonError(w, "Invalid TOTP code", http.StatusUnauthorized)
+		return
+	}
+
+	// Disable TOTP
+	if err := s.db.UpdateAccountTOTP(admin.ID, "", false); err != nil {
+		log.Printf("Failed to disable TOTP: %v", err)
+		jsonError(w, "Failed to disable TOTP", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("TOTP disabled for admin: %s", admin.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
 }
 
 // handleListAccounts returns all accounts
@@ -686,6 +936,35 @@ func (s *Server) handleSetAccountOrgAdmin(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":    true,
 		"isOrgAdmin": req.IsOrgAdmin,
+	})
+}
+
+// handleResetAccountTOTP disables TOTP for an account (admin only)
+func (s *Server) handleResetAccountTOTP(w http.ResponseWriter, r *http.Request, accountID string) {
+	// Check account exists
+	account, err := s.db.GetAccountByID(accountID)
+	if err != nil {
+		log.Printf("Failed to get account: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if account == nil {
+		jsonError(w, "Account not found", http.StatusNotFound)
+		return
+	}
+
+	// Disable TOTP for the account
+	if err := s.db.UpdateAccountTOTP(accountID, "", false); err != nil {
+		log.Printf("Failed to reset TOTP: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("TOTP reset for account: %s (%s)", accountID, account.Username)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
 	})
 }
 

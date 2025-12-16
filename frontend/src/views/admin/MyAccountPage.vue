@@ -3,18 +3,14 @@ import { ref, onMounted, watch } from 'vue'
 import { 
   PageHeader, 
   Modal, 
-  ConfirmDialog,
   StatusBadge,
   LoadingSpinner
 } from '@/components/ui'
-import { useOrgAccounts } from '@/composables/api'
+import { useAccounts } from '@/composables/api'
 import { useFormatters } from '@/composables/useFormatters'
 import { 
-  User,
   Save, 
   Lock, 
-  Crown, 
-  UserCheck,
   Key,
   CheckCircle,
   Shield,
@@ -22,14 +18,11 @@ import {
   AlertCircle
 } from 'lucide-vue-next'
 
-const { myAccount, loading, error, fetchMyAccount, updateMyAccount, setMyPassword, setupMyTOTP, enableMyTOTP, disableMyTOTP } = useOrgAccounts()
+const { myAccount, loading, error, fetchMyAccount, setMyPassword, setupMyTOTP, enableMyTOTP, disableMyTOTP } = useAccounts()
 const { formatDate } = useFormatters()
 
 // Form state
-const formUsername = ref('')
 const formPassword = ref('')
-const formCurrentPassword = ref('')
-const editingUsername = ref(false)
 const saving = ref(false)
 const formError = ref('')
 const successMessage = ref('')
@@ -50,51 +43,14 @@ const disableTotpCode = ref('')
 onMounted(async () => {
   try {
     await fetchMyAccount()
-    if (myAccount.value) {
-      formUsername.value = myAccount.value.username
-    }
   } catch {
     // Error handled by composable
   }
 })
 
-// Username editing
-function startEditingUsername() {
-  formUsername.value = myAccount.value?.username || ''
-  editingUsername.value = true
-}
-
-function cancelEditingUsername() {
-  formUsername.value = myAccount.value?.username || ''
-  editingUsername.value = false
-}
-
-async function saveUsername() {
-  if (!formUsername.value.trim()) {
-    formError.value = 'Username is required'
-    return
-  }
-  
-  saving.value = true
-  formError.value = ''
-  successMessage.value = ''
-  
-  try {
-    await updateMyAccount(formUsername.value.trim())
-    editingUsername.value = false
-    successMessage.value = 'Username updated successfully'
-    setTimeout(() => { successMessage.value = '' }, 5000)
-  } catch (e) {
-    formError.value = e instanceof Error ? e.message : 'Failed to update username'
-  } finally {
-    saving.value = false
-  }
-}
-
 // Password
 function openPasswordModal() {
   formPassword.value = ''
-  formCurrentPassword.value = ''
   formError.value = ''
   showPasswordModal.value = true
 }
@@ -209,7 +165,7 @@ function copySecret() {
   <div class="max-w-[800px]">
     <PageHeader 
       title="My Account" 
-      description="Manage your personal account settings"
+      description="Manage your administrator account settings"
     />
 
     <!-- Loading -->
@@ -236,54 +192,16 @@ function copySecret() {
       <!-- Account Info Card -->
       <div class="bg-bg-surface border border-border-subtle rounded-xs overflow-hidden mb-6">
         <div class="flex gap-4 p-6 border-b border-border-subtle bg-bg-elevated">
-          <div 
-            class="w-12 h-12 rounded-xs flex items-center justify-center shrink-0"
-            :class="myAccount.isOrgAdmin 
-              ? 'bg-[rgba(var(--accent-amber-rgb),0.15)] text-accent-amber'
-              : 'bg-[rgba(var(--accent-secondary-rgb),0.15)] text-accent-secondary'"
-          >
-            <Crown v-if="myAccount.isOrgAdmin" class="w-6 h-6" />
-            <UserCheck v-else class="w-6 h-6" />
+          <div class="w-12 h-12 rounded-xs flex items-center justify-center shrink-0 bg-[rgba(var(--accent-primary-rgb),0.15)] text-accent-primary">
+            <Shield class="w-6 h-6" />
           </div>
           <div class="flex-1">
             <div class="flex items-center gap-3 mb-1">
-              <template v-if="editingUsername">
-                <input 
-                  v-model="formUsername" 
-                  type="text" 
-                  class="form-input py-1.5 text-lg font-semibold"
-                  @keyup.enter="saveUsername"
-                  @keyup.escape="cancelEditingUsername"
-                />
-                <button class="btn btn-sm btn-primary" @click="saveUsername" :disabled="saving">
-                  <Save class="w-4 h-4" />
-                </button>
-                <button class="btn btn-sm btn-secondary" @click="cancelEditingUsername">
-                  Cancel
-                </button>
-              </template>
-              <template v-else>
-                <h2 class="text-lg font-semibold text-text-primary m-0">{{ myAccount.username }}</h2>
-                <button 
-                  class="text-xs text-accent-secondary hover:underline cursor-pointer bg-transparent border-none"
-                  @click="startEditingUsername"
-                >
-                  Edit
-                </button>
-              </template>
+              <h2 class="text-lg font-semibold text-text-primary m-0">{{ myAccount.username }}</h2>
             </div>
             <div class="flex items-center gap-4 text-sm text-text-secondary">
-              <StatusBadge 
-                :status="myAccount.active ? 'active' : 'inactive'" 
-                size="sm"
-              />
-              <span 
-                class="text-xs font-medium py-1 px-2 rounded"
-                :class="myAccount.isOrgAdmin 
-                  ? 'bg-[rgba(var(--accent-amber-rgb),0.15)] text-accent-amber' 
-                  : 'bg-bg-elevated text-text-secondary'"
-              >
-                {{ myAccount.isOrgAdmin ? 'Org Admin' : 'User' }}
+              <span class="text-xs font-medium py-1 px-2 rounded bg-[rgba(var(--accent-primary-rgb),0.15)] text-accent-primary">
+                Administrator
               </span>
             </div>
           </div>
@@ -316,7 +234,7 @@ function copySecret() {
       <!-- Password Section -->
       <div class="bg-bg-surface border border-border-subtle rounded-xs overflow-hidden mb-6">
         <div class="flex gap-4 p-6 border-b border-border-subtle bg-bg-elevated">
-          <div class="w-10 h-10 rounded-xs bg-[rgba(var(--accent-secondary-rgb),0.15)] text-accent-secondary flex items-center justify-center shrink-0">
+          <div class="w-10 h-10 rounded-xs bg-[rgba(var(--accent-primary-rgb),0.15)] text-accent-primary flex items-center justify-center shrink-0">
             <Lock class="w-5 h-5" />
           </div>
           <div>
@@ -392,38 +310,25 @@ function copySecret() {
       <!-- Role Info -->
       <div class="bg-bg-surface border border-border-subtle rounded-xs overflow-hidden">
         <div class="flex gap-4 p-6 border-b border-border-subtle bg-bg-elevated">
-          <div 
-            class="w-10 h-10 rounded-xs flex items-center justify-center shrink-0"
-            :class="myAccount.isOrgAdmin 
-              ? 'bg-[rgba(var(--accent-amber-rgb),0.15)] text-accent-amber'
-              : 'bg-[rgba(var(--accent-secondary-rgb),0.15)] text-accent-secondary'"
-          >
-            <Crown v-if="myAccount.isOrgAdmin" class="w-5 h-5" />
-            <User v-else class="w-5 h-5" />
+          <div class="w-10 h-10 rounded-xs flex items-center justify-center shrink-0 bg-[rgba(var(--accent-primary-rgb),0.15)] text-accent-primary">
+            <Shield class="w-5 h-5" />
           </div>
           <div>
             <h3 class="text-base font-semibold text-text-primary m-0">Your Role</h3>
             <p class="text-sm text-text-secondary mt-1 mb-0">
-              {{ myAccount.isOrgAdmin 
-                ? 'You are an Organization Admin with full access to manage accounts and settings.' 
-                : 'You are a standard user in this organization.' 
-              }}
+              You are a System Administrator with full access to all features.
             </p>
           </div>
         </div>
         <div class="p-6 text-sm text-text-secondary">
-          <p class="m-0" v-if="myAccount.isOrgAdmin">
-            As an Org Admin, you can:
-          </p>
-          <ul v-if="myAccount.isOrgAdmin" class="mt-2 mb-0 pl-5 space-y-1">
-            <li>Create and manage organization accounts</li>
-            <li>Promote or demote other users to Org Admin</li>
-            <li>Enable or disable accounts</li>
-            <li>Permanently delete accounts</li>
+          <p class="m-0">As a System Administrator, you can:</p>
+          <ul class="mt-2 mb-0 pl-5 space-y-1">
+            <li>Manage all organizations and applications</li>
+            <li>Create and manage user accounts</li>
+            <li>Configure global whitelist rules</li>
+            <li>Monitor all tunnel connections</li>
+            <li>View audit logs and system activity</li>
           </ul>
-          <p class="m-0" v-else>
-            Contact your organization administrator if you need additional permissions or access.
-          </p>
         </div>
       </div>
     </template>
@@ -572,7 +477,7 @@ function copySecret() {
           <div class="text-sm text-text-primary">
             <p class="m-0 font-medium">This will reduce your account security</p>
             <p class="m-0 mt-2 text-text-secondary">
-              Without two-factor authentication, your account will only be protected by your password.
+              As an administrator, it's strongly recommended to keep two-factor authentication enabled.
             </p>
           </div>
         </div>

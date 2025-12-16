@@ -86,8 +86,12 @@ export function useApi() {
     })
   }
 
-  function del<T>(endpoint: string, options?: RequestOptions): Promise<T> {
-    return request<T>(endpoint, { ...options, method: 'DELETE' })
+  function del<T>(endpoint: string, body?: unknown, options?: RequestOptions): Promise<T> {
+    return request<T>(endpoint, { 
+      ...options, 
+      method: 'DELETE',
+      body: body ? JSON.stringify(body) : undefined,
+    })
   }
 
   return {
