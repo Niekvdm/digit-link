@@ -7,17 +7,15 @@ spec:
   # Namespace where the ArgoCD Application lives
   namespace: argocd
 
-  # References to ArgoCD Applications (array of objects)
+  # References to ArgoCD Applications with their image configs
   applicationRefs:
-    - name: digit-link
-
-  # Images to track and update
-  images:
-    - name: app
-      image: ghcr.io/niekvdm/digit-link
-      updateStrategy:
-        type: digest  # Track digest changes for :latest tag
-      containerName: digit-link
+    - namePattern: digit-link
+      images:
+        - name: app
+          image: ghcr.io/niekvdm/digit-link
+          updateStrategy:
+            type: digest  # Track digest changes for :latest tag
+          containerName: digit-link
 
   # Write back method - update git repo with new image
   writeBack:
