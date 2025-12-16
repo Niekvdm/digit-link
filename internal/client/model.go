@@ -65,6 +65,12 @@ var (
 				Bold(true).
 				Padding(0, 1).
 				MarginLeft(1)
+	statusBadgeRejected = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("232")).
+				Background(colorRed).
+				Bold(true).
+				Padding(0, 1).
+				MarginLeft(1)
 
 	// Method badge styles
 	methodGETStyle = lipgloss.NewStyle().
@@ -129,6 +135,7 @@ type StatusUpdateMsg struct {
 	Status    string
 	Server    string
 	PublicURL string
+	Error     string // Error message for rejected/error status
 }
 
 type RequestAddedMsg struct {
@@ -151,10 +158,11 @@ type QuitMsg struct{}
 
 // Model holds the state for the Bubbletea TUI
 type Model struct {
-	status    string
-	server    string
-	publicURL string
-	localPort int
+	status       string
+	server       string
+	publicURL    string
+	localPort    int
+	errorMessage string // Error message when status is "rejected"
 
 	requests    []RequestLog
 	maxRequests int
@@ -227,6 +235,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.PublicURL != "" {
 			m.publicURL = msg.PublicURL
 		}
+		if msg.Error != "" {
+			m.errorMessage = msg.Error
+		}
 		return m, m.tick()
 
 	case RequestAddedMsg:
@@ -293,6 +304,8 @@ func (m *Model) getStatusBadge() string {
 		return statusBadgeConnecting.Render("◉ CONNECTING")
 	case "reconnecting":
 		return statusBadgeReconnecting.Render("◉ RECONNECTING")
+	case "rejected":
+		return statusBadgeRejected.Render("✕ REJECTED")
 	default:
 		return statusBadgeConnecting.Render("◉ " + strings.ToUpper(m.status))
 	}
@@ -352,6 +365,21 @@ func (m *Model) View() string {
 		statusLine += " " + m.spinner.View()
 	}
 	content = append(content, statusLine)
+
+	// Show error message if rejected
+	if m.status == "rejected" && m.errorMessage != "" {
+		content = append(content, "")
+		errorStyle := lipgloss.NewStyle().
+			Foreground(colorRed).
+			Bold(true)
+		content = append(content, errorStyle.Render("Error: "+m.errorMessage))
+		content = append(content, "")
+		hintStyle := lipgloss.NewStyle().
+			Foreground(colorGray).
+			Italic(true)
+		content = append(content, hintStyle.Render("Check your token, IP whitelist settings, or contact your administrator."))
+	}
+
 	content = append(content, "")
 	content = append(content, labelStyle.Render("Version")+valueStyle.MarginLeft(2).Render("1.0.0"))
 	content = append(content, labelStyle.Render("Server")+valueStyle.MarginLeft(2).Render(m.server))

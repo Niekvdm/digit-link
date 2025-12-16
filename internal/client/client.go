@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -238,6 +239,23 @@ func (c *Client) Run() error {
 
 		// Connect if not connected
 		if err := c.Connect(); err != nil {
+			errMsg := err.Error()
+
+			// Check if this is a fatal (non-retriable) error
+			if isFatalError(errMsg) {
+				if c.model != nil {
+					c.model.SendUpdate(StatusUpdateMsg{
+						Status: "rejected",
+						Server: c.server,
+						Error:  extractErrorReason(errMsg),
+					})
+				}
+				// For fatal errors, don't retry - just wait for quit
+				// This keeps the UI visible so user can see the error
+				<-c.done
+				return err
+			}
+
 			retries++
 			if c.maxRetries > 0 && retries > c.maxRetries {
 				return fmt.Errorf("max retries exceeded: %w", err)
@@ -418,4 +436,47 @@ func (c *Client) PublicURL() string {
 // Model returns the Bubbletea model for UI rendering
 func (c *Client) Model() *Model {
 	return c.model
+}
+
+// isFatalError checks if the error is a fatal (non-retriable) error
+// Fatal errors include authentication failures, quota exceeded, IP not whitelisted, etc.
+func isFatalError(errMsg string) bool {
+	fatalPatterns := []string{
+		"Authentication required",
+		"Invalid token",
+		"API key",
+		"not whitelisted",
+		"IP address not whitelisted",
+		"Quota exceeded",
+		"Invalid subdomain",
+		"Subdomain already in use",
+		"Application not found",
+		"expired",
+	}
+
+	errLower := strings.ToLower(errMsg)
+	for _, pattern := range fatalPatterns {
+		if strings.Contains(errLower, strings.ToLower(pattern)) {
+			return true
+		}
+	}
+	return false
+}
+
+// extractErrorReason extracts the user-friendly error reason from an error message
+// It removes the "registration failed: " prefix if present
+func extractErrorReason(errMsg string) string {
+	// Remove common prefixes
+	prefixes := []string{
+		"registration failed: ",
+		"failed to connect: ",
+	}
+
+	result := errMsg
+	for _, prefix := range prefixes {
+		if strings.HasPrefix(strings.ToLower(result), strings.ToLower(prefix)) {
+			result = result[len(prefix):]
+		}
+	}
+	return result
 }
