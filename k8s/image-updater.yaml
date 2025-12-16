@@ -7,9 +7,9 @@ spec:
   # Namespace where the ArgoCD Application lives
   namespace: argocd
 
-  # References to ArgoCD Applications (plural)
+  # References to ArgoCD Applications (array of objects)
   applicationRefs:
-    - digit-link
+    - name: digit-link
 
   # Images to track and update
   images:
