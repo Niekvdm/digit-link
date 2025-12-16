@@ -14,7 +14,7 @@ export interface Column<T> {
 
 const props = withDefaults(defineProps<{
   columns: Column<T>[]
-  data: T[]
+  data: readonly T[]
   loading?: boolean
   emptyTitle?: string
   emptyDescription?: string

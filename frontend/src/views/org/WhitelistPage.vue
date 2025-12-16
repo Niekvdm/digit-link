@@ -225,7 +225,7 @@ async function handleDelete() {
       </template>
       
       <template #cell-createdAt="{ value }">
-        {{ formatDate(value) }}
+        {{ formatDate(value as string) }}
       </template>
       
       <template #actions="{ row }">

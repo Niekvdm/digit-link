@@ -173,16 +173,16 @@ const authModeClasses: Record<string, string> = {
       <template #cell-authMode="{ value }">
         <span 
           class="text-xs font-medium py-1 px-2 rounded"
-          :class="authModeClasses[value] || authModeClasses.inherit"
+          :class="authModeClasses[value as string] || authModeClasses.inherit"
         >
-          {{ getAuthModeLabel(value) }}
+          {{ getAuthModeLabel(value as string) }}
         </span>
       </template>
       
       <template #cell-isActive="{ value }">
         <StatusBadge 
-          :status="value ? 'active' : 'inactive'" 
-          :label="value ? 'Active' : 'Inactive'"
+          :status="(value as boolean) ? 'active' : 'inactive'" 
+          :label="(value as boolean) ? 'Active' : 'Inactive'"
           size="sm"
         />
       </template>
@@ -190,14 +190,14 @@ const authModeClasses: Record<string, string> = {
       <template #cell-activeTunnelCount="{ value }">
         <span 
           class="font-mono"
-          :class="value > 0 ? 'text-accent-secondary' : 'text-text-muted'"
+          :class="(value as number) > 0 ? 'text-accent-secondary' : 'text-text-muted'"
         >
           {{ value }}
         </span>
       </template>
       
       <template #cell-createdAt="{ value }">
-        {{ formatDate(value) }}
+        {{ formatDate(value as string) }}
       </template>
       
       <template #actions="{ row }">
