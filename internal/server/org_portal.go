@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -142,6 +143,18 @@ func (s *Server) handleOrg(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(path, "/accounts/") && r.Method == http.MethodDelete:
 		accountID := strings.TrimPrefix(path, "/accounts/")
 		s.handleOrgDeactivateAccount(w, r, orgCtx, accountID)
+
+	// Usage endpoints
+	case path == "/usage" && r.Method == http.MethodGet:
+		s.handleOrgGetUsage(w, r, orgCtx)
+	case path == "/usage/history" && r.Method == http.MethodGet:
+		s.handleOrgGetUsageHistory(w, r, orgCtx)
+
+	// Organization settings (org admin only)
+	case path == "/settings" && r.Method == http.MethodGet:
+		s.handleOrgGetSettings(w, r, orgCtx)
+	case path == "/settings" && r.Method == http.MethodPut:
+		s.handleOrgUpdateSettings(w, r, orgCtx)
 
 	default:
 		jsonError(w, "Not found", http.StatusNotFound)
@@ -1960,4 +1973,249 @@ func (s *Server) handleOrgHardDeleteAccount(w http.ResponseWriter, r *http.Reque
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": true,
 	})
+}
+
+// ============================================
+// Usage Endpoints
+// ============================================
+
+// handleOrgGetUsage returns current usage and limits for the organization
+func (s *Server) handleOrgGetUsage(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	org, err := s.db.GetOrganizationByID(orgCtx.OrgID)
+	if err != nil {
+		log.Printf("Failed to get organization: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if org == nil {
+		jsonError(w, "Organization not found", http.StatusNotFound)
+		return
+	}
+
+	// Get current period usage
+	usage, err := s.db.GetCurrentPeriodUsage(orgCtx.OrgID)
+	if err != nil {
+		log.Printf("Failed to get usage: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Get plan if set
+	var plan *db.Plan
+	if org.PlanID != nil {
+		plan, _ = s.db.GetPlan(*org.PlanID)
+	}
+
+	// Get current concurrent tunnels from cache
+	var currentConcurrent int32
+	if s.usageCache != nil {
+		currentConcurrent = s.usageCache.GetConcurrentTunnels(orgCtx.OrgID)
+	}
+
+	now := time.Now()
+	periodStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	periodEnd := periodStart.AddDate(0, 1, 0)
+
+	response := map[string]interface{}{
+		"periodStart": periodStart,
+		"periodEnd":   periodEnd,
+		"usage": map[string]interface{}{
+			"bandwidthBytes":        usage.BandwidthBytes,
+			"tunnelSeconds":         usage.TunnelSeconds,
+			"tunnelHours":           usage.TunnelSeconds / 3600,
+			"requestCount":          usage.RequestCount,
+			"peakConcurrentTunnels": usage.PeakConcurrentTunnels,
+			"currentConcurrent":     currentConcurrent,
+		},
+	}
+
+	if plan != nil {
+		response["plan"] = map[string]interface{}{
+			"name":                  plan.Name,
+			"bandwidthBytesMonthly": plan.BandwidthBytesMonthly,
+			"tunnelHoursMonthly":    plan.TunnelHoursMonthly,
+			"concurrentTunnelsMax":  plan.ConcurrentTunnelsMax,
+			"requestsMonthly":       plan.RequestsMonthly,
+			"overageAllowedPercent": plan.OverageAllowedPercent,
+			"gracePeriodHours":      plan.GracePeriodHours,
+		}
+
+		// Calculate percentage usage for each quota
+		quotas := make(map[string]interface{})
+
+		if plan.BandwidthBytesMonthly != nil && *plan.BandwidthBytesMonthly > 0 {
+			quotas["bandwidth"] = map[string]interface{}{
+				"used":    usage.BandwidthBytes,
+				"limit":   *plan.BandwidthBytesMonthly,
+				"percent": float64(usage.BandwidthBytes) / float64(*plan.BandwidthBytesMonthly) * 100,
+			}
+		}
+
+		if plan.TunnelHoursMonthly != nil && *plan.TunnelHoursMonthly > 0 {
+			tunnelHours := usage.TunnelSeconds / 3600
+			quotas["tunnelHours"] = map[string]interface{}{
+				"used":    tunnelHours,
+				"limit":   *plan.TunnelHoursMonthly,
+				"percent": float64(tunnelHours) / float64(*plan.TunnelHoursMonthly) * 100,
+			}
+		}
+
+		if plan.ConcurrentTunnelsMax != nil && *plan.ConcurrentTunnelsMax > 0 {
+			quotas["concurrentTunnels"] = map[string]interface{}{
+				"current": currentConcurrent,
+				"limit":   *plan.ConcurrentTunnelsMax,
+				"percent": float64(currentConcurrent) / float64(*plan.ConcurrentTunnelsMax) * 100,
+			}
+		}
+
+		if plan.RequestsMonthly != nil && *plan.RequestsMonthly > 0 {
+			quotas["requests"] = map[string]interface{}{
+				"used":    usage.RequestCount,
+				"limit":   *plan.RequestsMonthly,
+				"percent": float64(usage.RequestCount) / float64(*plan.RequestsMonthly) * 100,
+			}
+		}
+
+		response["quotas"] = quotas
+	}
+
+	jsonResponse(w, response)
+}
+
+// handleOrgGetUsageHistory returns historical usage data for the organization
+func (s *Server) handleOrgGetUsageHistory(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	query := r.URL.Query()
+
+	// Parse period type (hourly, daily, monthly)
+	periodType := db.PeriodType(query.Get("period"))
+	if periodType == "" {
+		periodType = db.PeriodDaily
+	}
+
+	// Validate period type
+	switch periodType {
+	case db.PeriodHourly, db.PeriodDaily, db.PeriodMonthly:
+		// valid
+	default:
+		jsonError(w, "Invalid period type. Use 'hourly', 'daily', or 'monthly'", http.StatusBadRequest)
+		return
+	}
+
+	// Parse days to look back
+	days := 30
+	if v := query.Get("days"); v != "" {
+		if d, err := parseInt(v); err == nil && d > 0 && d <= 365 {
+			days = d
+		}
+	}
+
+	end := time.Now()
+	start := end.AddDate(0, 0, -days)
+
+	history, err := s.db.GetUsageSnapshotsForOrg(orgCtx.OrgID, periodType, start, end)
+	if err != nil {
+		log.Printf("Failed to get usage history: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	jsonResponse(w, map[string]interface{}{
+		"period":  periodType,
+		"start":   start,
+		"end":     end,
+		"history": history,
+	})
+}
+
+// parseInt is a helper to parse int from string
+func parseInt(s string) (int, error) {
+	return strconv.Atoi(s)
+}
+
+// ============================================
+// Organization Settings Endpoints
+// ============================================
+
+// handleOrgGetSettings returns organization settings (org admin only)
+func (s *Server) handleOrgGetSettings(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	if !s.requireOrgAdmin(w, orgCtx) {
+		return
+	}
+
+	org, err := s.db.GetOrganizationByID(orgCtx.OrgID)
+	if err != nil {
+		log.Printf("Failed to get organization: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if org == nil {
+		jsonError(w, "Organization not found", http.StatusNotFound)
+		return
+	}
+
+	// Get plan if set
+	var plan *db.Plan
+	if org.PlanID != nil {
+		plan, _ = s.db.GetPlan(*org.PlanID)
+	}
+
+	response := map[string]interface{}{
+		"id":          org.ID,
+		"name":        org.Name,
+		"requireTotp": org.RequireTOTP,
+		"createdAt":   org.CreatedAt,
+	}
+
+	if plan != nil {
+		response["plan"] = map[string]interface{}{
+			"id":   plan.ID,
+			"name": plan.Name,
+		}
+	}
+
+	jsonResponse(w, response)
+}
+
+// handleOrgUpdateSettings updates organization settings (org admin only)
+func (s *Server) handleOrgUpdateSettings(w http.ResponseWriter, r *http.Request, orgCtx *OrgContext) {
+	if !s.requireOrgAdmin(w, orgCtx) {
+		return
+	}
+
+	if !validateOrgJSONRequest(w, r) {
+		return
+	}
+
+	var input struct {
+		Name        *string `json:"name"`
+		RequireTOTP *bool   `json:"requireTotp"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if input.Name != nil {
+		if *input.Name == "" {
+			jsonError(w, "Name cannot be empty", http.StatusBadRequest)
+			return
+		}
+		if err := s.db.UpdateOrganization(orgCtx.OrgID, *input.Name); err != nil {
+			log.Printf("Failed to update organization name: %v", err)
+			jsonError(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if input.RequireTOTP != nil {
+		if err := s.db.UpdateOrganizationTOTPRequirement(orgCtx.OrgID, *input.RequireTOTP); err != nil {
+			log.Printf("Failed to update organization TOTP requirement: %v", err)
+			jsonError(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	log.Printf("Org settings updated by %s", orgCtx.Username)
+
+	jsonResponse(w, map[string]bool{"success": true})
 }

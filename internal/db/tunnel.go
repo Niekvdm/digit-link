@@ -19,6 +19,7 @@ type TunnelRecord struct {
 	ClosedAt      *time.Time `json:"closedAt,omitempty"`
 	BytesSent     int64      `json:"bytesSent"`
 	BytesReceived int64      `json:"bytesReceived"`
+	RequestCount  int64      `json:"requestCount"`
 }
 
 // CreateTunnel creates a new tunnel record
@@ -63,6 +64,27 @@ func (db *DB) UpdateTunnelStats(id string, bytesSent, bytesReceived int64) error
 		UPDATE tunnels SET bytes_sent = bytes_sent + ?, bytes_received = bytes_received + ?
 		WHERE id = ?
 	`, bytesSent, bytesReceived, id)
+	return err
+}
+
+// IncrementTunnelRequestCount increments the request count for a tunnel
+func (db *DB) IncrementTunnelRequestCount(id string) error {
+	_, err := db.conn.Exec(`
+		UPDATE tunnels SET request_count = request_count + 1
+		WHERE id = ?
+	`, id)
+	return err
+}
+
+// UpdateTunnelStatsWithRequests updates bytes and request count atomically
+func (db *DB) UpdateTunnelStatsWithRequests(id string, bytesSent, bytesReceived int64, requests int64) error {
+	_, err := db.conn.Exec(`
+		UPDATE tunnels SET 
+			bytes_sent = bytes_sent + ?, 
+			bytes_received = bytes_received + ?,
+			request_count = request_count + ?
+		WHERE id = ?
+	`, bytesSent, bytesReceived, requests, id)
 	return err
 }
 
@@ -222,6 +244,7 @@ type TunnelStats struct {
 	ActiveCount      int   `json:"activeCount"`
 	BytesSent        int64 `json:"bytesSent"`
 	BytesReceived    int64 `json:"bytesReceived"`
+	RequestCount     int64 `json:"requestCount"`
 }
 
 // GetTunnelStatsByApp returns statistics for a specific application
@@ -230,9 +253,9 @@ func (db *DB) GetTunnelStatsByApp(appID string) (*TunnelStats, error) {
 
 	// Get total connections and bytes for this app
 	err := db.conn.QueryRow(`
-		SELECT COUNT(*), COALESCE(SUM(bytes_sent), 0), COALESCE(SUM(bytes_received), 0)
+		SELECT COUNT(*), COALESCE(SUM(bytes_sent), 0), COALESCE(SUM(bytes_received), 0), COALESCE(SUM(request_count), 0)
 		FROM tunnels WHERE app_id = ?
-	`, appID).Scan(&stats.TotalConnections, &stats.BytesSent, &stats.BytesReceived)
+	`, appID).Scan(&stats.TotalConnections, &stats.BytesSent, &stats.BytesReceived, &stats.RequestCount)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tunnel stats for app: %w", err)
 	}
@@ -254,11 +277,11 @@ func (db *DB) GetTunnelStatsByOrg(orgID string) (*TunnelStats, error) {
 
 	// Get total connections and bytes for all apps in this org
 	err := db.conn.QueryRow(`
-		SELECT COUNT(*), COALESCE(SUM(t.bytes_sent), 0), COALESCE(SUM(t.bytes_received), 0)
+		SELECT COUNT(*), COALESCE(SUM(t.bytes_sent), 0), COALESCE(SUM(t.bytes_received), 0), COALESCE(SUM(t.request_count), 0)
 		FROM tunnels t
 		JOIN applications a ON t.app_id = a.id
 		WHERE a.org_id = ?
-	`, orgID).Scan(&stats.TotalConnections, &stats.BytesSent, &stats.BytesReceived)
+	`, orgID).Scan(&stats.TotalConnections, &stats.BytesSent, &stats.BytesReceived, &stats.RequestCount)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get tunnel stats for org: %w", err)
 	}

@@ -220,6 +220,33 @@ func (db *DB) initSchema() error {
 		key_id TEXT
 	);
 
+	-- Subscription plans with quota limits
+	CREATE TABLE IF NOT EXISTS plans (
+		id TEXT PRIMARY KEY,
+		name TEXT UNIQUE NOT NULL,
+		bandwidth_bytes_monthly BIGINT,
+		tunnel_hours_monthly BIGINT,
+		concurrent_tunnels_max INTEGER,
+		requests_monthly BIGINT,
+		overage_allowed_percent INTEGER DEFAULT 0,
+		grace_period_hours INTEGER DEFAULT 0,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
+
+	-- Usage snapshots for tiered retention (hourly/daily/monthly)
+	CREATE TABLE IF NOT EXISTS usage_snapshots (
+		id TEXT PRIMARY KEY,
+		org_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+		period_type TEXT NOT NULL,
+		period_start TIMESTAMP NOT NULL,
+		bandwidth_bytes BIGINT DEFAULT 0,
+		tunnel_seconds BIGINT DEFAULT 0,
+		request_count BIGINT DEFAULT 0,
+		peak_concurrent_tunnels INTEGER DEFAULT 0,
+		UNIQUE(org_id, period_type, period_start)
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_accounts_username ON accounts(username);
 	CREATE INDEX IF NOT EXISTS idx_accounts_token_hash ON accounts(token_hash);
 	CREATE INDEX IF NOT EXISTS idx_accounts_org_id ON accounts(org_id);
@@ -240,6 +267,8 @@ func (db *DB) initSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_auth_audit_log_timestamp ON auth_audit_log(timestamp);
 	CREATE INDEX IF NOT EXISTS idx_auth_audit_log_org_id ON auth_audit_log(org_id);
 	CREATE INDEX IF NOT EXISTS idx_auth_audit_log_app_id ON auth_audit_log(app_id);
+	CREATE INDEX IF NOT EXISTS idx_usage_snapshots_org_id ON usage_snapshots(org_id);
+	CREATE INDEX IF NOT EXISTS idx_usage_snapshots_period ON usage_snapshots(period_type, period_start);
 	`
 
 	_, err := db.conn.Exec(schema)
@@ -265,8 +294,10 @@ func (db *DB) runMigrations() error {
 		{"accounts", "org_id", "TEXT REFERENCES organizations(id)"},
 		{"accounts", "is_org_admin", "BOOLEAN DEFAULT FALSE"},
 		{"tunnels", "app_id", "TEXT"},
+		{"tunnels", "request_count", "BIGINT DEFAULT 0"},
 		{"api_keys", "key_type", "TEXT DEFAULT 'account'"},
 		{"organizations", "require_totp", "BOOLEAN DEFAULT FALSE"},
+		{"organizations", "plan_id", "TEXT REFERENCES plans(id)"},
 	}
 
 	for _, m := range columnMigrations {

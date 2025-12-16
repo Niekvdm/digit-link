@@ -21,7 +21,9 @@ import {
   ChevronRight,
   Menu,
   X,
-  ChevronUp
+  ChevronUp,
+  Package,
+  BarChart3
 } from 'lucide-vue-next'
 
 const route = useRoute()
@@ -55,6 +57,8 @@ const adminLinks = [
   { name: 'admin-api-keys', label: 'API Keys', icon: KeyRound },
   { name: 'admin-whitelist', label: 'Whitelist', icon: ShieldCheck },
   { name: 'admin-tunnels', label: 'Tunnels', icon: Cable },
+  { name: 'admin-plans', label: 'Plans', icon: Package },
+  { name: 'admin-usage', label: 'Usage', icon: BarChart3 },
   { name: 'admin-audit', label: 'Audit Logs', icon: ScrollText },
 ]
 
@@ -64,6 +68,7 @@ const orgLinks = computed(() => {
     { name: 'org-applications', label: 'Applications', icon: AppWindow },
     { name: 'org-api-keys', label: 'API Keys', icon: KeyRound },
     { name: 'org-whitelist', label: 'Whitelist', icon: ShieldCheck },
+    { name: 'org-usage', label: 'Usage', icon: BarChart3 },
   ]
   
   // Only show Accounts link for org admins

@@ -18,6 +18,8 @@ const AdminAPIKeys = () => import('@/views/admin/APIKeysPage.vue')
 const AdminWhitelist = () => import('@/views/admin/WhitelistPage.vue')
 const AdminTunnels = () => import('@/views/admin/TunnelsPage.vue')
 const AdminAudit = () => import('@/views/admin/AuditPage.vue')
+const AdminPlans = () => import('@/views/admin/PlansPage.vue')
+const AdminUsage = () => import('@/views/admin/UsagePage.vue')
 
 // Org pages
 const OrgDashboard = () => import('@/views/org/DashboardPage.vue')
@@ -29,6 +31,7 @@ const OrgMyAccount = () => import('@/views/org/MyAccountPage.vue')
 const OrgAPIKeys = () => import('@/views/org/APIKeysPage.vue')
 const OrgWhitelist = () => import('@/views/org/WhitelistPage.vue')
 const OrgSettings = () => import('@/views/org/SettingsPage.vue')
+const OrgUsage = () => import('@/views/org/UsagePage.vue')
 
 const routes: RouteRecordRaw[] = [
   // Public routes
@@ -107,6 +110,16 @@ const routes: RouteRecordRaw[] = [
         path: 'audit',
         name: 'admin-audit',
         component: AdminAudit
+      },
+      {
+        path: 'plans',
+        name: 'admin-plans',
+        component: AdminPlans
+      },
+      {
+        path: 'usage',
+        name: 'admin-usage',
+        component: AdminUsage
       }
     ]
   },
@@ -163,6 +176,11 @@ const routes: RouteRecordRaw[] = [
         path: 'settings',
         name: 'org-settings',
         component: OrgSettings
+      },
+      {
+        path: 'usage',
+        name: 'org-usage',
+        component: OrgUsage
       }
     ]
   },

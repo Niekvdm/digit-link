@@ -192,6 +192,31 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	case path == "/audit/stats" && r.Method == http.MethodGet:
 		s.handleAuditStats(w, r)
 
+	// Plan management
+	case path == "/plans" && r.Method == http.MethodGet:
+		s.handleListPlans(w, r)
+	case path == "/plans" && r.Method == http.MethodPost:
+		s.handleCreatePlan(w, r)
+	case strings.HasPrefix(path, "/plans/") && r.Method == http.MethodGet:
+		planID := strings.TrimPrefix(path, "/plans/")
+		s.handleGetPlan(w, r, planID)
+	case strings.HasPrefix(path, "/plans/") && r.Method == http.MethodPut:
+		planID := strings.TrimPrefix(path, "/plans/")
+		s.handleUpdatePlan(w, r, planID)
+	case strings.HasPrefix(path, "/plans/") && r.Method == http.MethodDelete:
+		planID := strings.TrimPrefix(path, "/plans/")
+		s.handleDeletePlan(w, r, planID)
+
+	// Usage management
+	case path == "/usage/summary" && r.Method == http.MethodGet:
+		s.handleUsageSummary(w, r)
+	case strings.HasPrefix(path, "/organizations/") && strings.HasSuffix(path, "/usage") && r.Method == http.MethodGet:
+		orgID := strings.TrimSuffix(strings.TrimPrefix(path, "/organizations/"), "/usage")
+		s.handleGetOrganizationUsage(w, r, orgID)
+	case strings.HasPrefix(path, "/organizations/") && strings.HasSuffix(path, "/plan") && r.Method == http.MethodPut:
+		orgID := strings.TrimSuffix(strings.TrimPrefix(path, "/organizations/"), "/plan")
+		s.handleSetOrganizationPlan(w, r, orgID)
+
 	default:
 		http.Error(w, "Not found", http.StatusNotFound)
 	}
@@ -2149,4 +2174,342 @@ func (s *Server) handleAuditStats(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(stats)
+}
+
+// ============================================
+// Plan Management
+// ============================================
+
+// handleListPlans returns all plans
+func (s *Server) handleListPlans(w http.ResponseWriter, r *http.Request) {
+	plans, err := s.db.ListPlans()
+	if err != nil {
+		log.Printf("Failed to list plans: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	jsonResponse(w, map[string]interface{}{
+		"plans": plans,
+	})
+}
+
+// handleCreatePlan creates a new plan
+func (s *Server) handleCreatePlan(w http.ResponseWriter, r *http.Request) {
+	if !validateJSONContentType(w, r) {
+		return
+	}
+	limitRequestBody(r)
+
+	var input db.CreatePlanInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if input.Name == "" {
+		jsonError(w, "Name is required", http.StatusBadRequest)
+		return
+	}
+
+	// Check for duplicate name
+	existing, err := s.db.GetPlanByName(input.Name)
+	if err != nil {
+		log.Printf("Failed to check plan name: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if existing != nil {
+		jsonError(w, "Plan name already exists", http.StatusConflict)
+		return
+	}
+
+	plan, err := s.db.CreatePlan(input)
+	if err != nil {
+		log.Printf("Failed to create plan: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Plan created: %s (%s)", plan.Name, plan.ID)
+	w.WriteHeader(http.StatusCreated)
+	jsonResponse(w, plan)
+}
+
+// handleGetPlan returns a specific plan
+func (s *Server) handleGetPlan(w http.ResponseWriter, r *http.Request, planID string) {
+	plan, err := s.db.GetPlan(planID)
+	if err != nil {
+		log.Printf("Failed to get plan: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if plan == nil {
+		jsonError(w, "Plan not found", http.StatusNotFound)
+		return
+	}
+
+	// Get organizations using this plan
+	orgs, err := s.db.GetOrganizationsUsingPlan(planID)
+	if err != nil {
+		log.Printf("Failed to get organizations using plan: %v", err)
+	}
+
+	jsonResponse(w, map[string]interface{}{
+		"plan":          plan,
+		"organizations": orgs,
+	})
+}
+
+// handleUpdatePlan updates a plan
+func (s *Server) handleUpdatePlan(w http.ResponseWriter, r *http.Request, planID string) {
+	if !validateJSONContentType(w, r) {
+		return
+	}
+	limitRequestBody(r)
+
+	// Check plan exists
+	existing, err := s.db.GetPlan(planID)
+	if err != nil {
+		log.Printf("Failed to get plan: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if existing == nil {
+		jsonError(w, "Plan not found", http.StatusNotFound)
+		return
+	}
+
+	var input db.CreatePlanInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if input.Name == "" {
+		jsonError(w, "Name is required", http.StatusBadRequest)
+		return
+	}
+
+	// Check for duplicate name (if changing)
+	if input.Name != existing.Name {
+		duplicate, err := s.db.GetPlanByName(input.Name)
+		if err != nil {
+			log.Printf("Failed to check plan name: %v", err)
+			jsonError(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		if duplicate != nil {
+			jsonError(w, "Plan name already exists", http.StatusConflict)
+			return
+		}
+	}
+
+	plan, err := s.db.UpdatePlan(planID, input)
+	if err != nil {
+		log.Printf("Failed to update plan: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Plan updated: %s (%s)", plan.Name, plan.ID)
+	jsonResponse(w, plan)
+}
+
+// handleDeletePlan deletes a plan
+func (s *Server) handleDeletePlan(w http.ResponseWriter, r *http.Request, planID string) {
+	// Check plan exists
+	plan, err := s.db.GetPlan(planID)
+	if err != nil {
+		log.Printf("Failed to get plan: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if plan == nil {
+		jsonError(w, "Plan not found", http.StatusNotFound)
+		return
+	}
+
+	if err := s.db.DeletePlan(planID); err != nil {
+		log.Printf("Failed to delete plan: %v", err)
+		jsonError(w, err.Error(), http.StatusConflict)
+		return
+	}
+
+	log.Printf("Plan deleted: %s (%s)", plan.Name, plan.ID)
+	jsonResponse(w, map[string]bool{"success": true})
+}
+
+// ============================================
+// Usage Management
+// ============================================
+
+// handleUsageSummary returns usage summary for all organizations
+func (s *Server) handleUsageSummary(w http.ResponseWriter, r *http.Request) {
+	summary, err := s.db.GetUsageSummaryForAllOrgs()
+	if err != nil {
+		log.Printf("Failed to get usage summary: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Get plans for enrichment
+	plans, _ := s.db.ListPlans()
+	planMap := make(map[string]*db.Plan)
+	for _, p := range plans {
+		planMap[p.ID] = p
+	}
+
+	// Enrich with plan details
+	for _, item := range summary {
+		if planID, ok := item["planId"].(string); ok {
+			if plan, exists := planMap[planID]; exists {
+				item["planName"] = plan.Name
+				item["limits"] = map[string]interface{}{
+					"bandwidthBytesMonthly": plan.BandwidthBytesMonthly,
+					"tunnelHoursMonthly":    plan.TunnelHoursMonthly,
+					"concurrentTunnelsMax":  plan.ConcurrentTunnelsMax,
+					"requestsMonthly":       plan.RequestsMonthly,
+				}
+			}
+		}
+	}
+
+	now := time.Now()
+	periodStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	periodEnd := periodStart.AddDate(0, 1, 0)
+
+	jsonResponse(w, map[string]interface{}{
+		"organizations": summary,
+		"periodStart":   periodStart,
+		"periodEnd":     periodEnd,
+	})
+}
+
+// handleGetOrganizationUsage returns usage for a specific organization
+func (s *Server) handleGetOrganizationUsage(w http.ResponseWriter, r *http.Request, orgID string) {
+	org, err := s.db.GetOrganizationByID(orgID)
+	if err != nil {
+		log.Printf("Failed to get organization: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if org == nil {
+		jsonError(w, "Organization not found", http.StatusNotFound)
+		return
+	}
+
+	// Get current period usage
+	usage, err := s.db.GetCurrentPeriodUsage(orgID)
+	if err != nil {
+		log.Printf("Failed to get usage: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Get plan if set
+	var plan *db.Plan
+	if org.PlanID != nil {
+		plan, _ = s.db.GetPlan(*org.PlanID)
+	}
+
+	// Get usage history based on query params
+	query := r.URL.Query()
+	periodType := db.PeriodType(query.Get("period"))
+	if periodType == "" {
+		periodType = db.PeriodDaily
+	}
+
+	days := 30
+	if v := query.Get("days"); v != "" {
+		if d, err := strconv.Atoi(v); err == nil && d > 0 && d <= 365 {
+			days = d
+		}
+	}
+
+	end := time.Now()
+	start := end.AddDate(0, 0, -days)
+	history, err := s.db.GetUsageSnapshotsForOrg(orgID, periodType, start, end)
+	if err != nil {
+		log.Printf("Failed to get usage history: %v", err)
+	}
+
+	now := time.Now()
+	periodStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	periodEnd := periodStart.AddDate(0, 1, 0)
+
+	response := map[string]interface{}{
+		"organization": org,
+		"periodStart":  periodStart,
+		"periodEnd":    periodEnd,
+		"usage": map[string]interface{}{
+			"bandwidthBytes":        usage.BandwidthBytes,
+			"tunnelSeconds":         usage.TunnelSeconds,
+			"requestCount":          usage.RequestCount,
+			"peakConcurrentTunnels": usage.PeakConcurrentTunnels,
+		},
+		"history": history,
+	}
+
+	if plan != nil {
+		response["plan"] = plan
+		response["limits"] = map[string]interface{}{
+			"bandwidthBytesMonthly": plan.BandwidthBytesMonthly,
+			"tunnelHoursMonthly":    plan.TunnelHoursMonthly,
+			"concurrentTunnelsMax":  plan.ConcurrentTunnelsMax,
+			"requestsMonthly":       plan.RequestsMonthly,
+		}
+	}
+
+	jsonResponse(w, response)
+}
+
+// handleSetOrganizationPlan sets the plan for an organization
+func (s *Server) handleSetOrganizationPlan(w http.ResponseWriter, r *http.Request, orgID string) {
+	if !validateJSONContentType(w, r) {
+		return
+	}
+	limitRequestBody(r)
+
+	org, err := s.db.GetOrganizationByID(orgID)
+	if err != nil {
+		log.Printf("Failed to get organization: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if org == nil {
+		jsonError(w, "Organization not found", http.StatusNotFound)
+		return
+	}
+
+	var input struct {
+		PlanID *string `json:"planId"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Verify plan exists if provided
+	if input.PlanID != nil && *input.PlanID != "" {
+		plan, err := s.db.GetPlan(*input.PlanID)
+		if err != nil {
+			log.Printf("Failed to get plan: %v", err)
+			jsonError(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+		if plan == nil {
+			jsonError(w, "Plan not found", http.StatusNotFound)
+			return
+		}
+	}
+
+	if err := s.db.UpdateOrganizationPlan(orgID, input.PlanID); err != nil {
+		log.Printf("Failed to update organization plan: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Organization %s plan updated to: %v", orgID, input.PlanID)
+	jsonResponse(w, map[string]bool{"success": true})
 }

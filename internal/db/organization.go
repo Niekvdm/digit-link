@@ -12,6 +12,7 @@ import (
 type Organization struct {
 	ID          string    `json:"id"`
 	Name        string    `json:"name"`
+	PlanID      *string   `json:"planId,omitempty"`
 	RequireTOTP bool      `json:"requireTotp"`
 	CreatedAt   time.Time `json:"createdAt"`
 }
@@ -32,6 +33,29 @@ func (db *DB) CreateOrganization(name string) (*Organization, error) {
 	return &Organization{
 		ID:          id,
 		Name:        name,
+		PlanID:      nil,
+		RequireTOTP: false,
+		CreatedAt:   now,
+	}, nil
+}
+
+// CreateOrganizationWithPlan creates a new organization with a plan
+func (db *DB) CreateOrganizationWithPlan(name string, planID *string) (*Organization, error) {
+	id := uuid.New().String()
+	now := time.Now()
+
+	_, err := db.conn.Exec(`
+		INSERT INTO organizations (id, name, plan_id, require_totp, created_at)
+		VALUES (?, ?, ?, ?, ?)
+	`, id, name, planID, false, now)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create organization: %w", err)
+	}
+
+	return &Organization{
+		ID:          id,
+		Name:        name,
+		PlanID:      planID,
 		RequireTOTP: false,
 		CreatedAt:   now,
 	}, nil
@@ -40,17 +64,22 @@ func (db *DB) CreateOrganization(name string) (*Organization, error) {
 // GetOrganizationByID retrieves an organization by its ID
 func (db *DB) GetOrganizationByID(id string) (*Organization, error) {
 	org := &Organization{}
+	var planID sql.NullString
 
 	err := db.conn.QueryRow(`
-		SELECT id, name, COALESCE(require_totp, 0), created_at
+		SELECT id, name, plan_id, COALESCE(require_totp, 0), created_at
 		FROM organizations WHERE id = ?
-	`, id).Scan(&org.ID, &org.Name, &org.RequireTOTP, &org.CreatedAt)
+	`, id).Scan(&org.ID, &org.Name, &planID, &org.RequireTOTP, &org.CreatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get organization: %w", err)
+	}
+
+	if planID.Valid {
+		org.PlanID = &planID.String
 	}
 
 	return org, nil
@@ -59,11 +88,12 @@ func (db *DB) GetOrganizationByID(id string) (*Organization, error) {
 // GetOrganizationByName retrieves an organization by its name
 func (db *DB) GetOrganizationByName(name string) (*Organization, error) {
 	org := &Organization{}
+	var planID sql.NullString
 
 	err := db.conn.QueryRow(`
-		SELECT id, name, COALESCE(require_totp, 0), created_at
+		SELECT id, name, plan_id, COALESCE(require_totp, 0), created_at
 		FROM organizations WHERE name = ?
-	`, name).Scan(&org.ID, &org.Name, &org.RequireTOTP, &org.CreatedAt)
+	`, name).Scan(&org.ID, &org.Name, &planID, &org.RequireTOTP, &org.CreatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -72,13 +102,17 @@ func (db *DB) GetOrganizationByName(name string) (*Organization, error) {
 		return nil, fmt.Errorf("failed to get organization: %w", err)
 	}
 
+	if planID.Valid {
+		org.PlanID = &planID.String
+	}
+
 	return org, nil
 }
 
 // ListOrganizations returns all organizations
 func (db *DB) ListOrganizations() ([]*Organization, error) {
 	rows, err := db.conn.Query(`
-		SELECT id, name, COALESCE(require_totp, 0), created_at
+		SELECT id, name, plan_id, COALESCE(require_totp, 0), created_at
 		FROM organizations ORDER BY created_at DESC
 	`)
 	if err != nil {
@@ -89,9 +123,13 @@ func (db *DB) ListOrganizations() ([]*Organization, error) {
 	var orgs []*Organization
 	for rows.Next() {
 		org := &Organization{}
-		err := rows.Scan(&org.ID, &org.Name, &org.RequireTOTP, &org.CreatedAt)
+		var planID sql.NullString
+		err := rows.Scan(&org.ID, &org.Name, &planID, &org.RequireTOTP, &org.CreatedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan organization: %w", err)
+		}
+		if planID.Valid {
+			org.PlanID = &planID.String
 		}
 		orgs = append(orgs, org)
 	}
@@ -115,6 +153,14 @@ func (db *DB) UpdateOrganizationTOTPRequirement(id string, requireTOTP bool) err
 	return err
 }
 
+// UpdateOrganizationPlan updates the plan for an organization
+func (db *DB) UpdateOrganizationPlan(id string, planID *string) error {
+	_, err := db.conn.Exec(`
+		UPDATE organizations SET plan_id = ? WHERE id = ?
+	`, planID, id)
+	return err
+}
+
 // DeleteOrganization deletes an organization
 func (db *DB) DeleteOrganization(id string) error {
 	_, err := db.conn.Exec(`DELETE FROM organizations WHERE id = ?`, id)
@@ -124,19 +170,24 @@ func (db *DB) DeleteOrganization(id string) error {
 // GetOrganizationByAccountID retrieves the organization for a given account
 func (db *DB) GetOrganizationByAccountID(accountID string) (*Organization, error) {
 	org := &Organization{}
+	var planID sql.NullString
 
 	err := db.conn.QueryRow(`
-		SELECT o.id, o.name, COALESCE(o.require_totp, 0), o.created_at
+		SELECT o.id, o.name, o.plan_id, COALESCE(o.require_totp, 0), o.created_at
 		FROM organizations o
 		JOIN accounts a ON a.org_id = o.id
 		WHERE a.id = ?
-	`, accountID).Scan(&org.ID, &org.Name, &org.RequireTOTP, &org.CreatedAt)
+	`, accountID).Scan(&org.ID, &org.Name, &planID, &org.RequireTOTP, &org.CreatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get organization by account: %w", err)
+	}
+
+	if planID.Valid {
+		org.PlanID = &planID.String
 	}
 
 	return org, nil

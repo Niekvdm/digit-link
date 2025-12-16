@@ -580,6 +580,193 @@ Get authentication statistics.
 
 ---
 
+### Plan Management
+
+#### GET `/admin/plans`
+List all subscription plans.
+
+**Response:**
+```json
+{
+  "plans": [
+    {
+      "id": "uuid",
+      "name": "Pro",
+      "bandwidthBytesMonthly": 53687091200,
+      "tunnelHoursMonthly": 1000,
+      "concurrentTunnelsMax": 10,
+      "requestsMonthly": 1000000,
+      "overageAllowedPercent": 20,
+      "gracePeriodHours": 24,
+      "createdAt": "2024-01-01T00:00:00Z",
+      "updatedAt": "2024-01-01T00:00:00Z"
+    }
+  ]
+}
+```
+
+> Note: Null values for limits indicate "unlimited".
+
+#### POST `/admin/plans`
+Create a new subscription plan.
+
+**Request:**
+```json
+{
+  "name": "Pro",
+  "bandwidthBytesMonthly": 53687091200,
+  "tunnelHoursMonthly": 1000,
+  "concurrentTunnelsMax": 10,
+  "requestsMonthly": 1000000,
+  "overageAllowedPercent": 20,
+  "gracePeriodHours": 24
+}
+```
+
+> All limit fields are optional. Omit or set to null for unlimited.
+
+#### GET `/admin/plans/{id}`
+Get a plan by ID, including organizations using it.
+
+**Response:**
+```json
+{
+  "plan": {
+    "id": "uuid",
+    "name": "Pro",
+    "bandwidthBytesMonthly": 53687091200,
+    "tunnelHoursMonthly": 1000,
+    "concurrentTunnelsMax": 10,
+    "requestsMonthly": 1000000,
+    "overageAllowedPercent": 20,
+    "gracePeriodHours": 24,
+    "createdAt": "2024-01-01T00:00:00Z",
+    "updatedAt": "2024-01-01T00:00:00Z"
+  },
+  "organizations": [
+    {
+      "id": "org-uuid",
+      "name": "My Organization"
+    }
+  ]
+}
+```
+
+#### PUT `/admin/plans/{id}`
+Update a plan.
+
+**Request:**
+```json
+{
+  "name": "Pro Updated",
+  "bandwidthBytesMonthly": 107374182400,
+  "tunnelHoursMonthly": 2000,
+  "concurrentTunnelsMax": 20,
+  "requestsMonthly": 2000000,
+  "overageAllowedPercent": 20,
+  "gracePeriodHours": 24
+}
+```
+
+#### DELETE `/admin/plans/{id}`
+Delete a plan. Fails if any organizations are using it.
+
+---
+
+### Usage & Quotas
+
+#### GET `/admin/usage/summary`
+Get usage summary for all organizations.
+
+**Response:**
+```json
+{
+  "organizations": [
+    {
+      "orgId": "uuid",
+      "orgName": "My Organization",
+      "planId": "plan-uuid",
+      "planName": "Pro",
+      "bandwidthBytes": 12345678900,
+      "tunnelSeconds": 1234567,
+      "requestCount": 234567,
+      "peakConcurrentTunnels": 8,
+      "limits": {
+        "bandwidthBytesMonthly": 53687091200,
+        "tunnelHoursMonthly": 1000,
+        "concurrentTunnelsMax": 10,
+        "requestsMonthly": 1000000
+      }
+    }
+  ],
+  "periodStart": "2024-01-01T00:00:00Z",
+  "periodEnd": "2024-02-01T00:00:00Z"
+}
+```
+
+#### GET `/admin/organizations/{id}/usage`
+Get detailed usage for a specific organization.
+
+**Query Parameters:**
+- `period` - Snapshot period type: `hourly`, `daily`, or `monthly` (default: `daily`)
+- `days` - Number of days of history (default: 30, max: 365)
+
+**Response:**
+```json
+{
+  "organization": {
+    "id": "uuid",
+    "name": "My Organization",
+    "planId": "plan-uuid"
+  },
+  "periodStart": "2024-01-01T00:00:00Z",
+  "periodEnd": "2024-02-01T00:00:00Z",
+  "usage": {
+    "bandwidthBytes": 12345678900,
+    "tunnelSeconds": 1234567,
+    "requestCount": 234567,
+    "peakConcurrentTunnels": 8
+  },
+  "plan": {
+    "id": "plan-uuid",
+    "name": "Pro",
+    "bandwidthBytesMonthly": 53687091200
+  },
+  "limits": {
+    "bandwidthBytesMonthly": 53687091200,
+    "tunnelHoursMonthly": 1000,
+    "concurrentTunnelsMax": 10,
+    "requestsMonthly": 1000000
+  },
+  "history": [
+    {
+      "id": "uuid",
+      "orgId": "org-uuid",
+      "periodType": "daily",
+      "periodStart": "2024-01-15T00:00:00Z",
+      "bandwidthBytes": 1234567890,
+      "tunnelSeconds": 12345,
+      "requestCount": 23456,
+      "peakConcurrentTunnels": 5
+    }
+  ]
+}
+```
+
+#### PUT `/admin/organizations/{id}/plan`
+Assign a plan to an organization.
+
+**Request:**
+```json
+{
+  "planId": "plan-uuid"
+}
+```
+
+> Set `planId` to null to remove the plan.
+
+---
+
 ## Auth API Endpoints
 
 #### POST `/auth/check-account`
@@ -716,6 +903,92 @@ The Org Portal API mirrors many admin endpoints but scoped to the authenticated 
 | POST `/org/whitelist` | Add to whitelist |
 | GET `/org/api-keys` | List API keys |
 | POST `/org/api-keys` | Create API key |
+| GET `/org/usage` | Current usage and limits |
+| GET `/org/usage/history` | Historical usage data |
+| GET `/org/settings` | Organization settings |
+| PUT `/org/settings` | Update organization settings |
+
+### Usage Endpoints
+
+#### GET `/org/usage`
+Get current usage and quota information for the organization.
+
+**Response:**
+```json
+{
+  "periodStart": "2024-01-01T00:00:00Z",
+  "periodEnd": "2024-02-01T00:00:00Z",
+  "usage": {
+    "bandwidthBytes": 12345678900,
+    "tunnelSeconds": 1234567,
+    "tunnelHours": 342,
+    "requestCount": 234567,
+    "peakConcurrentTunnels": 8,
+    "currentConcurrent": 3
+  },
+  "plan": {
+    "name": "Pro",
+    "bandwidthBytesMonthly": 53687091200,
+    "tunnelHoursMonthly": 1000,
+    "concurrentTunnelsMax": 10,
+    "requestsMonthly": 1000000,
+    "overageAllowedPercent": 20,
+    "gracePeriodHours": 24
+  },
+  "quotas": {
+    "bandwidth": {
+      "used": 12345678900,
+      "limit": 53687091200,
+      "percent": 23
+    },
+    "tunnelHours": {
+      "used": 342,
+      "limit": 1000,
+      "percent": 34.2
+    },
+    "concurrentTunnels": {
+      "current": 3,
+      "limit": 10,
+      "percent": 30
+    },
+    "requests": {
+      "used": 234567,
+      "limit": 1000000,
+      "percent": 23.4
+    }
+  }
+}
+```
+
+> Note: `quotas` is only present if the organization has a plan assigned.
+
+#### GET `/org/usage/history`
+Get historical usage data.
+
+**Query Parameters:**
+- `period` - Snapshot period type: `hourly`, `daily`, or `monthly` (default: `daily`)
+- `days` - Number of days of history (default: 30, max: 365)
+
+**Response:**
+```json
+{
+  "period": "daily",
+  "start": "2023-12-16T00:00:00Z",
+  "end": "2024-01-15T00:00:00Z",
+  "history": [
+    {
+      "id": "uuid",
+      "orgId": "org-uuid",
+      "periodType": "daily",
+      "periodStart": "2024-01-15T00:00:00Z",
+      "bandwidthBytes": 1234567890,
+      "tunnelSeconds": 12345,
+      "requestCount": 23456,
+      "peakConcurrentTunnels": 5
+    }
+  ]
+}
+```
 
 ---
 
@@ -802,3 +1075,47 @@ Rate-limited responses include:
 HTTP 429 Too Many Requests
 Retry-After: 1800
 ```
+
+---
+
+## Quota Enforcement
+
+When an organization exceeds its plan limits, the following behavior applies:
+
+### Tunnel Connection
+If concurrent tunnel or bandwidth limits are exceeded, new tunnel connections will be rejected with a WebSocket error message:
+
+```
+Quota exceeded: concurrent tunnel limit exceeded
+```
+
+or
+
+```
+Quota exceeded: monthly bandwidth limit exceeded
+```
+
+### HTTP Requests
+When request or bandwidth limits are exceeded, proxied requests return:
+
+```
+HTTP 429 Too Many Requests
+Retry-After: 86400
+X-Quota-Limit: 1000000
+X-Quota-Used: 1000000
+X-Quota-Remaining: 0
+X-Quota-Reset: 2024-02-01T00:00:00Z
+
+Quota exceeded: monthly request limit exceeded
+```
+
+### Grace Periods
+Paid plans may have configured grace periods and overage allowances:
+
+| Plan Type | Overage | Grace Period |
+|-----------|---------|--------------|
+| Free | 0% | None |
+| Pro | 20% | 24 hours |
+| Enterprise | 50% | 72 hours |
+
+During the grace period, requests continue to be processed but the organization should upgrade or reduce usage.

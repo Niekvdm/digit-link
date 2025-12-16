@@ -37,6 +37,10 @@ type Server struct {
 
 	// Rate limiter for login endpoints
 	loginRateLimiter *auth.RateLimiter
+
+	// Usage tracking and quota enforcement
+	usageCache   *UsageCache
+	quotaChecker *QuotaChecker
 }
 
 // New creates a new tunnel server
@@ -98,6 +102,11 @@ func New(domain, scheme, secret string, database *db.DB) *Server {
 			BlockDuration:   30 * time.Minute,
 			CleanupInterval: 5 * time.Minute,
 		})
+
+		// Initialize usage tracking and quota enforcement
+		s.usageCache = NewUsageCache(database)
+		s.usageCache.Start()
+		s.quotaChecker = NewQuotaChecker(s.usageCache, database)
 	}
 
 	return s
@@ -524,6 +533,19 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check quota before registering tunnel
+	if s.quotaChecker != nil && orgID != "" {
+		allowed, reason := s.quotaChecker.CanConnectTunnel(orgID)
+		if !allowed {
+			s.mu.Unlock()
+			s.sendRegisterResponse(conn, false, "", "", fmt.Sprintf("Quota exceeded: %s", reason))
+			conn.Close()
+			return
+		}
+		// Track concurrent tunnel increase
+		s.usageCache.IncrementConcurrentTunnels(orgID)
+	}
+
 	// Register tunnel with context
 	var appID string
 	if app != nil {
@@ -574,6 +596,7 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	s.sendRegisterResponse(conn, true, subdomain, url, "")
 
 	// Handle incoming messages (responses from client)
+	tunnelStartTime := time.Now()
 	s.handleTunnelMessages(tunnel)
 
 	// Cleanup on disconnect
@@ -581,6 +604,15 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	delete(s.tunnels, subdomain)
 	s.mu.Unlock()
 	tunnel.Close()
+
+	// Track usage on disconnect
+	if s.usageCache != nil && orgID != "" {
+		// Decrement concurrent tunnels
+		s.usageCache.DecrementConcurrentTunnels(orgID)
+		// Record tunnel duration
+		tunnelDuration := time.Since(tunnelStartTime)
+		s.usageCache.RecordTunnelTime(orgID, int64(tunnelDuration.Seconds()))
+	}
 
 	// Close tunnel record in database
 	if s.db != nil && tunnelRecordID != "" {
@@ -661,6 +693,21 @@ func (s *Server) extractRequestID(payload interface{}) string {
 
 // forwardRequest forwards an HTTP request through the tunnel
 func (s *Server) forwardRequest(w http.ResponseWriter, r *http.Request, tunnel *Tunnel) {
+	// Check quota before processing request
+	if s.quotaChecker != nil && tunnel.OrgID != "" {
+		allowed, reason := s.quotaChecker.CanProcessRequest(tunnel.OrgID)
+		if !allowed {
+			// Add quota headers to response
+			headers := s.quotaChecker.GetQuotaHeaders(tunnel.OrgID, QuotaRequests)
+			for k, v := range headers {
+				w.Header().Set(k, v)
+			}
+			w.Header().Set("Retry-After", "86400") // Retry after 1 day (end of billing period)
+			http.Error(w, fmt.Sprintf("Quota exceeded: %s", reason), http.StatusTooManyRequests)
+			return
+		}
+	}
+
 	requestID := uuid.New().String()
 
 	// Build HTTP request message
@@ -714,7 +761,13 @@ func (s *Server) forwardRequest(w http.ResponseWriter, r *http.Request, tunnel *
 
 		// Update tunnel stats in database
 		if s.db != nil && tunnel.RecordID != "" {
-			go s.db.UpdateTunnelStats(tunnel.RecordID, bytesSent, bytesReceived)
+			go s.db.UpdateTunnelStatsWithRequests(tunnel.RecordID, bytesSent, bytesReceived, 1)
+		}
+
+		// Update usage cache for quota tracking
+		if s.usageCache != nil && tunnel.OrgID != "" {
+			s.usageCache.RecordBandwidth(tunnel.OrgID, bytesSent+bytesReceived)
+			s.usageCache.RecordRequest(tunnel.OrgID)
 		}
 
 		var respMsg protocol.Message

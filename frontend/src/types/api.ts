@@ -329,3 +329,112 @@ export interface AuthStats {
   uniqueIps: number
   failuresToday: number
 }
+
+// ============================================
+// Plans & Usage
+// ============================================
+
+export interface Plan {
+  id: string
+  name: string
+  bandwidthBytesMonthly?: number
+  tunnelHoursMonthly?: number
+  concurrentTunnelsMax?: number
+  requestsMonthly?: number
+  overageAllowedPercent: number
+  gracePeriodHours: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PlansResponse {
+  plans: Plan[]
+}
+
+export interface CreatePlanRequest {
+  name: string
+  bandwidthBytesMonthly?: number
+  tunnelHoursMonthly?: number
+  concurrentTunnelsMax?: number
+  requestsMonthly?: number
+  overageAllowedPercent?: number
+  gracePeriodHours?: number
+}
+
+export interface PlanResponse {
+  plan: Plan
+  organizations?: Organization[]
+}
+
+export interface UsageSnapshot {
+  id: string
+  orgId: string
+  periodType: 'hourly' | 'daily' | 'monthly'
+  periodStart: string
+  bandwidthBytes: number
+  tunnelSeconds: number
+  requestCount: number
+  peakConcurrentTunnels: number
+}
+
+export interface QuotaInfo {
+  used: number
+  limit: number
+  percent: number
+}
+
+export interface OrgUsageResponse {
+  periodStart: string
+  periodEnd: string
+  usage: {
+    bandwidthBytes: number
+    tunnelSeconds: number
+    tunnelHours: number
+    requestCount: number
+    peakConcurrentTunnels: number
+    currentConcurrent: number
+  }
+  plan?: {
+    name: string
+    bandwidthBytesMonthly?: number
+    tunnelHoursMonthly?: number
+    concurrentTunnelsMax?: number
+    requestsMonthly?: number
+    overageAllowedPercent: number
+    gracePeriodHours: number
+  }
+  quotas?: {
+    bandwidth?: QuotaInfo
+    tunnelHours?: QuotaInfo
+    concurrentTunnels?: { current: number; limit: number; percent: number }
+    requests?: QuotaInfo
+  }
+}
+
+export interface UsageHistoryResponse {
+  period: string
+  start: string
+  end: string
+  history: UsageSnapshot[]
+}
+
+export interface UsageSummaryResponse {
+  organizations: Array<{
+    orgId: string
+    orgName: string
+    planId?: string
+    planName?: string
+    bandwidthBytes: number
+    tunnelSeconds: number
+    requestCount: number
+    peakConcurrentTunnels: number
+    limits?: {
+      bandwidthBytesMonthly?: number
+      tunnelHoursMonthly?: number
+      concurrentTunnelsMax?: number
+      requestsMonthly?: number
+    }
+  }>
+  periodStart: string
+  periodEnd: string
+}
