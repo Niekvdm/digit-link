@@ -113,10 +113,11 @@ const handleSelect = () => {
     class="relative bg-bg-surface border rounded-xs overflow-hidden transition-all duration-200"
     :class="[
       style.border,
-      current ? 'ring-2 ring-accent-primary ring-offset-2 ring-offset-bg-base' : '',
+      current ? 'ring-2 ring-accent-primary ring-offset-2' : '',
       selectable && !current ? 'cursor-pointer hover:border-accent-primary/50 hover:shadow-lg' : '',
       selected && !current ? 'ring-2 ring-accent-secondary' : ''
     ]"
+    :style="current ? { '--tw-ring-offset-color': 'var(--bg-deep)' } : {}"
     @click="handleSelect"
   >
     <!-- Gradient header -->
