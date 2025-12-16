@@ -12,6 +12,9 @@ import (
 	"github.com/niekvdm/digit-link/internal/db"
 )
 
+// maxRequestBodySize is the maximum allowed request body size (1MB)
+const maxRequestBodySize = 1 << 20
+
 // jsonError writes a JSON error response
 func jsonError(w http.ResponseWriter, message string, code int) {
 	w.Header().Set("Content-Type", "application/json")
@@ -27,6 +30,22 @@ func jsonResponse(w http.ResponseWriter, data interface{}) {
 	if err := json.NewEncoder(w).Encode(data); err != nil {
 		log.Printf("Failed to encode JSON response: %v", err)
 	}
+}
+
+// validateJSONContentType checks if the request has a valid JSON content type
+// Returns true if valid, false otherwise (and sends error response)
+func validateJSONContentType(w http.ResponseWriter, r *http.Request) bool {
+	contentType := r.Header.Get("Content-Type")
+	if contentType == "" || (!strings.HasPrefix(contentType, "application/json") && !strings.HasPrefix(contentType, "text/json")) {
+		jsonError(w, "Content-Type must be application/json", http.StatusUnsupportedMediaType)
+		return false
+	}
+	return true
+}
+
+// limitRequestBody wraps the request body with a size limit
+func limitRequestBody(r *http.Request) {
+	r.Body = http.MaxBytesReader(nil, r.Body, maxRequestBodySize)
 }
 
 // handleAdmin routes admin API requests
@@ -283,6 +302,11 @@ func (s *Server) handleAdminSetMyPassword(w http.ResponseWriter, r *http.Request
 	Username string
 	IsAdmin  bool
 }) {
+	if !validateJSONContentType(w, r) {
+		return
+	}
+	limitRequestBody(r)
+
 	var req struct {
 		Password string `json:"password"`
 	}
@@ -361,6 +385,11 @@ func (s *Server) handleAdminEnableMyTOTP(w http.ResponseWriter, r *http.Request,
 	Username string
 	IsAdmin  bool
 }) {
+	if !validateJSONContentType(w, r) {
+		return
+	}
+	limitRequestBody(r)
+
 	var req struct {
 		Code string `json:"code"`
 	}
@@ -422,6 +451,11 @@ func (s *Server) handleAdminDisableMyTOTP(w http.ResponseWriter, r *http.Request
 	Username string
 	IsAdmin  bool
 }) {
+	if !validateJSONContentType(w, r) {
+		return
+	}
+	limitRequestBody(r)
+
 	var req struct {
 		Code string `json:"code"`
 	}
@@ -482,7 +516,7 @@ func (s *Server) handleListAccounts(w http.ResponseWriter, r *http.Request) {
 	accounts, err := s.db.ListAccounts()
 	if err != nil {
 		log.Printf("Failed to list accounts: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -520,6 +554,11 @@ func (s *Server) handleListAccounts(w http.ResponseWriter, r *http.Request) {
 
 // handleCreateAccount creates a new account
 func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
+	if !validateJSONContentType(w, r) {
+		return
+	}
+	limitRequestBody(r)
+
 	var req struct {
 		Username string `json:"username"`
 		Password string `json:"password,omitempty"`
@@ -528,12 +567,12 @@ func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
 	if req.Username == "" {
-		http.Error(w, "Username is required", http.StatusBadRequest)
+		jsonError(w, "Username is required", http.StatusBadRequest)
 		return
 	}
 
@@ -547,11 +586,11 @@ func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 	existing, err := s.db.GetAccountByUsername(req.Username)
 	if err != nil {
 		log.Printf("Failed to check username: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 	if existing != nil {
-		http.Error(w, "Username already exists", http.StatusConflict)
+		jsonError(w, "Username already exists", http.StatusConflict)
 		return
 	}
 
@@ -561,11 +600,11 @@ func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 		org, err := s.db.GetOrganizationByID(req.OrgID)
 		if err != nil {
 			log.Printf("Failed to check organization: %v", err)
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			jsonError(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 		if org == nil {
-			http.Error(w, "Organization not found", http.StatusNotFound)
+			jsonError(w, "Organization not found", http.StatusNotFound)
 			return
 		}
 		orgName = org.Name
@@ -575,7 +614,7 @@ func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 	token, tokenHash, err := auth.GenerateToken()
 	if err != nil {
 		log.Printf("Failed to generate token: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -585,7 +624,7 @@ func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 		passwordHash, err = auth.HashPassword(req.Password)
 		if err != nil {
 			log.Printf("Failed to hash password: %v", err)
-			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			jsonError(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 	}
@@ -599,7 +638,7 @@ func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		log.Printf("Failed to create account: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -635,7 +674,7 @@ func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request, accountID string) {
 	if err := s.db.DeactivateAccount(accountID); err != nil {
 		log.Printf("Failed to deactivate account: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -651,7 +690,7 @@ func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request, acc
 func (s *Server) handleActivateAccount(w http.ResponseWriter, r *http.Request, accountID string) {
 	if err := s.db.ActivateAccount(accountID); err != nil {
 		log.Printf("Failed to activate account: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -669,14 +708,14 @@ func (s *Server) handleRegenerateToken(w http.ResponseWriter, r *http.Request, a
 	token, tokenHash, err := auth.GenerateToken()
 	if err != nil {
 		log.Printf("Failed to generate token: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
 	// Update account
 	if err := s.db.UpdateAccountToken(accountID, tokenHash); err != nil {
 		log.Printf("Failed to update token: %v", err)
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 
@@ -691,6 +730,11 @@ func (s *Server) handleRegenerateToken(w http.ResponseWriter, r *http.Request, a
 
 // handleSetAccountOrganization links or unlinks an account to/from an organization
 func (s *Server) handleSetAccountOrganization(w http.ResponseWriter, r *http.Request, accountID string) {
+	if !validateJSONContentType(w, r) {
+		return
+	}
+	limitRequestBody(r)
+
 	var req struct {
 		OrgID string `json:"orgId"` // Empty string to unlink
 	}
@@ -751,6 +795,11 @@ func (s *Server) handleSetAccountOrganization(w http.ResponseWriter, r *http.Req
 
 // handleSetAccountPassword sets or updates the password for an account
 func (s *Server) handleSetAccountPassword(w http.ResponseWriter, r *http.Request, accountID string) {
+	if !validateJSONContentType(w, r) {
+		return
+	}
+	limitRequestBody(r)
+
 	var req struct {
 		Password string `json:"password"`
 	}
@@ -846,6 +895,11 @@ func (s *Server) handleGetAccount(w http.ResponseWriter, r *http.Request, accoun
 
 // handleSetAccountUsername updates the username for an account
 func (s *Server) handleSetAccountUsername(w http.ResponseWriter, r *http.Request, accountID string) {
+	if !validateJSONContentType(w, r) {
+		return
+	}
+	limitRequestBody(r)
+
 	var req struct {
 		Username string `json:"username"`
 	}
@@ -902,6 +956,11 @@ func (s *Server) handleSetAccountUsername(w http.ResponseWriter, r *http.Request
 
 // handleSetAccountOrgAdmin updates the org admin status for an account
 func (s *Server) handleSetAccountOrgAdmin(w http.ResponseWriter, r *http.Request, accountID string) {
+	if !validateJSONContentType(w, r) {
+		return
+	}
+	limitRequestBody(r)
+
 	var req struct {
 		IsOrgAdmin bool `json:"isOrgAdmin"`
 	}
@@ -1029,13 +1088,18 @@ func (s *Server) handleListWhitelist(w http.ResponseWriter, r *http.Request) {
 
 // handleAddWhitelist adds an IP range to the global whitelist
 func (s *Server) handleAddWhitelist(w http.ResponseWriter, r *http.Request, createdBy string) {
+	if !validateJSONContentType(w, r) {
+		return
+	}
+	limitRequestBody(r)
+
 	var req struct {
 		IPRange     string `json:"ipRange"`
 		Description string `json:"description"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -1207,12 +1271,17 @@ func (s *Server) handleListOrganizations(w http.ResponseWriter, r *http.Request)
 
 // handleCreateOrganization creates a new organization
 func (s *Server) handleCreateOrganization(w http.ResponseWriter, r *http.Request) {
+	if !validateJSONContentType(w, r) {
+		return
+	}
+	limitRequestBody(r)
+
 	var req struct {
 		Name string `json:"name"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -1251,12 +1320,17 @@ func (s *Server) handleCreateOrganization(w http.ResponseWriter, r *http.Request
 
 // handleUpdateOrganization updates an organization
 func (s *Server) handleUpdateOrganization(w http.ResponseWriter, r *http.Request, orgID string) {
+	if !validateJSONContentType(w, r) {
+		return
+	}
+	limitRequestBody(r)
+
 	var req struct {
 		Name string `json:"name"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -1346,6 +1420,11 @@ func (s *Server) handleGetOrgPolicy(w http.ResponseWriter, r *http.Request, orgI
 
 // handleSetOrgPolicy sets the auth policy for an organization
 func (s *Server) handleSetOrgPolicy(w http.ResponseWriter, r *http.Request, orgID string) {
+	if !validateJSONContentType(w, r) {
+		return
+	}
+	limitRequestBody(r)
+
 	var req struct {
 		AuthType           string            `json:"authType"`
 		BasicUsername      string            `json:"basicUsername,omitempty"`
@@ -1617,6 +1696,11 @@ func (s *Server) handleGetApplicationTunnels(w http.ResponseWriter, r *http.Requ
 
 // handleCreateApplication creates a new application
 func (s *Server) handleCreateApplication(w http.ResponseWriter, r *http.Request) {
+	if !validateJSONContentType(w, r) {
+		return
+	}
+	limitRequestBody(r)
+
 	var req struct {
 		OrgID     string `json:"orgId"`
 		Subdomain string `json:"subdomain"`
@@ -1624,7 +1708,7 @@ func (s *Server) handleCreateApplication(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -1670,6 +1754,11 @@ func (s *Server) handleCreateApplication(w http.ResponseWriter, r *http.Request)
 
 // handleUpdateApplication updates an application
 func (s *Server) handleUpdateApplication(w http.ResponseWriter, r *http.Request, appID string) {
+	if !validateJSONContentType(w, r) {
+		return
+	}
+	limitRequestBody(r)
+
 	var req struct {
 		Name      string `json:"name"`
 		Subdomain string `json:"subdomain,omitempty"`
@@ -1678,7 +1767,7 @@ func (s *Server) handleUpdateApplication(w http.ResponseWriter, r *http.Request,
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -1774,6 +1863,11 @@ func (s *Server) handleGetAppPolicy(w http.ResponseWriter, r *http.Request, appI
 
 // handleSetAppPolicy sets the auth policy for an application
 func (s *Server) handleSetAppPolicy(w http.ResponseWriter, r *http.Request, appID string) {
+	if !validateJSONContentType(w, r) {
+		return
+	}
+	limitRequestBody(r)
+
 	var req struct {
 		AuthType           string            `json:"authType"`
 		BasicUsername      string            `json:"basicUsername,omitempty"`
@@ -1911,6 +2005,11 @@ func (s *Server) handleListAPIKeys(w http.ResponseWriter, r *http.Request) {
 
 // handleCreateAPIKey creates a new API key
 func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
+	if !validateJSONContentType(w, r) {
+		return
+	}
+	limitRequestBody(r)
+
 	var req struct {
 		OrgID       string `json:"orgId,omitempty"`
 		AppID       string `json:"appId,omitempty"`
@@ -1919,7 +2018,7 @@ func (s *Server) handleCreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 

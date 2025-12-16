@@ -199,28 +199,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.forwardRequest(w, r, tunnel)
 }
 
-// handleHealth returns health and stats info
+// handleHealth returns basic health status (no sensitive info)
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	s.mu.RLock()
-	tunnelCount := len(s.tunnels)
-	s.mu.RUnlock()
-
-	response := map[string]interface{}{
-		"status":        "ok",
-		"activeTunnels": tunnelCount,
-	}
-
-	if s.db != nil {
-		if count, err := s.db.CountActiveAccounts(); err == nil {
-			response["activeAccounts"] = count
-		}
-		if count, err := s.db.CountGlobalWhitelist(); err == nil {
-			response["whitelistEntries"] = count
-		}
-	}
-
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "ok",
+	})
 }
 
 // serveDashboard serves the Vue SPA - all routes return index.html except static assets
@@ -991,9 +975,8 @@ func (s *Server) handleTunnelAuthLogin(w http.ResponseWriter, r *http.Request, s
 		return
 	}
 
-	// Update redirect URL for this subdomain
+	// Handle OIDC login (redirect URL is set per-request in HandleLogin)
 	if s.oidcHandler != nil {
-		s.oidcHandler.UpdateProviderRedirectURL(effectivePolicy.OIDC.IssuerURL, subdomain)
 		s.oidcHandler.HandleLogin(w, r, effectivePolicy, authCtx)
 	} else {
 		http.Error(w, "OIDC handler not initialized", http.StatusInternalServerError)

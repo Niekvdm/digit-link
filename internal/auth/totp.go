@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"time"
 
@@ -82,7 +83,8 @@ func getEncryptionKey() ([]byte, error) {
 func EncryptTOTPSecret(secret string) (string, error) {
 	key, err := getEncryptionKey()
 	if err != nil {
-		// If no JWT_SECRET, store unencrypted (for development)
+		// If no JWT_SECRET, store unencrypted (for development only)
+		log.Printf("WARNING: Storing secret without encryption - JWT_SECRET not set. This is insecure for production!")
 		return secret, nil
 	}
 

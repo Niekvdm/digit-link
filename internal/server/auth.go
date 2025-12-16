@@ -10,6 +10,22 @@ import (
 	"github.com/niekvdm/digit-link/internal/auth"
 )
 
+// maxAuthRequestBodySize is the maximum allowed request body size for auth endpoints (64KB)
+const maxAuthRequestBodySize = 64 * 1024
+
+// validateAuthJSONRequest validates Content-Type and limits request body size
+// Returns true if valid, false otherwise (and sends error response)
+func validateAuthJSONRequest(w http.ResponseWriter, r *http.Request) bool {
+	contentType := r.Header.Get("Content-Type")
+	if contentType == "" || (!strings.HasPrefix(contentType, "application/json") && !strings.HasPrefix(contentType, "text/json")) {
+		w.WriteHeader(http.StatusUnsupportedMediaType)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Content-Type must be application/json"})
+		return false
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxAuthRequestBodySize)
+	return true
+}
+
 // LoginRequest contains the login credentials
 type LoginRequest struct {
 	Username string `json:"username"`
@@ -177,6 +193,10 @@ func (s *Server) handleCheckAccount(w http.ResponseWriter, r *http.Request) {
 
 // handleLogin handles username/password authentication for both admin and org accounts
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if !validateAuthJSONRequest(w, r) {
+		return
+	}
+
 	// Apply rate limiting
 	if s.loginRateLimiter != nil {
 		clientIP := auth.GetClientIP(r)
@@ -244,7 +264,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 			clientIP := auth.GetClientIP(r)
 			s.loginRateLimiter.RecordFailure(auth.IPRateLimitKey(clientIP))
 		}
-		log.Printf("Failed login attempt for user: %s", req.Username)
+		log.Printf("Failed login attempt from IP: %s", auth.GetClientIP(r))
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(LoginResponse{Error: "Invalid credentials"})
 		return
@@ -496,6 +516,10 @@ func (s *Server) handleTOTPSetupPost(w http.ResponseWriter, r *http.Request) {
 
 // handleTOTPVerify verifies the TOTP code and issues JWT
 func (s *Server) handleTOTPVerify(w http.ResponseWriter, r *http.Request) {
+	if !validateAuthJSONRequest(w, r) {
+		return
+	}
+
 	// Apply rate limiting (use account-specific key if possible, fall back to IP)
 	var rateLimitKey string
 	if s.loginRateLimiter != nil {
@@ -560,7 +584,7 @@ func (s *Server) handleTOTPVerify(w http.ResponseWriter, r *http.Request) {
 		if s.loginRateLimiter != nil && rateLimitKey != "" {
 			s.loginRateLimiter.RecordFailure(rateLimitKey)
 		}
-		log.Printf("Invalid TOTP code for user: %s", account.Username)
+		log.Printf("Invalid TOTP code from IP: %s", auth.GetClientIP(r))
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(TOTPVerifyResponse{Error: "Invalid TOTP code"})
 		return
@@ -628,6 +652,10 @@ type OrgLoginResponse struct {
 // handleOrgLogin handles organization account username/password authentication
 // Org accounts don't require TOTP - they use simpler password-only authentication
 func (s *Server) handleOrgLogin(w http.ResponseWriter, r *http.Request) {
+	if !validateAuthJSONRequest(w, r) {
+		return
+	}
+
 	// Apply rate limiting
 	if s.loginRateLimiter != nil {
 		clientIP := auth.GetClientIP(r)
@@ -696,7 +724,7 @@ func (s *Server) handleOrgLogin(w http.ResponseWriter, r *http.Request) {
 			clientIP := auth.GetClientIP(r)
 			s.loginRateLimiter.RecordFailure(auth.IPRateLimitKey(clientIP))
 		}
-		log.Printf("Failed org login attempt for user: %s", req.Username)
+		log.Printf("Failed org login attempt from IP: %s", auth.GetClientIP(r))
 		w.WriteHeader(http.StatusUnauthorized)
 		json.NewEncoder(w).Encode(OrgLoginResponse{Error: "Invalid credentials"})
 		return

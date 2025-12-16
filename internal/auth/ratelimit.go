@@ -107,15 +107,15 @@ func (rl *RateLimiter) Allow(key string) (bool, time.Duration) {
 		entry.blockedUntil = time.Time{}
 	}
 
-	// Increment count
-	entry.count++
-
-	// Check if over limit
-	if entry.count > rl.maxAttempts {
+	// Check if already at limit BEFORE incrementing (fixes race condition)
+	if entry.count >= rl.maxAttempts {
 		entry.blockedUntil = now.Add(rl.blockDuration)
 		rl.saveToDB(key, entry)
 		return false, rl.blockDuration
 	}
+
+	// Increment count after limit check
+	entry.count++
 
 	// Save to DB periodically (every 5 attempts or when close to limit)
 	if entry.count%5 == 0 || entry.count >= rl.maxAttempts-2 {
