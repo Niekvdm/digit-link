@@ -14,9 +14,10 @@ type Loader struct {
 	resolver *Resolver
 
 	// Cache for policies
-	orgPolicies map[string]*cachedPolicy
-	appPolicies map[string]*cachedPolicy
-	mu          sync.RWMutex
+	orgPolicies       map[string]*cachedPolicy
+	appPolicies       map[string]*cachedPolicy
+	subdomainPolicies map[string]*cachedSubdomainPolicy // NEW: subdomain -> policy cache
+	mu                sync.RWMutex
 
 	// Cache configuration
 	cacheTTL time.Duration
@@ -24,6 +25,14 @@ type Loader struct {
 
 type cachedPolicy struct {
 	policy    *EffectivePolicy
+	loadedAt  time.Time
+	expiresAt time.Time
+}
+
+// cachedSubdomainPolicy caches both policy and auth context for a subdomain
+type cachedSubdomainPolicy struct {
+	policy    *EffectivePolicy
+	authCtx   *AuthContext
 	loadedAt  time.Time
 	expiresAt time.Time
 }
@@ -41,11 +50,12 @@ func WithCacheTTL(ttl time.Duration) LoaderOption {
 // NewLoader creates a new policy loader
 func NewLoader(database *db.DB, resolver *Resolver, opts ...LoaderOption) *Loader {
 	l := &Loader{
-		db:          database,
-		resolver:    resolver,
-		orgPolicies: make(map[string]*cachedPolicy),
-		appPolicies: make(map[string]*cachedPolicy),
-		cacheTTL:    5 * time.Minute, // Default 5 minute cache
+		db:                database,
+		resolver:          resolver,
+		orgPolicies:       make(map[string]*cachedPolicy),
+		appPolicies:       make(map[string]*cachedPolicy),
+		subdomainPolicies: make(map[string]*cachedSubdomainPolicy),
+		cacheTTL:          5 * time.Minute, // Default 5 minute cache
 	}
 	for _, opt := range opts {
 		opt(l)
@@ -53,9 +63,34 @@ func NewLoader(database *db.DB, resolver *Resolver, opts ...LoaderOption) *Loade
 	return l
 }
 
-// LoadForSubdomain loads the effective policy for a subdomain
+// LoadForSubdomain loads the effective policy for a subdomain (with caching)
 func (l *Loader) LoadForSubdomain(subdomain string) (*EffectivePolicy, *AuthContext, error) {
-	return l.resolver.ResolveForSubdomain(subdomain)
+	// Check cache first
+	l.mu.RLock()
+	cached, ok := l.subdomainPolicies[subdomain]
+	l.mu.RUnlock()
+
+	if ok && time.Now().Before(cached.expiresAt) {
+		return cached.policy, cached.authCtx, nil
+	}
+
+	// Load from database via resolver
+	policy, authCtx, err := l.resolver.ResolveForSubdomain(subdomain)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Update cache
+	l.mu.Lock()
+	l.subdomainPolicies[subdomain] = &cachedSubdomainPolicy{
+		policy:    policy,
+		authCtx:   authCtx,
+		loadedAt:  time.Now(),
+		expiresAt: time.Now().Add(l.cacheTTL),
+	}
+	l.mu.Unlock()
+
+	return policy, authCtx, nil
 }
 
 // LoadForOrg loads the effective policy for an organization (with caching)
@@ -133,16 +168,37 @@ func (l *Loader) LoadForApp(appID string) (*EffectivePolicy, error) {
 }
 
 // InvalidateOrg removes an organization's policy from cache
+// Also invalidates any subdomain policies that belong to this org
 func (l *Loader) InvalidateOrg(orgID string) {
 	l.mu.Lock()
 	delete(l.orgPolicies, orgID)
+	// Also invalidate subdomain policies for apps in this org
+	for subdomain, cached := range l.subdomainPolicies {
+		if cached.authCtx != nil && cached.authCtx.OrgID == orgID {
+			delete(l.subdomainPolicies, subdomain)
+		}
+	}
 	l.mu.Unlock()
 }
 
 // InvalidateApp removes an application's policy from cache
+// Also invalidates the subdomain policy for this app
 func (l *Loader) InvalidateApp(appID string) {
 	l.mu.Lock()
 	delete(l.appPolicies, appID)
+	// Also invalidate subdomain policy for this app
+	for subdomain, cached := range l.subdomainPolicies {
+		if cached.authCtx != nil && cached.authCtx.AppID == appID {
+			delete(l.subdomainPolicies, subdomain)
+		}
+	}
+	l.mu.Unlock()
+}
+
+// InvalidateSubdomain removes a subdomain's policy from cache
+func (l *Loader) InvalidateSubdomain(subdomain string) {
+	l.mu.Lock()
+	delete(l.subdomainPolicies, subdomain)
 	l.mu.Unlock()
 }
 
@@ -151,13 +207,15 @@ func (l *Loader) InvalidateAll() {
 	l.mu.Lock()
 	l.orgPolicies = make(map[string]*cachedPolicy)
 	l.appPolicies = make(map[string]*cachedPolicy)
+	l.subdomainPolicies = make(map[string]*cachedSubdomainPolicy)
 	l.mu.Unlock()
 }
 
 // CacheStats returns cache statistics
 type CacheStats struct {
-	OrgPoliciesCached int `json:"orgPoliciesCached"`
-	AppPoliciesCached int `json:"appPoliciesCached"`
+	OrgPoliciesCached       int `json:"orgPoliciesCached"`
+	AppPoliciesCached       int `json:"appPoliciesCached"`
+	SubdomainPoliciesCached int `json:"subdomainPoliciesCached"`
 }
 
 func (l *Loader) CacheStats() CacheStats {
@@ -165,8 +223,9 @@ func (l *Loader) CacheStats() CacheStats {
 	defer l.mu.RUnlock()
 
 	return CacheStats{
-		OrgPoliciesCached: len(l.orgPolicies),
-		AppPoliciesCached: len(l.appPolicies),
+		OrgPoliciesCached:       len(l.orgPolicies),
+		AppPoliciesCached:       len(l.appPolicies),
+		SubdomainPoliciesCached: len(l.subdomainPolicies),
 	}
 }
 
@@ -204,6 +263,12 @@ func (l *Loader) cleanupExpired() {
 	for appID, cached := range l.appPolicies {
 		if now.After(cached.expiresAt) {
 			delete(l.appPolicies, appID)
+		}
+	}
+
+	for subdomain, cached := range l.subdomainPolicies {
+		if now.After(cached.expiresAt) {
+			delete(l.subdomainPolicies, subdomain)
 		}
 	}
 }

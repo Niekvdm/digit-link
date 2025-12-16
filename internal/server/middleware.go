@@ -473,3 +473,24 @@ func GetEffectivePolicyFromContext(r *http.Request) *policy.EffectivePolicy {
 	}
 	return nil
 }
+
+// InvalidateSubdomainCache invalidates the cached policy for a subdomain
+func (m *AuthMiddleware) InvalidateSubdomainCache(subdomain string) {
+	if m.policyLoader != nil {
+		m.policyLoader.InvalidateSubdomain(subdomain)
+	}
+}
+
+// InvalidateAppCache invalidates the cached policy for an app
+func (m *AuthMiddleware) InvalidateAppCache(appID string) {
+	if m.policyLoader != nil {
+		m.policyLoader.InvalidateApp(appID)
+	}
+}
+
+// InvalidateOrgCache invalidates the cached policy for an org
+func (m *AuthMiddleware) InvalidateOrgCache(orgID string) {
+	if m.policyLoader != nil {
+		m.policyLoader.InvalidateOrg(orgID)
+	}
+}

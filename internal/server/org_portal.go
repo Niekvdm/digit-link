@@ -369,6 +369,11 @@ func (s *Server) handleOrgSetOrgPolicy(w http.ResponseWriter, r *http.Request, o
 		return
 	}
 
+	// Invalidate policy cache for this org (affects all apps inheriting from it)
+	if s.authMiddleware != nil {
+		s.authMiddleware.InvalidateOrgCache(orgCtx.OrgID)
+	}
+
 	log.Printf("Org auth policy set by user: %s (%s) for org %s", orgCtx.Username, authType, orgCtx.OrgID)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -494,6 +499,11 @@ func (s *Server) handleOrgCreateApplication(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Invalidate policy cache for the new subdomain
+	if s.authMiddleware != nil {
+		s.authMiddleware.InvalidateSubdomainCache(req.Subdomain)
+	}
+
 	log.Printf("Org application created: %s (%s) by %s", req.Subdomain, req.Name, orgCtx.Username)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -555,6 +565,15 @@ func (s *Server) handleOrgUpdateApplication(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Invalidate policy cache for both old and new subdomains
+	if s.authMiddleware != nil {
+		s.authMiddleware.InvalidateSubdomainCache(app.Subdomain)
+		if subdomain != app.Subdomain {
+			s.authMiddleware.InvalidateSubdomainCache(subdomain)
+		}
+		s.authMiddleware.InvalidateAppCache(appID)
+	}
+
 	log.Printf("Org application updated: %s by %s", appID, orgCtx.Username)
 
 	w.Header().Set("Content-Type", "application/json")
@@ -582,6 +601,12 @@ func (s *Server) handleOrgDeleteApplication(w http.ResponseWriter, r *http.Reque
 		log.Printf("Failed to delete application: %v", err)
 		jsonError(w, "Internal server error", http.StatusInternalServerError)
 		return
+	}
+
+	// Invalidate policy cache for the deleted app
+	if s.authMiddleware != nil {
+		s.authMiddleware.InvalidateSubdomainCache(app.Subdomain)
+		s.authMiddleware.InvalidateAppCache(appID)
 	}
 
 	log.Printf("Org application deleted: %s by %s", appID, orgCtx.Username)
@@ -752,6 +777,12 @@ func (s *Server) handleOrgSetAppPolicy(w http.ResponseWriter, r *http.Request, o
 
 	// Update app auth mode to custom
 	s.db.UpdateApplicationAuthMode(appID, db.AuthModeCustom)
+
+	// Invalidate policy cache for this app
+	if s.authMiddleware != nil {
+		s.authMiddleware.InvalidateAppCache(appID)
+		s.authMiddleware.InvalidateSubdomainCache(app.Subdomain)
+	}
 
 	log.Printf("Org app auth policy set: %s (%s) by %s", appID, authType, orgCtx.Username)
 
