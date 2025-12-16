@@ -11,8 +11,8 @@ spec:
   applicationRefs:
     - namePattern: digit-link
       images:
-        - name: app
-          image: ghcr.io/niekvdm/digit-link
+        - alias: app
+          imageName: ghcr.io/niekvdm/digit-link
           updateStrategy:
             type: digest  # Track digest changes for :latest tag
           containerName: digit-link
