@@ -4,15 +4,9 @@ metadata:
   name: digit-link-updater
   namespace: argocd-image-updater-system
 spec:
-  # Namespace where the ArgoCD Application lives
   namespace: argocd
-
-  # References to ArgoCD Applications with their image configs
   applicationRefs:
     - namePattern: digit-link
       images:
         - alias: app
           imageName: ghcr.io/niekvdm/digit-link
-          updateStrategy:
-            type: digest  # Track digest changes for :latest tag
-          containerName: digit-link

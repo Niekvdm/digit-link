@@ -146,6 +146,12 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(path, "/organizations/") && strings.HasSuffix(path, "/plan") && r.Method == http.MethodPut:
 		orgID := strings.TrimSuffix(strings.TrimPrefix(path, "/organizations/"), "/plan")
 		s.handleSetOrganizationPlan(w, r, orgID)
+	case strings.HasPrefix(path, "/organizations/") && strings.HasSuffix(path, "/usage/reset") && r.Method == http.MethodPost:
+		orgID := strings.TrimSuffix(strings.TrimPrefix(path, "/organizations/"), "/usage/reset")
+		s.handleResetOrganizationUsage(w, r, orgID)
+	case strings.HasPrefix(path, "/organizations/") && strings.HasSuffix(path, "/usage") && r.Method == http.MethodGet:
+		orgID := strings.TrimSuffix(strings.TrimPrefix(path, "/organizations/"), "/usage")
+		s.handleGetOrganizationUsage(w, r, orgID)
 	case strings.HasPrefix(path, "/organizations/") && r.Method == http.MethodPut:
 		orgID := strings.TrimPrefix(path, "/organizations/")
 		s.handleUpdateOrganization(w, r, orgID)
