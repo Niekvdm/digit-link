@@ -3,6 +3,7 @@ package client
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/url"
 	"strings"
 	"sync"
@@ -165,12 +166,20 @@ func (c *Client) Connect() error {
 
 	// Connect with WebSocket
 	dialer := websocket.Dialer{
-		HandshakeTimeout: 10 * time.Second,
+		HandshakeTimeout:  10 * time.Second,
+		EnableCompression: true, // Per-message compression for faster transmission
 	}
 
 	conn, _, err := dialer.Dial(u.String(), nil)
 	if err != nil {
 		return fmt.Errorf("failed to connect: %w", err)
+	}
+
+	// Enable TCP_NODELAY to disable Nagle's algorithm for lower latency
+	if tcpConn := conn.UnderlyingConn(); tcpConn != nil {
+		if tc, ok := tcpConn.(*net.TCPConn); ok {
+			tc.SetNoDelay(true)
+		}
 	}
 
 	c.conn = conn
@@ -414,7 +423,6 @@ func (c *Client) sendPong() {
 	}
 	c.mu.RUnlock()
 }
-
 
 // Close closes the client connection
 func (c *Client) Close() {

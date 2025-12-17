@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -87,8 +88,9 @@ func New(domain, scheme, secret string, database *db.DB) *Server {
 			log.Printf("WebSocket connection rejected: origin %s not allowed", origin)
 			return false
 		},
-		ReadBufferSize:  1024 * 64,
-		WriteBufferSize: 1024 * 64,
+		ReadBufferSize:    1024 * 64,
+		WriteBufferSize:   1024 * 64,
+		EnableCompression: true, // Per-message compression for faster transmission
 	}
 
 	// Initialize auth handlers if database is available
@@ -361,6 +363,13 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Printf("WebSocket upgrade error: %v", err)
 		return
+	}
+
+	// Enable TCP_NODELAY to disable Nagle's algorithm for lower latency
+	if tcpConn := conn.UnderlyingConn(); tcpConn != nil {
+		if tc, ok := tcpConn.(*net.TCPConn); ok {
+			tc.SetNoDelay(true)
+		}
 	}
 
 	// Wait for registration message

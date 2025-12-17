@@ -31,6 +31,12 @@ func NewProxyWithTimeout(localPort int, timeout time.Duration) *Proxy {
 		localAddr: fmt.Sprintf("http://localhost:%d", localPort),
 		client: &http.Client{
 			Timeout: timeout,
+			Transport: &http.Transport{
+				MaxIdleConns:        100,
+				MaxIdleConnsPerHost: 100,
+				IdleConnTimeout:     90 * time.Second,
+				DisableKeepAlives:   false,
+			},
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				return http.ErrUseLastResponse // Don't follow redirects
 			},

@@ -31,9 +31,11 @@ metadata:
   namespace: dzone-dev
   annotations:
     haproxy.org/ingress.class: "haproxy"
+    # Timeouts must exceed the server's 5-minute request timeout (300s) to avoid 504s
+    # Adding 30s buffer: 300s + 30s = 330s = 330000ms
     haproxy.org/timeout.connect: "5000ms"
-    haproxy.org/timeout.client: "120000ms"
-    haproxy.org/timeout.server: "120000ms"
+    haproxy.org/timeout.client: "330000ms"
+    haproxy.org/timeout.server: "330000ms"
     haproxy.org/timeout.tunnel: "3600000ms"
     cert-manager.io/cluster-issuer: "letsencrypt-production"
     haproxy.org/ssl-redirect: "true"
