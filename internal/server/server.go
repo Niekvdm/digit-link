@@ -704,7 +704,8 @@ func (s *Server) handleTunnelMessages(tunnel *Tunnel) {
 		// Reset read deadline on any message received
 		tunnel.Conn.SetReadDeadline(time.Now().Add(pongWait))
 
-		var message protocol.Message
+		// Use TypedMessage to extract type without fully parsing payload
+		var message protocol.TypedMessage
 		if err := json.Unmarshal(msg, &message); err != nil {
 			log.Printf("Invalid message from tunnel: %v", err)
 			continue
@@ -712,8 +713,8 @@ func (s *Server) handleTunnelMessages(tunnel *Tunnel) {
 
 		switch message.Type {
 		case protocol.TypeHTTPResponse:
-			// Forward response to waiting request handler
-			if ch, ok := tunnel.GetResponseChannel(s.extractRequestID(message.Payload)); ok {
+			// Forward raw message to waiting request handler - avoids re-parsing
+			if ch, ok := tunnel.GetResponseChannel(s.extractRequestIDFromRaw(message.Payload)); ok {
 				ch <- msg
 			}
 		case protocol.TypePong:
@@ -722,7 +723,19 @@ func (s *Server) handleTunnelMessages(tunnel *Tunnel) {
 	}
 }
 
-// extractRequestID extracts the request ID from a response payload
+// extractRequestIDFromRaw extracts the request ID from raw JSON payload
+func (s *Server) extractRequestIDFromRaw(payload json.RawMessage) string {
+	// Quick extraction of just the ID field without full unmarshal
+	var idExtract struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(payload, &idExtract); err != nil {
+		return ""
+	}
+	return idExtract.ID
+}
+
+// extractRequestID extracts the request ID from a response payload (legacy)
 func (s *Server) extractRequestID(payload interface{}) string {
 	if m, ok := payload.(map[string]interface{}); ok {
 		if id, ok := m["id"].(string); ok {
@@ -811,16 +824,16 @@ func (s *Server) forwardRequest(w http.ResponseWriter, r *http.Request, tunnel *
 			s.usageCache.RecordRequest(tunnel.OrgID)
 		}
 
-		var respMsg protocol.Message
+		// Use TypedMessage to parse directly without double serialization
+		var respMsg protocol.TypedMessage
 		if err := json.Unmarshal(responseData, &respMsg); err != nil {
 			http.Error(w, "Invalid response", http.StatusBadGateway)
 			return
 		}
 
-		// Parse response payload
-		payloadBytes, _ := json.Marshal(respMsg.Payload)
+		// Parse response payload directly from raw JSON
 		var httpResp protocol.HTTPResponse
-		if err := json.Unmarshal(payloadBytes, &httpResp); err != nil {
+		if err := json.Unmarshal(respMsg.Payload, &httpResp); err != nil {
 			http.Error(w, "Invalid response payload", http.StatusBadGateway)
 			return
 		}

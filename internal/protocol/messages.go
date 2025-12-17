@@ -1,5 +1,7 @@
 package protocol
 
+import "encoding/json"
+
 // Message types for WebSocket communication between client and server
 const (
 	TypeRegisterRequest  = "register_request"
@@ -14,6 +16,12 @@ const (
 type Message struct {
 	Type    string      `json:"type"`
 	Payload interface{} `json:"payload,omitempty"`
+}
+
+// TypedMessage uses json.RawMessage to avoid double serialization
+type TypedMessage struct {
+	Type    string          `json:"type"`
+	Payload json.RawMessage `json:"payload,omitempty"`
 }
 
 // RegisterRequest is sent by the client to register a subdomain

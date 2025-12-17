@@ -340,28 +340,28 @@ func (c *Client) handleMessages() {
 			return
 		}
 
-		var message protocol.Message
+		// Use TypedMessage to avoid double deserialization
+		var message protocol.TypedMessage
 		if err := json.Unmarshal(msg, &message); err != nil {
 			continue
 		}
 
 		switch message.Type {
 		case protocol.TypeHTTPRequest:
-			go c.handleHTTPRequest(message.Payload)
+			go c.handleHTTPRequestRaw(message.Payload)
 		case protocol.TypePing:
 			c.sendPong()
 		}
 	}
 }
 
-// handleHTTPRequest handles an incoming HTTP request from the tunnel
-func (c *Client) handleHTTPRequest(payload interface{}) {
+// handleHTTPRequestRaw handles an incoming HTTP request using raw JSON payload
+func (c *Client) handleHTTPRequestRaw(payload json.RawMessage) {
 	startTime := time.Now()
 
-	// Parse request payload
-	payloadBytes, _ := json.Marshal(payload)
+	// Parse request payload directly - no double serialization
 	var httpReq protocol.HTTPRequest
-	if err := json.Unmarshal(payloadBytes, &httpReq); err != nil {
+	if err := json.Unmarshal(payload, &httpReq); err != nil {
 		return
 	}
 
