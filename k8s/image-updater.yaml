@@ -2,7 +2,7 @@ apiVersion: argocd-image-updater.argoproj.io/v1alpha1
 kind: ImageUpdater
 metadata:
   name: digit-link-updater
-  namespace: argocd-image-updater-system
+  namespace: argocd
 spec:
   namespace: argocd
   applicationRefs:
