@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/niekvdm/digit-link/internal/auth"
@@ -39,8 +40,18 @@ type AuthMiddleware struct {
 	// Rate limiter
 	rateLimiter *auth.RateLimiter
 
+	// Per-app rate limiter cache
+	appRateLimiters sync.Map // map[string]*auth.RateLimiter
+	appRLConfigCache sync.Map // map[string]*appRateLimitCacheEntry
+
 	// Configuration
 	defaultDeny bool // If true, deny when policy cannot be determined
+}
+
+// appRateLimitCacheEntry caches rate limit config with expiration
+type appRateLimitCacheEntry struct {
+	config    *db.AppRateLimitConfig
+	fetchedAt time.Time
 }
 
 // AuthHandler is the interface for authentication handlers
@@ -187,8 +198,11 @@ func (m *AuthMiddleware) authenticate(w http.ResponseWriter, r *http.Request, p 
 		rateLimitKey = auth.AppIPRateLimitKey(ctx.AppID, clientIP)
 	}
 
-	if m.rateLimiter != nil {
-		allowed, retryAfter := m.rateLimiter.Allow(rateLimitKey)
+	// Get the appropriate rate limiter for this app
+	rl, skipRateLimiting := m.getAppRateLimiter(ctx)
+
+	if !skipRateLimiting && rl != nil {
+		allowed, retryAfter := rl.Allow(rateLimitKey)
 		if !allowed {
 			// Log rate limit hit
 			if m.db != nil && ctx != nil {
@@ -214,14 +228,14 @@ func (m *AuthMiddleware) authenticate(w http.ResponseWriter, r *http.Request, p 
 		result = m.defaultAPIKeyAuth(w, r, p, ctx)
 		if result.Authenticated {
 			// API key auth succeeded
-			if m.rateLimiter != nil {
-				m.rateLimiter.RecordSuccess(rateLimitKey)
+			if !skipRateLimiting && rl != nil {
+				rl.RecordSuccess(rateLimitKey)
 			}
 			return result, ctx
 		}
 		// API key was present but invalid - deny (don't fall back to avoid credential probing)
-		if m.rateLimiter != nil {
-			m.rateLimiter.RecordFailure(rateLimitKey)
+		if !skipRateLimiting && rl != nil {
+			rl.RecordFailure(rateLimitKey)
 		}
 		return result, ctx
 	}
@@ -258,13 +272,13 @@ func (m *AuthMiddleware) authenticate(w http.ResponseWriter, r *http.Request, p 
 	}
 
 	// Record success/failure for rate limiting
-	if m.rateLimiter != nil {
+	if !skipRateLimiting && rl != nil {
 		if result.Authenticated {
-			m.rateLimiter.RecordSuccess(rateLimitKey)
+			rl.RecordSuccess(rateLimitKey)
 		} else if !result.ShouldRedirect && !result.ShouldChallenge {
 			// Don't count OIDC redirects or auth challenges as failures
 			// Only actual failed credential submissions should count
-			m.rateLimiter.RecordFailure(rateLimitKey)
+			rl.RecordFailure(rateLimitKey)
 		}
 	}
 
@@ -579,5 +593,84 @@ func (m *AuthMiddleware) InvalidateAppCache(appID string) {
 func (m *AuthMiddleware) InvalidateOrgCache(orgID string) {
 	if m.policyLoader != nil {
 		m.policyLoader.InvalidateOrg(orgID)
+	}
+}
+
+// getAppRateLimiter returns the appropriate rate limiter for an app
+// Returns (rateLimiter, skipRateLimiting) where skipRateLimiting=true means rate limiting is disabled
+func (m *AuthMiddleware) getAppRateLimiter(ctx *policy.AuthContext) (*auth.RateLimiter, bool) {
+	// If no app context, use default rate limiter
+	if ctx == nil || ctx.AppID == "" {
+		return m.rateLimiter, false
+	}
+
+	// Check cache first (with 5-minute TTL)
+	const cacheTTL = 5 * time.Minute
+	if cached, ok := m.appRLConfigCache.Load(ctx.AppID); ok {
+		entry := cached.(*appRateLimitCacheEntry)
+		if time.Since(entry.fetchedAt) < cacheTTL {
+			if entry.config == nil {
+				// No custom config, use default
+				return m.rateLimiter, false
+			}
+			if !entry.config.Enabled {
+				// Rate limiting disabled for this app
+				return nil, true
+			}
+			// Use cached custom rate limiter
+			if rl, ok := m.appRateLimiters.Load(ctx.AppID); ok {
+				return rl.(*auth.RateLimiter), false
+			}
+		}
+	}
+
+	// Fetch from database
+	config, err := m.db.GetAppRateLimitConfig(ctx.AppID)
+	if err != nil {
+		log.Printf("Failed to get rate limit config for app %s: %v", ctx.AppID, err)
+		// Fall back to default on error
+		return m.rateLimiter, false
+	}
+
+	// Cache the config
+	m.appRLConfigCache.Store(ctx.AppID, &appRateLimitCacheEntry{
+		config:    config,
+		fetchedAt: time.Now(),
+	})
+
+	// No custom config, use default
+	if config == nil {
+		return m.rateLimiter, false
+	}
+
+	// Rate limiting disabled for this app
+	if !config.Enabled {
+		return nil, true
+	}
+
+	// Create or get custom rate limiter for this app
+	if rl, ok := m.appRateLimiters.Load(ctx.AppID); ok {
+		return rl.(*auth.RateLimiter), false
+	}
+
+	// Create new rate limiter with custom config
+	customConfig := auth.RateLimiterConfig{
+		MaxAttempts:     config.MaxAttempts,
+		WindowDuration:  time.Duration(config.WindowDurationSeconds) * time.Second,
+		BlockDuration:   time.Duration(config.BlockDurationSeconds) * time.Second,
+		CleanupInterval: 5 * time.Minute,
+	}
+	customRL := auth.NewRateLimiter(m.db, customConfig)
+	m.appRateLimiters.Store(ctx.AppID, customRL)
+
+	return customRL, false
+}
+
+// InvalidateAppRateLimitCache invalidates the cached rate limit config for an app
+func (m *AuthMiddleware) InvalidateAppRateLimitCache(appID string) {
+	m.appRLConfigCache.Delete(appID)
+	// Also remove the custom rate limiter so it gets recreated with new config
+	if rl, ok := m.appRateLimiters.LoadAndDelete(appID); ok {
+		rl.(*auth.RateLimiter).Stop()
 	}
 }

@@ -275,6 +275,35 @@ export interface SetPolicyRequest {
 }
 
 // ============================================
+// Rate Limiting
+// ============================================
+
+export interface AppRateLimitConfig {
+  appId: string
+  enabled: boolean
+  maxAttempts: number
+  windowDurationSeconds: number
+  blockDurationSeconds: number
+  updatedAt?: string
+}
+
+export interface SetRateLimitRequest {
+  enabled: boolean
+  maxAttempts: number
+  windowDurationSeconds: number
+  blockDurationSeconds: number
+}
+
+export interface RateLimitResponse {
+  config: AppRateLimitConfig | null
+  defaults: {
+    maxAttempts: number
+    windowDurationSeconds: number
+    blockDurationSeconds: number
+  }
+}
+
+// ============================================
 // API Keys
 // ============================================
 

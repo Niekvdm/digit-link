@@ -1,15 +1,17 @@
 import { ref, readonly } from 'vue'
 import { useApi } from '@/composables/useApi'
 import { usePortalContext } from '@/composables/usePortalContext'
-import type { 
-  Application, 
+import type {
+  Application,
   ApplicationsResponse,
   CreateApplicationRequest,
   CreateApplicationResponse,
   UpdateApplicationRequest,
   PolicyResponse,
   SetPolicyRequest,
-  DeleteResponse
+  DeleteResponse,
+  RateLimitResponse,
+  SetRateLimitRequest
 } from '@/types/api'
 
 export function useApplications() {
@@ -86,6 +88,18 @@ export function useApplications() {
     return api.get(getEndpoint(`/${appId}/tunnels`))
   }
 
+  async function getRateLimit(appId: string) {
+    return api.get<RateLimitResponse>(getEndpoint(`/${appId}/rate-limit`))
+  }
+
+  async function setRateLimit(appId: string, config: SetRateLimitRequest) {
+    await api.put(getEndpoint(`/${appId}/rate-limit`), config)
+  }
+
+  async function resetRateLimit(appId: string) {
+    await api.del(getEndpoint(`/${appId}/rate-limit`))
+  }
+
   return {
     applications: readonly(applications),
     loading: readonly(loading),
@@ -98,6 +112,9 @@ export function useApplications() {
     getPolicy,
     setPolicy,
     getStats,
-    getTunnels
+    getTunnels,
+    getRateLimit,
+    setRateLimit,
+    resetRateLimit
   }
 }

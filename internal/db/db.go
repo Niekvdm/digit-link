@@ -224,6 +224,16 @@ func (db *DB) initSchema() error {
 		key_id TEXT
 	);
 
+	-- Per-application rate limit configuration
+	CREATE TABLE IF NOT EXISTS app_rate_limit_config (
+		app_id TEXT PRIMARY KEY REFERENCES applications(id) ON DELETE CASCADE,
+		enabled BOOLEAN DEFAULT TRUE,
+		max_attempts INTEGER DEFAULT 10,
+		window_duration_seconds INTEGER DEFAULT 900,
+		block_duration_seconds INTEGER DEFAULT 1800,
+		updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
+
 	-- Subscription plans with quota limits
 	CREATE TABLE IF NOT EXISTS plans (
 		id TEXT PRIMARY KEY,
@@ -273,6 +283,7 @@ func (db *DB) initSchema() error {
 	CREATE INDEX IF NOT EXISTS idx_auth_audit_log_app_id ON auth_audit_log(app_id);
 	CREATE INDEX IF NOT EXISTS idx_usage_snapshots_org_id ON usage_snapshots(org_id);
 	CREATE INDEX IF NOT EXISTS idx_usage_snapshots_period ON usage_snapshots(period_type, period_start);
+	CREATE INDEX IF NOT EXISTS idx_app_rate_limit_config_app_id ON app_rate_limit_config(app_id);
 	`
 
 	_, err := db.conn.Exec(schema)

@@ -1,25 +1,27 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { 
-  PageHeader, 
-  StatCard, 
+import {
+  PageHeader,
+  StatCard,
   Modal,
   ConfirmDialog,
   PolicyEditor,
+  RateLimitEditor,
   StatusBadge
 } from '@/components/ui'
 import { useApplications } from '@/composables/api'
 import { useFormatters } from '@/composables/useFormatters'
-import type { Application, UpdateApplicationRequest, SetPolicyRequest } from '@/types/api'
-import { 
-  Cable, 
-  Activity, 
+import type { Application, UpdateApplicationRequest, SetPolicyRequest, AppRateLimitConfig, SetRateLimitRequest } from '@/types/api'
+import {
+  Cable,
+  Activity,
   ArrowDownUp,
   Settings,
   Save,
   Trash2,
-  ExternalLink
+  ExternalLink,
+  Shield
 } from 'lucide-vue-next'
 
 const props = defineProps<{
@@ -27,7 +29,7 @@ const props = defineProps<{
 }>()
 
 const router = useRouter()
-const { fetchOne, update, remove, getPolicy, setPolicy } = useApplications()
+const { fetchOne, update, remove, getPolicy, setPolicy, getRateLimit, setRateLimit, resetRateLimit } = useApplications()
 const { formatDate, formatBytes } = useFormatters()
 
 const application = ref<Application | null>(null)
@@ -47,6 +49,12 @@ const policyLoading = ref(false)
 
 // Delete confirm
 const showDeleteConfirm = ref(false)
+
+// Rate limit modal
+const showRateLimitModal = ref(false)
+const rateLimitConfig = ref<AppRateLimitConfig | null>(null)
+const rateLimitDefaults = ref({ maxAttempts: 10, windowDurationSeconds: 900, blockDurationSeconds: 1800 })
+const rateLimitLoading = ref(false)
 
 onMounted(async () => {
   await loadApplication()
@@ -118,12 +126,61 @@ async function handleSetPolicy(policy: SetPolicyRequest) {
 
 async function handleDelete() {
   if (!application.value) return
-  
+
   try {
     await remove(application.value.id)
     router.push({ name: 'admin-applications' })
   } catch (e) {
     error.value = e instanceof Error ? e.message : 'Failed to delete application'
+  }
+}
+
+async function openRateLimitModal() {
+  if (!application.value) return
+
+  rateLimitLoading.value = true
+  try {
+    const res = await getRateLimit(application.value.id)
+    rateLimitConfig.value = res.config
+    rateLimitDefaults.value = res.defaults
+  } catch {
+    rateLimitConfig.value = null
+  } finally {
+    rateLimitLoading.value = false
+  }
+
+  showRateLimitModal.value = true
+}
+
+async function handleSetRateLimit(config: SetRateLimitRequest) {
+  if (!application.value) return
+
+  rateLimitLoading.value = true
+  try {
+    await setRateLimit(application.value.id, config)
+    showRateLimitModal.value = false
+    // Refresh rate limit config
+    const res = await getRateLimit(application.value.id)
+    rateLimitConfig.value = res.config
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Failed to save rate limit config'
+  } finally {
+    rateLimitLoading.value = false
+  }
+}
+
+async function handleResetRateLimit() {
+  if (!application.value) return
+
+  rateLimitLoading.value = true
+  try {
+    await resetRateLimit(application.value.id)
+    showRateLimitModal.value = false
+    rateLimitConfig.value = null
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Failed to reset rate limit config'
+  } finally {
+    rateLimitLoading.value = false
   }
 }
 
@@ -277,17 +334,35 @@ const authModeClass = computed(() => {
           <div class="py-5 px-6 bg-bg-surface flex flex-col gap-2">
             <span class="text-xs font-medium uppercase tracking-wide text-text-secondary">Auth Policy</span>
             <div class="text-[0.9375rem] text-text-primary flex items-center gap-2">
-              <StatusBadge 
+              <StatusBadge
                 :status="application.hasPolicy ? 'active' : 'inactive'"
                 :label="application.hasPolicy ? 'Configured' : 'Not Set'"
                 size="sm"
               />
-              <button 
+              <button
                 v-if="application.authMode === 'custom'"
                 class="btn btn-secondary py-1.5 px-3 text-xs ml-2"
                 @click="openPolicyModal"
               >
                 <Settings class="w-3.5 h-3.5" />
+                Configure
+              </button>
+            </div>
+          </div>
+
+          <div class="py-5 px-6 bg-bg-surface flex flex-col gap-2">
+            <span class="text-xs font-medium uppercase tracking-wide text-text-secondary">Rate Limiting</span>
+            <div class="text-[0.9375rem] text-text-primary flex items-center gap-2">
+              <StatusBadge
+                :status="rateLimitConfig ? (rateLimitConfig.enabled ? 'active' : 'warning') : 'inactive'"
+                :label="rateLimitConfig ? (rateLimitConfig.enabled ? 'Custom' : 'Disabled') : 'Default'"
+                size="sm"
+              />
+              <button
+                class="btn btn-secondary py-1.5 px-3 text-xs ml-2"
+                @click="openRateLimitModal"
+              >
+                <Shield class="w-3.5 h-3.5" />
                 Configure
               </button>
             </div>
@@ -298,10 +373,22 @@ const authModeClass = computed(() => {
 
     <!-- Policy Modal -->
     <Modal v-model="showPolicyModal" :title="`Auth Policy: ${application?.name}`" size="lg">
-      <PolicyEditor 
+      <PolicyEditor
         :initial-policy="currentPolicy"
         @submit="handleSetPolicy"
         @cancel="showPolicyModal = false"
+      />
+    </Modal>
+
+    <!-- Rate Limit Modal -->
+    <Modal v-model="showRateLimitModal" :title="`Rate Limiting: ${application?.name}`" size="md">
+      <RateLimitEditor
+        :config="rateLimitConfig"
+        :defaults="rateLimitDefaults"
+        :loading="rateLimitLoading"
+        @submit="handleSetRateLimit"
+        @reset="handleResetRateLimit"
+        @cancel="showRateLimitModal = false"
       />
     </Modal>
 

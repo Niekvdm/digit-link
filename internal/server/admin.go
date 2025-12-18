@@ -184,6 +184,15 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(path, "/applications/") && strings.HasSuffix(path, "/policy") && r.Method == http.MethodPut:
 		appID := strings.TrimSuffix(strings.TrimPrefix(path, "/applications/"), "/policy")
 		s.handleSetAppPolicy(w, r, appID)
+	case strings.HasPrefix(path, "/applications/") && strings.HasSuffix(path, "/rate-limit") && r.Method == http.MethodGet:
+		appID := strings.TrimSuffix(strings.TrimPrefix(path, "/applications/"), "/rate-limit")
+		s.handleAdminGetAppRateLimit(w, r, appID)
+	case strings.HasPrefix(path, "/applications/") && strings.HasSuffix(path, "/rate-limit") && r.Method == http.MethodPut:
+		appID := strings.TrimSuffix(strings.TrimPrefix(path, "/applications/"), "/rate-limit")
+		s.handleAdminSetAppRateLimit(w, r, appID)
+	case strings.HasPrefix(path, "/applications/") && strings.HasSuffix(path, "/rate-limit") && r.Method == http.MethodDelete:
+		appID := strings.TrimSuffix(strings.TrimPrefix(path, "/applications/"), "/rate-limit")
+		s.handleAdminDeleteAppRateLimit(w, r, appID)
 	case strings.HasPrefix(path, "/applications/") && r.Method == http.MethodGet:
 		appID := strings.TrimPrefix(path, "/applications/")
 		s.handleGetApplication(w, r, appID)
@@ -2098,6 +2107,148 @@ func (s *Server) handleSetAppPolicy(w http.ResponseWriter, r *http.Request, appI
 	}
 
 	log.Printf("App auth policy set: %s (%s)", appID, authType)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
+}
+
+// ============================================
+// Rate Limit Configuration
+// ============================================
+
+func (s *Server) handleAdminGetAppRateLimit(w http.ResponseWriter, r *http.Request, appID string) {
+	// Verify app exists
+	app, err := s.db.GetApplicationByID(appID)
+	if err != nil {
+		log.Printf("Failed to get application: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if app == nil {
+		jsonError(w, "Application not found", http.StatusNotFound)
+		return
+	}
+
+	config, err := s.db.GetAppRateLimitConfig(appID)
+	if err != nil {
+		log.Printf("Failed to get rate limit config: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Get default values
+	defaultMax, defaultWindow, defaultBlock := db.DefaultRateLimitValues()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"config": config,
+		"defaults": map[string]int{
+			"maxAttempts":           defaultMax,
+			"windowDurationSeconds": defaultWindow,
+			"blockDurationSeconds":  defaultBlock,
+		},
+	})
+}
+
+func (s *Server) handleAdminSetAppRateLimit(w http.ResponseWriter, r *http.Request, appID string) {
+	// Verify app exists
+	app, err := s.db.GetApplicationByID(appID)
+	if err != nil {
+		log.Printf("Failed to get application: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if app == nil {
+		jsonError(w, "Application not found", http.StatusNotFound)
+		return
+	}
+
+	if !validateJSONContentType(w, r) {
+		return
+	}
+	limitRequestBody(r)
+
+	var req struct {
+		Enabled               bool `json:"enabled"`
+		MaxAttempts           int  `json:"maxAttempts"`
+		WindowDurationSeconds int  `json:"windowDurationSeconds"`
+		BlockDurationSeconds  int  `json:"blockDurationSeconds"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate values
+	if req.MaxAttempts < 1 || req.MaxAttempts > 100 {
+		jsonError(w, "maxAttempts must be between 1 and 100", http.StatusBadRequest)
+		return
+	}
+	if req.WindowDurationSeconds < 60 || req.WindowDurationSeconds > 3600 {
+		jsonError(w, "windowDurationSeconds must be between 60 and 3600", http.StatusBadRequest)
+		return
+	}
+	if req.BlockDurationSeconds < 60 || req.BlockDurationSeconds > 86400 {
+		jsonError(w, "blockDurationSeconds must be between 60 and 86400", http.StatusBadRequest)
+		return
+	}
+
+	config := &db.AppRateLimitConfig{
+		AppID:                 appID,
+		Enabled:               req.Enabled,
+		MaxAttempts:           req.MaxAttempts,
+		WindowDurationSeconds: req.WindowDurationSeconds,
+		BlockDurationSeconds:  req.BlockDurationSeconds,
+	}
+
+	if err := s.db.SetAppRateLimitConfig(config); err != nil {
+		log.Printf("Failed to set rate limit config: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Invalidate cache
+	if s.authMiddleware != nil {
+		s.authMiddleware.InvalidateAppRateLimitCache(appID)
+	}
+
+	log.Printf("Rate limit config set for app %s (enabled=%v, max=%d, window=%d, block=%d)",
+		appID, req.Enabled, req.MaxAttempts, req.WindowDurationSeconds, req.BlockDurationSeconds)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+	})
+}
+
+func (s *Server) handleAdminDeleteAppRateLimit(w http.ResponseWriter, r *http.Request, appID string) {
+	// Verify app exists
+	app, err := s.db.GetApplicationByID(appID)
+	if err != nil {
+		log.Printf("Failed to get application: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	if app == nil {
+		jsonError(w, "Application not found", http.StatusNotFound)
+		return
+	}
+
+	if err := s.db.DeleteAppRateLimitConfig(appID); err != nil {
+		log.Printf("Failed to delete rate limit config: %v", err)
+		jsonError(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	// Invalidate cache
+	if s.authMiddleware != nil {
+		s.authMiddleware.InvalidateAppRateLimitCache(appID)
+	}
+
+	log.Printf("Rate limit config reset to defaults for app %s", appID)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
