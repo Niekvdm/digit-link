@@ -44,7 +44,7 @@ metadata:
 spec:
   rules:
   # Main domain for admin dashboard, API, and WebSocket control connections
-  - host: tunnel.digit.zone
+  - host: link.digit.zone
     http:
       paths:
       - path: /
@@ -55,7 +55,7 @@ spec:
             port:
               number: 80
   # Wildcard for tunnel subdomains
-  - host: "*.tunnel.digit.zone"
+  - host: "*.link.digit.zone"
     http:
       paths:
       - path: /
@@ -67,6 +67,6 @@ spec:
               number: 80
   tls:
   - hosts:
-    - tunnel.digit.zone
-    - "*.tunnel.digit.zone"
+    - link.digit.zone
+    - "*.link.digit.zone"
     secretName: digit-link-tls
