@@ -1,16 +1,9 @@
 name: Build and Push Docker Image
 
 on:
-  push:
-    branches: [main, master]
-    paths-ignore:
-      - 'k8s/**'
-      - '*.md'
-      - 'docs/**'
+  release:
+    types: [published]
   workflow_dispatch:
-
-# Security: Self-hosted runner - only runs on push to main, not on PRs
-# PRs from forks could run malicious code on the runner
 
 env:
   REGISTRY: ghcr.io
@@ -18,12 +11,24 @@ env:
 
 jobs:
   build-and-push:
+    # Only run automatically for SemVer release tags like v1.2.3
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v')
     runs-on: [self-hosted, Linux, ARM64]
+
     permissions:
       contents: read
       packages: write
 
     steps:
+      - name: Validate release tag is SemVer (vMAJOR.MINOR.PATCH)
+        if: github.event_name == 'release'
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tag '$TAG' is not SemVer (expected vMAJOR.MINOR.PATCH)."
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -45,8 +50,10 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=sha,prefix=
-            type=raw,value=latest,enable={{is_default_branch}}
+            # Use the release tag as the image tag (v1.2.3)
+            type=ref,event=tag
+            # Optionally also publish :latest for stable releases
+            type=raw,value=latest,enable=${{ github.event_name == 'release' && !github.event.release.prerelease }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
