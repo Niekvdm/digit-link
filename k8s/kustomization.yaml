@@ -10,4 +10,4 @@ resources:
 
 images:
   - name: ghcr.io/niekvdm/digit-link
-    newTag: v0.0.0
+    newTag: v0.1.0
