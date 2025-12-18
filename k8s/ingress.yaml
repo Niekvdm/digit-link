@@ -1,12 +1,12 @@
 # digit-link Ingress Configuration
 #
 # First-boot setup:
-#   Navigate to https://tunnel.digit.zone/ after deployment.
+#   Navigate to https://link.digit.zone/ after deployment.
 #   If no admin account exists, the setup wizard will appear.
 #
 # Routes:
-#   - tunnel.digit.zone: Admin dashboard & WebSocket control plane
-#   - *.tunnel.digit.zone: Tunnel subdomains for forwarded traffic
+#   - link.digit.zone: Admin dashboard & WebSocket control plane
+#   - *.link.digit.zone: Tunnel subdomains for forwarded traffic
 #
 # Client IP forwarding:
 #   For IP whitelisting to work correctly in Kubernetes, you need:
@@ -44,7 +44,7 @@ metadata:
 spec:
   rules:
   # Main domain for admin dashboard, API, and WebSocket control connections
-  - host: tunnel.digit.zone
+  - host: link.digit.zone
     http:
       paths:
       - path: /
@@ -55,7 +55,7 @@ spec:
             port:
               number: 80
   # Wildcard for tunnel subdomains
-  - host: "*.tunnel.digit.zone"
+  - host: "*.link.digit.zone"
     http:
       paths:
       - path: /
@@ -67,6 +67,6 @@ spec:
               number: 80
   tls:
   - hosts:
-    - tunnel.digit.zone
-    - "*.tunnel.digit.zone"
+    - link.digit.zone
+    - "*.link.digit.zone"
     secretName: digit-link-tls

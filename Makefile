@@ -70,7 +70,7 @@ docker-build:
 	docker build -t digit-link-server .
 
 docker-run:
-	docker run -p 8080:8080 -e DOMAIN=tunnel.digit.zone digit-link-server
+	docker run -p 8080:8080 -e DOMAIN=link.digit.zone digit-link-server
 
 # Run locally
 run-server:

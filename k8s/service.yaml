@@ -53,7 +53,7 @@ spec:
             - name: PORT
               value: "8080"
             - name: DOMAIN
-              value: "tunnel.digit.zone"
+              value: "link.digit.zone"
             - name: DB_PATH
               value: "/data/digit-link.db"
             # Trust proxy headers from internal cluster IPs (required for correct client IP detection)

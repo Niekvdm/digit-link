@@ -67,7 +67,7 @@ func New(domain, scheme, secret string, database *db.DB) *Server {
 			}
 
 			// Check if origin matches the expected domain (with any subdomain)
-			// Allow: https://tunnel.digit.zone, https://subdomain.tunnel.digit.zone
+			// Allow: https://link.digit.zone, https://subdomain.link.digit.zone
 			allowedOrigins := []string{
 				scheme + "://" + domain,
 				scheme + "://localhost",
@@ -952,7 +952,7 @@ func GetDomain() string {
 	if domain := os.Getenv("DOMAIN"); domain != "" {
 		return domain
 	}
-	return "tunnel.digit.zone"
+	return "link.digit.zone"
 }
 
 // GetScheme returns the URL scheme from environment or default (https)

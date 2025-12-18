@@ -93,7 +93,7 @@ The server is the central hub handling all traffic routing.
 
 ```go
 type Server struct {
-    domain         string              // Base domain (tunnel.digit.zone)
+    domain         string              // Base domain (link.digit.zone)
     scheme         string              // URL scheme (https)
     db             *db.DB              // Database connection
     tunnels        map[string]*Tunnel  // Active tunnel connections
@@ -260,7 +260,7 @@ User                Server              AuthMiddleware        Tunnel Client
 │                                                             │
 │  ┌───────────────────────────────────────────────────────┐  │
 │  │                    INGRESS CONTROLLER                  │  │
-│  │  - Wildcard TLS: *.tunnel.digit.zone                  │  │
+│  │  - Wildcard TLS: *.link.digit.zone                  │  │
 │  │  - TLS termination                                     │  │
 │  │  - externalTrafficPolicy: Local (for real client IP)  │  │
 │  └───────────────────────────────────────────────────────┘  │
@@ -288,7 +288,7 @@ User                Server              AuthMiddleware        Tunnel Client
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `PORT` | Server listen port | 8080 |
-| `DOMAIN` | Base domain for tunnels | tunnel.digit.zone |
+| `DOMAIN` | Base domain for tunnels | link.digit.zone |
 | `SCHEME` | URL scheme | https |
 | `DB_PATH` | SQLite database path | data/digit-link.db |
 | `JWT_SECRET` | JWT signing secret | Auto-generated (⚠️) |

@@ -12,7 +12,7 @@ import (
 
 func main() {
 	// Parse flags
-	serverAddr := flag.String("server", "tunnel.digit.zone", "Tunnel server address")
+	serverAddr := flag.String("server", "link.digit.zone", "Tunnel server address")
 	subdomain := flag.String("subdomain", "", "Subdomain to register (optional, random if not specified)")
 	port := flag.Int("port", 0, "Local port to forward to")
 	localAddr := flag.String("a", "localhost", "Local address to forward to (e.g., localhost, 127.0.0.1, 192.168.1.100)")

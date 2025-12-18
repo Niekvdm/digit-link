@@ -37,19 +37,19 @@ make build-client
 
 # Connect to tunnel server
 ./build/bin/digit-link \
-  --server tunnel.digit.zone \
+  --server link.digit.zone \
   --subdomain myapp \
   --port 3000 \
   --token YOUR_TOKEN
 
-# Your service is now available at: https://myapp.tunnel.digit.zone
+# Your service is now available at: https://myapp.link.digit.zone
 ```
 
 ### Client Options
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--server` | Tunnel server address | `tunnel.digit.zone` |
+| `--server` | Tunnel server address | `link.digit.zone` |
 | `--subdomain` | Subdomain to register | (required) |
 | `--port` | Local port to forward | (required) |
 | `--token` | Authentication token | (required) |
@@ -62,7 +62,7 @@ make build-client
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `PORT` | Server port | `8080` |
-| `DOMAIN` | Base domain for tunnels | `tunnel.digit.zone` |
+| `DOMAIN` | Base domain for tunnels | `link.digit.zone` |
 | `DB_PATH` | SQLite database path | `data/digit-link.db` |
 | `JWT_SECRET` | Secret for JWT tokens | (auto-generated) |
 | `ADMIN_TOKEN` | Auto-create admin on startup | (none) |

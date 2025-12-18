@@ -272,7 +272,7 @@ const authModeClasses: Record<string, string> = {
             <div class="text-[0.9375rem] text-text-primary flex items-center gap-2">
               <code class="font-mono text-accent-secondary">{{ application.subdomain }}</code>
               <a 
-                :href="`https://${application.subdomain}.tunnel.digit.zone`" 
+                :href="`https://${application.subdomain}.link.digit.zone`" 
                 target="_blank"
                 class="text-text-muted transition-colors hover:text-accent-secondary"
               >

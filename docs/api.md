@@ -501,7 +501,7 @@ List active tunnels.
   "active": [
     {
       "subdomain": "myapp",
-      "url": "https://myapp.tunnel.digit.zone",
+      "url": "https://myapp.link.digit.zone",
       "createdAt": "2024-01-15T12:00:00Z"
     }
   ],
@@ -994,7 +994,7 @@ Get historical usage data.
 
 ## Tunnel Auth Endpoints (Per-Subdomain)
 
-These endpoints are available on each application's subdomain (e.g., `https://myapp.tunnel.digit.zone/__auth/*`).
+These endpoints are available on each application's subdomain (e.g., `https://myapp.link.digit.zone/__auth/*`).
 
 #### GET `/__auth/login?redirect={url}`
 Start OIDC login flow.
