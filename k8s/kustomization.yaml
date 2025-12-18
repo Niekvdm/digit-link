@@ -7,7 +7,7 @@ resources:
   - namespace.yaml
   - service.yaml
   - ingress.yaml
-  # Optional: Pre-configure admin token (copy secrets.yaml.example to secrets.yaml)
-  # - secrets.yaml
-  # NOTE: image-updater.yaml must be applied separately (different namespace)
-  # kubectl apply -f k8s/image-updater.yaml
+
+images:
+  - name: ghcr.io/niekvdm/digit-link
+    newTag: v0.1.0
