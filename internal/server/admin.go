@@ -1513,6 +1513,7 @@ func (s *Server) handleSetOrgPolicy(w http.ResponseWriter, r *http.Request, orgI
 
 	var req struct {
 		AuthType             string            `json:"authType"`
+		APIKeyEnabled        bool              `json:"apiKeyEnabled"`
 		BasicUsername        string            `json:"basicUsername,omitempty"`
 		BasicPassword        string            `json:"basicPassword,omitempty"`
 		BasicSessionDuration int               `json:"basicSessionDuration,omitempty"` // Hours, 0 = default (24h)
@@ -1536,9 +1537,16 @@ func (s *Server) handleSetOrgPolicy(w http.ResponseWriter, r *http.Request, orgI
 		return
 	}
 
+	// API key add-on is only valid with Basic or OIDC
+	if req.APIKeyEnabled && authType == db.AuthTypeAPIKey {
+		jsonError(w, "API key add-on is only valid with Basic or OIDC auth types", http.StatusBadRequest)
+		return
+	}
+
 	policy := &db.OrgAuthPolicy{
-		OrgID:    orgID,
-		AuthType: authType,
+		OrgID:         orgID,
+		AuthType:      authType,
+		APIKeyEnabled: req.APIKeyEnabled,
 	}
 
 	switch authType {
@@ -1983,6 +1991,7 @@ func (s *Server) handleSetAppPolicy(w http.ResponseWriter, r *http.Request, appI
 
 	var req struct {
 		AuthType             string            `json:"authType"`
+		APIKeyEnabled        bool              `json:"apiKeyEnabled"`
 		BasicUsername        string            `json:"basicUsername,omitempty"`
 		BasicPassword        string            `json:"basicPassword,omitempty"`
 		BasicSessionDuration int               `json:"basicSessionDuration,omitempty"` // Hours, 0 = default (24h)
@@ -2006,9 +2015,16 @@ func (s *Server) handleSetAppPolicy(w http.ResponseWriter, r *http.Request, appI
 		return
 	}
 
+	// API key add-on is only valid with Basic or OIDC
+	if req.APIKeyEnabled && authType == db.AuthTypeAPIKey {
+		jsonError(w, "API key add-on is only valid with Basic or OIDC auth types", http.StatusBadRequest)
+		return
+	}
+
 	policy := &db.AppAuthPolicy{
-		AppID:    appID,
-		AuthType: authType,
+		AppID:         appID,
+		AuthType:      authType,
+		APIKeyEnabled: req.APIKeyEnabled,
 	}
 
 	switch authType {

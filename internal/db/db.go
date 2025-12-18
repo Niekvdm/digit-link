@@ -148,6 +148,7 @@ func (db *DB) initSchema() error {
 	CREATE TABLE IF NOT EXISTS org_auth_policies (
 		org_id TEXT PRIMARY KEY REFERENCES organizations(id),
 		auth_type TEXT NOT NULL,
+		api_key_enabled BOOLEAN DEFAULT FALSE,
 		basic_user_hash TEXT,
 		basic_pass_hash TEXT,
 		basic_session_duration INTEGER,
@@ -163,6 +164,7 @@ func (db *DB) initSchema() error {
 	CREATE TABLE IF NOT EXISTS app_auth_policies (
 		app_id TEXT PRIMARY KEY REFERENCES applications(id),
 		auth_type TEXT NOT NULL,
+		api_key_enabled BOOLEAN DEFAULT FALSE,
 		basic_user_hash TEXT,
 		basic_pass_hash TEXT,
 		basic_session_duration INTEGER,
@@ -300,6 +302,8 @@ func (db *DB) runMigrations() error {
 		{"api_keys", "key_type", "TEXT DEFAULT 'account'"},
 		{"organizations", "require_totp", "BOOLEAN DEFAULT FALSE"},
 		{"organizations", "plan_id", "TEXT REFERENCES plans(id)"},
+		{"org_auth_policies", "api_key_enabled", "BOOLEAN DEFAULT FALSE"},
+		{"app_auth_policies", "api_key_enabled", "BOOLEAN DEFAULT FALSE"},
 	}
 
 	for _, m := range columnMigrations {

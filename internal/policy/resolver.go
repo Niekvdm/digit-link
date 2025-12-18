@@ -155,8 +155,9 @@ func (r *Resolver) resolveForOrgWithContext(orgID string, ctx *AuthContext) (*Ef
 // orgPolicyToEffective converts an org auth policy to an effective policy
 func (r *Resolver) orgPolicyToEffective(orgPolicy *db.OrgAuthPolicy) (*EffectivePolicy, *AuthContext, error) {
 	policy := &EffectivePolicy{
-		Type:  AuthType(orgPolicy.AuthType),
-		OrgID: orgPolicy.OrgID,
+		Type:          AuthType(orgPolicy.AuthType),
+		APIKeyEnabled: orgPolicy.APIKeyEnabled,
+		OrgID:         orgPolicy.OrgID,
 	}
 
 	switch policy.Type {
@@ -196,9 +197,10 @@ func (r *Resolver) orgPolicyToEffective(orgPolicy *db.OrgAuthPolicy) (*Effective
 // appPolicyToEffective converts an app auth policy to an effective policy
 func (r *Resolver) appPolicyToEffective(appPolicy *db.AppAuthPolicy, orgID, appID string) (*EffectivePolicy, *AuthContext, error) {
 	policy := &EffectivePolicy{
-		Type:  AuthType(appPolicy.AuthType),
-		OrgID: orgID,
-		AppID: appID,
+		Type:          AuthType(appPolicy.AuthType),
+		APIKeyEnabled: appPolicy.APIKeyEnabled,
+		OrgID:         orgID,
+		AppID:         appID,
 	}
 
 	switch policy.Type {

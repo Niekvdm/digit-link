@@ -209,6 +209,23 @@ func (m *AuthMiddleware) authenticate(w http.ResponseWriter, r *http.Request, p 
 
 	var result *policy.AuthResult
 
+	// If API key is enabled as add-on, try it first
+	if p.HasAPIKeyAddOn() && m.hasAPIKeyHeader(r) {
+		result = m.defaultAPIKeyAuth(w, r, p, ctx)
+		if result.Authenticated {
+			// API key auth succeeded
+			if m.rateLimiter != nil {
+				m.rateLimiter.RecordSuccess(rateLimitKey)
+			}
+			return result, ctx
+		}
+		// API key was present but invalid - deny (don't fall back to avoid credential probing)
+		if m.rateLimiter != nil {
+			m.rateLimiter.RecordFailure(rateLimitKey)
+		}
+		return result, ctx
+	}
+
 	switch p.Type {
 	case policy.AuthTypeBasic:
 		if m.basicHandler == nil {
@@ -251,6 +268,22 @@ func (m *AuthMiddleware) authenticate(w http.ResponseWriter, r *http.Request, p 
 	}
 
 	return result, ctx
+}
+
+// hasAPIKeyHeader checks if an API key header is present (without validating)
+func (m *AuthMiddleware) hasAPIKeyHeader(r *http.Request) bool {
+	if r.Header.Get("X-API-Key") != "" {
+		return true
+	}
+	if r.Header.Get("X-Tunnel-API-Key") != "" {
+		return true
+	}
+	authHeader := r.Header.Get("Authorization")
+	if strings.HasPrefix(authHeader, "Bearer ") {
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		return strings.HasPrefix(token, "dlk_")
+	}
+	return false
 }
 
 // HandleAuthResult handles the authentication result, sending appropriate responses

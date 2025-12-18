@@ -6,6 +6,7 @@ import type { AuthType, SetPolicyRequest } from '@/types/api'
 const props = defineProps<{
   initialPolicy?: {
     authType?: AuthType
+    apiKeyEnabled?: boolean
     oidcIssuerUrl?: string
     oidcClientId?: string
     oidcScopes?: string[]
@@ -25,6 +26,9 @@ const authType = ref<AuthType>(props.initialPolicy?.authType || 'basic')
 const basicUsername = ref('')
 const basicPassword = ref('')
 const basicSessionDuration = ref(24) // Default 24 hours
+
+// API key add-on toggle
+const apiKeyEnabled = ref(props.initialPolicy?.apiKeyEnabled ?? false)
 
 const sessionDurationOptions = [
   { value: 1, label: '1 hour' },
@@ -107,6 +111,11 @@ function handleSubmit() {
     authType: authType.value
   }
 
+  // Include API key add-on for Basic or OIDC auth types
+  if (authType.value === 'basic' || authType.value === 'oidc') {
+    policy.apiKeyEnabled = apiKeyEnabled.value
+  }
+
   if (authType.value === 'basic') {
     policy.basicUsername = basicUsername.value
     policy.basicPassword = basicPassword.value
@@ -159,6 +168,23 @@ function handleCancel() {
           </div>
         </button>
       </div>
+    </div>
+
+    <!-- API Key Add-On Checkbox (only for Basic/OIDC) -->
+    <div v-if="authType === 'basic' || authType === 'oidc'" class="flex items-start gap-3 py-3 px-4 bg-bg-deep border border-border-subtle rounded-xs">
+      <input
+        id="api-key-enabled"
+        v-model="apiKeyEnabled"
+        type="checkbox"
+        class="mt-0.5 w-4 h-4 rounded border-border-subtle text-accent-primary focus:ring-accent-primary cursor-pointer"
+      />
+      <label for="api-key-enabled" class="flex flex-col gap-0.5 cursor-pointer">
+        <span class="font-medium text-text-primary">Also enable API key authentication</span>
+        <span class="text-[0.8125rem] text-text-muted">
+          Allow API clients to authenticate using API keys. If no API key is provided,
+          {{ authType === 'basic' ? 'Basic Auth' : 'OIDC' }} will be used.
+        </span>
+      </label>
     </div>
 
     <!-- Basic Auth fields -->

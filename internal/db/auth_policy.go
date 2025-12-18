@@ -10,6 +10,7 @@ import (
 type OrgAuthPolicy struct {
 	OrgID                string            `json:"orgId"`
 	AuthType             AuthType          `json:"authType"`
+	APIKeyEnabled        bool              `json:"apiKeyEnabled"`
 	BasicUserHash        string            `json:"-"`
 	BasicPassHash        string            `json:"-"`
 	BasicSessionDuration int               `json:"basicSessionDuration,omitempty"` // Hours, 0 = default (24h)
@@ -25,6 +26,7 @@ type OrgAuthPolicy struct {
 type AppAuthPolicy struct {
 	AppID                string            `json:"appId"`
 	AuthType             AuthType          `json:"authType"`
+	APIKeyEnabled        bool              `json:"apiKeyEnabled"`
 	BasicUserHash        string            `json:"-"`
 	BasicPassHash        string            `json:"-"`
 	BasicSessionDuration int               `json:"basicSessionDuration,omitempty"` // Hours, 0 = default (24h)
@@ -44,12 +46,13 @@ func (db *DB) CreateOrgAuthPolicy(policy *OrgAuthPolicy) error {
 
 	_, err := db.conn.Exec(`
 		INSERT INTO org_auth_policies (
-			org_id, auth_type, basic_user_hash, basic_pass_hash, basic_session_duration,
+			org_id, auth_type, api_key_enabled, basic_user_hash, basic_pass_hash, basic_session_duration,
 			oidc_issuer_url, oidc_client_id, oidc_client_secret_enc,
 			oidc_scopes, oidc_allowed_domains, oidc_required_claims
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(org_id) DO UPDATE SET
 			auth_type = excluded.auth_type,
+			api_key_enabled = excluded.api_key_enabled,
 			basic_user_hash = excluded.basic_user_hash,
 			basic_pass_hash = excluded.basic_pass_hash,
 			basic_session_duration = excluded.basic_session_duration,
@@ -59,7 +62,7 @@ func (db *DB) CreateOrgAuthPolicy(policy *OrgAuthPolicy) error {
 			oidc_scopes = excluded.oidc_scopes,
 			oidc_allowed_domains = excluded.oidc_allowed_domains,
 			oidc_required_claims = excluded.oidc_required_claims
-	`, policy.OrgID, policy.AuthType, policy.BasicUserHash, policy.BasicPassHash, policy.BasicSessionDuration,
+	`, policy.OrgID, policy.AuthType, policy.APIKeyEnabled, policy.BasicUserHash, policy.BasicPassHash, policy.BasicSessionDuration,
 		policy.OIDCIssuerURL, policy.OIDCClientID, policy.OIDCClientSecretEnc,
 		string(scopesJSON), string(domainsJSON), string(claimsJSON))
 
@@ -72,17 +75,18 @@ func (db *DB) CreateOrgAuthPolicy(policy *OrgAuthPolicy) error {
 // GetOrgAuthPolicy retrieves an organization auth policy
 func (db *DB) GetOrgAuthPolicy(orgID string) (*OrgAuthPolicy, error) {
 	policy := &OrgAuthPolicy{OrgID: orgID}
+	var apiKeyEnabled sql.NullBool
 	var basicUserHash, basicPassHash, oidcIssuerURL, oidcClientID, oidcClientSecretEnc sql.NullString
 	var basicSessionDuration sql.NullInt64
 	var scopesJSON, domainsJSON, claimsJSON sql.NullString
 
 	err := db.conn.QueryRow(`
-		SELECT auth_type, basic_user_hash, basic_pass_hash, basic_session_duration,
+		SELECT auth_type, api_key_enabled, basic_user_hash, basic_pass_hash, basic_session_duration,
 			oidc_issuer_url, oidc_client_id, oidc_client_secret_enc,
 			oidc_scopes, oidc_allowed_domains, oidc_required_claims
 		FROM org_auth_policies WHERE org_id = ?
 	`, orgID).Scan(
-		&policy.AuthType, &basicUserHash, &basicPassHash, &basicSessionDuration,
+		&policy.AuthType, &apiKeyEnabled, &basicUserHash, &basicPassHash, &basicSessionDuration,
 		&oidcIssuerURL, &oidcClientID, &oidcClientSecretEnc,
 		&scopesJSON, &domainsJSON, &claimsJSON,
 	)
@@ -94,6 +98,9 @@ func (db *DB) GetOrgAuthPolicy(orgID string) (*OrgAuthPolicy, error) {
 		return nil, fmt.Errorf("failed to get org auth policy: %w", err)
 	}
 
+	if apiKeyEnabled.Valid {
+		policy.APIKeyEnabled = apiKeyEnabled.Bool
+	}
 	if basicUserHash.Valid {
 		policy.BasicUserHash = basicUserHash.String
 	}
@@ -139,12 +146,13 @@ func (db *DB) CreateAppAuthPolicy(policy *AppAuthPolicy) error {
 
 	_, err := db.conn.Exec(`
 		INSERT INTO app_auth_policies (
-			app_id, auth_type, basic_user_hash, basic_pass_hash, basic_session_duration,
+			app_id, auth_type, api_key_enabled, basic_user_hash, basic_pass_hash, basic_session_duration,
 			oidc_issuer_url, oidc_client_id, oidc_client_secret_enc,
 			oidc_scopes, oidc_allowed_domains, oidc_required_claims
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(app_id) DO UPDATE SET
 			auth_type = excluded.auth_type,
+			api_key_enabled = excluded.api_key_enabled,
 			basic_user_hash = excluded.basic_user_hash,
 			basic_pass_hash = excluded.basic_pass_hash,
 			basic_session_duration = excluded.basic_session_duration,
@@ -154,7 +162,7 @@ func (db *DB) CreateAppAuthPolicy(policy *AppAuthPolicy) error {
 			oidc_scopes = excluded.oidc_scopes,
 			oidc_allowed_domains = excluded.oidc_allowed_domains,
 			oidc_required_claims = excluded.oidc_required_claims
-	`, policy.AppID, policy.AuthType, policy.BasicUserHash, policy.BasicPassHash, policy.BasicSessionDuration,
+	`, policy.AppID, policy.AuthType, policy.APIKeyEnabled, policy.BasicUserHash, policy.BasicPassHash, policy.BasicSessionDuration,
 		policy.OIDCIssuerURL, policy.OIDCClientID, policy.OIDCClientSecretEnc,
 		string(scopesJSON), string(domainsJSON), string(claimsJSON))
 
@@ -167,17 +175,18 @@ func (db *DB) CreateAppAuthPolicy(policy *AppAuthPolicy) error {
 // GetAppAuthPolicy retrieves an application auth policy
 func (db *DB) GetAppAuthPolicy(appID string) (*AppAuthPolicy, error) {
 	policy := &AppAuthPolicy{AppID: appID}
+	var apiKeyEnabled sql.NullBool
 	var basicUserHash, basicPassHash, oidcIssuerURL, oidcClientID, oidcClientSecretEnc sql.NullString
 	var basicSessionDuration sql.NullInt64
 	var scopesJSON, domainsJSON, claimsJSON sql.NullString
 
 	err := db.conn.QueryRow(`
-		SELECT auth_type, basic_user_hash, basic_pass_hash, basic_session_duration,
+		SELECT auth_type, api_key_enabled, basic_user_hash, basic_pass_hash, basic_session_duration,
 			oidc_issuer_url, oidc_client_id, oidc_client_secret_enc,
 			oidc_scopes, oidc_allowed_domains, oidc_required_claims
 		FROM app_auth_policies WHERE app_id = ?
 	`, appID).Scan(
-		&policy.AuthType, &basicUserHash, &basicPassHash, &basicSessionDuration,
+		&policy.AuthType, &apiKeyEnabled, &basicUserHash, &basicPassHash, &basicSessionDuration,
 		&oidcIssuerURL, &oidcClientID, &oidcClientSecretEnc,
 		&scopesJSON, &domainsJSON, &claimsJSON,
 	)
@@ -189,6 +198,9 @@ func (db *DB) GetAppAuthPolicy(appID string) (*AppAuthPolicy, error) {
 		return nil, fmt.Errorf("failed to get app auth policy: %w", err)
 	}
 
+	if apiKeyEnabled.Valid {
+		policy.APIKeyEnabled = apiKeyEnabled.Bool
+	}
 	if basicUserHash.Valid {
 		policy.BasicUserHash = basicUserHash.String
 	}

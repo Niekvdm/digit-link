@@ -237,6 +237,7 @@ export interface UpdateApplicationRequest {
 export interface OrgAuthPolicy {
   orgId: string
   authType: AuthType
+  apiKeyEnabled?: boolean
   oidcIssuerUrl?: string
   oidcClientId?: string
   oidcScopes?: string[]
@@ -247,6 +248,7 @@ export interface OrgAuthPolicy {
 export interface AppAuthPolicy {
   appId: string
   authType: AuthType
+  apiKeyEnabled?: boolean
   oidcIssuerUrl?: string
   oidcClientId?: string
   oidcScopes?: string[]
@@ -260,6 +262,7 @@ export interface PolicyResponse {
 
 export interface SetPolicyRequest {
   authType: AuthType
+  apiKeyEnabled?: boolean
   basicUsername?: string
   basicPassword?: string
   basicSessionDuration?: number // Hours (1, 6, 12, 24, 168, 720), 0 = default (24h)

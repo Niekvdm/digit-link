@@ -54,6 +54,10 @@ type EffectivePolicy struct {
 	// Type is the authentication type to enforce
 	Type AuthType
 
+	// APIKeyEnabled indicates API key can be used as add-on to Basic/OIDC
+	// When true and Type is Basic or OIDC, API key is tried first
+	APIKeyEnabled bool
+
 	// OrgID is the organization this policy belongs to
 	OrgID string
 
@@ -88,6 +92,11 @@ func (p *EffectivePolicy) IsAPIKey() bool {
 // IsOIDC returns true if OIDC auth is required
 func (p *EffectivePolicy) IsOIDC() bool {
 	return p != nil && p.Type == AuthTypeOIDC
+}
+
+// HasAPIKeyAddOn returns true if API key can be used as add-on auth
+func (p *EffectivePolicy) HasAPIKeyAddOn() bool {
+	return p != nil && p.APIKeyEnabled && (p.Type == AuthTypeBasic || p.Type == AuthTypeOIDC)
 }
 
 // AuthContext represents the context for an authentication request
