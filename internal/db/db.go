@@ -302,6 +302,8 @@ func (db *DB) runMigrations() error {
 		{"api_keys", "key_type", "TEXT DEFAULT 'account'"},
 		{"organizations", "require_totp", "BOOLEAN DEFAULT FALSE"},
 		{"organizations", "plan_id", "TEXT REFERENCES plans(id)"},
+		{"org_auth_policies", "basic_session_duration", "INTEGER"},
+		{"app_auth_policies", "basic_session_duration", "INTEGER"},
 		{"org_auth_policies", "api_key_enabled", "BOOLEAN DEFAULT FALSE"},
 		{"app_auth_policies", "api_key_enabled", "BOOLEAN DEFAULT FALSE"},
 	}
