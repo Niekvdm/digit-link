@@ -261,8 +261,9 @@ func (m *AuthMiddleware) authenticate(w http.ResponseWriter, r *http.Request, p 
 	if m.rateLimiter != nil {
 		if result.Authenticated {
 			m.rateLimiter.RecordSuccess(rateLimitKey)
-		} else if !result.ShouldRedirect {
-			// Don't count OIDC redirects as failures
+		} else if !result.ShouldRedirect && !result.ShouldChallenge {
+			// Don't count OIDC redirects or auth challenges as failures
+			// Only actual failed credential submissions should count
 			m.rateLimiter.RecordFailure(rateLimitKey)
 		}
 	}
