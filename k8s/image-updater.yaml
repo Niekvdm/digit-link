@@ -20,5 +20,5 @@ spec:
         method: git
         gitConfig:
           repository: https://github.com/niekvdm/digit-link.git
-          branch: main
+          branch: master
           writeBackTarget: kustomization
