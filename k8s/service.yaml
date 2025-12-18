@@ -70,6 +70,11 @@ spec:
             #     secretKeyRef:
             #       name: digit-link-secrets
             #       key: admin-token
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: digit-link-secrets
+                  key: jwt-secret
           volumeMounts:
             - name: data
               mountPath: /data
