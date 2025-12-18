@@ -11,24 +11,21 @@ spec:
 
       commonUpdateSettings:
         updateStrategy: semver
-        # Only consider strict semver tags prefixed with v
+        # Only consider strict SemVer tags prefixed with v
         allowTags: "regexp:^v[0-9]+\\.[0-9]+\\.[0-9]+$"
 
       images:
         - alias: app
           imageName: ghcr.io/niekvdm/digit-link
           manifestTargets:
-            helm:
-              # These must match your chart's values keys.
-              # Common case:
-              name: image.repository
-              tag: image.tag
+            kustomize:
+              # This is the image "name" as it appears in kustomization.yaml images[].name
+              name: ghcr.io/niekvdm/digit-link
 
       writeBackConfig:
         method: git
         gitConfig:
           repository: https://github.com/niekvdm/digit-link.git
           branch: main
-          # Write directly into a Helm values file (recommended for Helm apps)
-          # Path is relative to the Argo CD Application spec.source.path
-          writeBackTarget: "helmvalues:values.yaml"
+          # Tell it to update kustomization.yaml in the app path
+          writeBackTarget: "kustomize"
