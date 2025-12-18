@@ -2,6 +2,7 @@ package policy
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/niekvdm/digit-link/internal/db"
 )
@@ -161,8 +162,9 @@ func (r *Resolver) orgPolicyToEffective(orgPolicy *db.OrgAuthPolicy) (*Effective
 	switch policy.Type {
 	case AuthTypeBasic:
 		policy.Basic = &BasicConfig{
-			UserHash: orgPolicy.BasicUserHash,
-			PassHash: orgPolicy.BasicPassHash,
+			UserHash:        orgPolicy.BasicUserHash,
+			PassHash:        orgPolicy.BasicPassHash,
+			SessionDuration: time.Duration(orgPolicy.BasicSessionDuration) * time.Hour,
 		}
 
 	case AuthTypeAPIKey:
@@ -202,8 +204,9 @@ func (r *Resolver) appPolicyToEffective(appPolicy *db.AppAuthPolicy, orgID, appI
 	switch policy.Type {
 	case AuthTypeBasic:
 		policy.Basic = &BasicConfig{
-			UserHash: appPolicy.BasicUserHash,
-			PassHash: appPolicy.BasicPassHash,
+			UserHash:        appPolicy.BasicUserHash,
+			PassHash:        appPolicy.BasicPassHash,
+			SessionDuration: time.Duration(appPolicy.BasicSessionDuration) * time.Hour,
 		}
 
 	case AuthTypeAPIKey:

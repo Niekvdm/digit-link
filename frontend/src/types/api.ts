@@ -262,6 +262,7 @@ export interface SetPolicyRequest {
   authType: AuthType
   basicUsername?: string
   basicPassword?: string
+  basicSessionDuration?: number // Hours (1, 6, 12, 24, 168, 720), 0 = default (24h)
   oidcIssuerUrl?: string
   oidcClientId?: string
   oidcClientSecret?: string

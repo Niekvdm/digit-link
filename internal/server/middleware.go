@@ -382,15 +382,20 @@ func (m *AuthMiddleware) defaultBasicAuth(w http.ResponseWriter, r *http.Request
 				orgID = &ctx.OrgID
 			}
 		}
-		// Create session with 24-hour duration
-		session, err := m.db.CreateSession(appID, orgID, username, map[string]string{"auth_type": "basic"}, 24*time.Hour)
+		// Determine session duration (default 24 hours if not configured)
+		sessionDuration := 24 * time.Hour
+		if p.Basic != nil && p.Basic.SessionDuration > 0 {
+			sessionDuration = p.Basic.SessionDuration
+		}
+		// Create session with configured duration
+		session, err := m.db.CreateSession(appID, orgID, username, map[string]string{"auth_type": "basic"}, sessionDuration)
 		if err == nil && session != nil {
-			// Set session cookie
+			// Set session cookie with matching duration
 			http.SetCookie(w, &http.Cookie{
 				Name:     "digit_link_basic_session",
 				Value:    session.ID,
 				Path:     "/",
-				MaxAge:   86400, // 24 hours
+				MaxAge:   int(sessionDuration.Seconds()),
 				HttpOnly: true,
 				Secure:   true,
 				SameSite: http.SameSiteLaxMode,

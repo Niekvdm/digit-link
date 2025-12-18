@@ -1512,15 +1512,16 @@ func (s *Server) handleSetOrgPolicy(w http.ResponseWriter, r *http.Request, orgI
 	limitRequestBody(r)
 
 	var req struct {
-		AuthType           string            `json:"authType"`
-		BasicUsername      string            `json:"basicUsername,omitempty"`
-		BasicPassword      string            `json:"basicPassword,omitempty"`
-		OIDCIssuerURL      string            `json:"oidcIssuerUrl,omitempty"`
-		OIDCClientID       string            `json:"oidcClientId,omitempty"`
-		OIDCClientSecret   string            `json:"oidcClientSecret,omitempty"`
-		OIDCScopes         []string          `json:"oidcScopes,omitempty"`
-		OIDCAllowedDomains []string          `json:"oidcAllowedDomains,omitempty"`
-		OIDCRequiredClaims map[string]string `json:"oidcRequiredClaims,omitempty"`
+		AuthType             string            `json:"authType"`
+		BasicUsername        string            `json:"basicUsername,omitempty"`
+		BasicPassword        string            `json:"basicPassword,omitempty"`
+		BasicSessionDuration int               `json:"basicSessionDuration,omitempty"` // Hours, 0 = default (24h)
+		OIDCIssuerURL        string            `json:"oidcIssuerUrl,omitempty"`
+		OIDCClientID         string            `json:"oidcClientId,omitempty"`
+		OIDCClientSecret     string            `json:"oidcClientSecret,omitempty"`
+		OIDCScopes           []string          `json:"oidcScopes,omitempty"`
+		OIDCAllowedDomains   []string          `json:"oidcAllowedDomains,omitempty"`
+		OIDCRequiredClaims   map[string]string `json:"oidcRequiredClaims,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -1568,6 +1569,7 @@ func (s *Server) handleSetOrgPolicy(w http.ResponseWriter, r *http.Request, orgI
 		}
 		policy.BasicUserHash = userHash
 		policy.BasicPassHash = passHash
+		policy.BasicSessionDuration = req.BasicSessionDuration
 
 	case db.AuthTypeOIDC:
 		if req.OIDCIssuerURL == "" || req.OIDCClientID == "" {
@@ -1980,15 +1982,16 @@ func (s *Server) handleSetAppPolicy(w http.ResponseWriter, r *http.Request, appI
 	limitRequestBody(r)
 
 	var req struct {
-		AuthType           string            `json:"authType"`
-		BasicUsername      string            `json:"basicUsername,omitempty"`
-		BasicPassword      string            `json:"basicPassword,omitempty"`
-		OIDCIssuerURL      string            `json:"oidcIssuerUrl,omitempty"`
-		OIDCClientID       string            `json:"oidcClientId,omitempty"`
-		OIDCClientSecret   string            `json:"oidcClientSecret,omitempty"`
-		OIDCScopes         []string          `json:"oidcScopes,omitempty"`
-		OIDCAllowedDomains []string          `json:"oidcAllowedDomains,omitempty"`
-		OIDCRequiredClaims map[string]string `json:"oidcRequiredClaims,omitempty"`
+		AuthType             string            `json:"authType"`
+		BasicUsername        string            `json:"basicUsername,omitempty"`
+		BasicPassword        string            `json:"basicPassword,omitempty"`
+		BasicSessionDuration int               `json:"basicSessionDuration,omitempty"` // Hours, 0 = default (24h)
+		OIDCIssuerURL        string            `json:"oidcIssuerUrl,omitempty"`
+		OIDCClientID         string            `json:"oidcClientId,omitempty"`
+		OIDCClientSecret     string            `json:"oidcClientSecret,omitempty"`
+		OIDCScopes           []string          `json:"oidcScopes,omitempty"`
+		OIDCAllowedDomains   []string          `json:"oidcAllowedDomains,omitempty"`
+		OIDCRequiredClaims   map[string]string `json:"oidcRequiredClaims,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -2036,6 +2039,7 @@ func (s *Server) handleSetAppPolicy(w http.ResponseWriter, r *http.Request, appI
 		}
 		policy.BasicUserHash = userHash
 		policy.BasicPassHash = passHash
+		policy.BasicSessionDuration = req.BasicSessionDuration
 
 	case db.AuthTypeOIDC:
 		if req.OIDCIssuerURL == "" || req.OIDCClientID == "" {

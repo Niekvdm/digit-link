@@ -24,6 +24,16 @@ const authType = ref<AuthType>(props.initialPolicy?.authType || 'basic')
 // Basic auth fields
 const basicUsername = ref('')
 const basicPassword = ref('')
+const basicSessionDuration = ref(24) // Default 24 hours
+
+const sessionDurationOptions = [
+  { value: 1, label: '1 hour' },
+  { value: 6, label: '6 hours' },
+  { value: 12, label: '12 hours' },
+  { value: 24, label: '24 hours (default)' },
+  { value: 168, label: '7 days' },
+  { value: 720, label: '30 days' },
+]
 
 // OIDC fields
 const oidcIssuerUrl = ref(props.initialPolicy?.oidcIssuerUrl || '')
@@ -100,6 +110,7 @@ function handleSubmit() {
   if (authType.value === 'basic') {
     policy.basicUsername = basicUsername.value
     policy.basicPassword = basicPassword.value
+    policy.basicSessionDuration = basicSessionDuration.value
   } else if (authType.value === 'oidc') {
     policy.oidcIssuerUrl = oidcIssuerUrl.value
     policy.oidcClientId = oidcClientId.value
@@ -176,6 +187,20 @@ function handleCancel() {
           autocomplete="new-password"
         />
         <p class="text-xs text-text-muted m-0">Must be at least 8 characters</p>
+      </div>
+
+      <div class="flex flex-col gap-2">
+        <label class="text-xs font-medium uppercase tracking-wider text-text-secondary" for="basic-session-duration">Session Duration</label>
+        <select
+          id="basic-session-duration"
+          v-model="basicSessionDuration"
+          class="form-input"
+        >
+          <option v-for="opt in sessionDurationOptions" :key="opt.value" :value="opt.value">
+            {{ opt.label }}
+          </option>
+        </select>
+        <p class="text-xs text-text-muted m-0">How long users stay logged in after authenticating</p>
       </div>
     </template>
 

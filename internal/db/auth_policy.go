@@ -8,30 +8,32 @@ import (
 
 // OrgAuthPolicy represents an organization-level authentication policy
 type OrgAuthPolicy struct {
-	OrgID               string            `json:"orgId"`
-	AuthType            AuthType          `json:"authType"`
-	BasicUserHash       string            `json:"-"`
-	BasicPassHash       string            `json:"-"`
-	OIDCIssuerURL       string            `json:"oidcIssuerUrl,omitempty"`
-	OIDCClientID        string            `json:"oidcClientId,omitempty"`
-	OIDCClientSecretEnc string            `json:"-"`
-	OIDCScopes          []string          `json:"oidcScopes,omitempty"`
-	OIDCAllowedDomains  []string          `json:"oidcAllowedDomains,omitempty"`
-	OIDCRequiredClaims  map[string]string `json:"oidcRequiredClaims,omitempty"`
+	OrgID                string            `json:"orgId"`
+	AuthType             AuthType          `json:"authType"`
+	BasicUserHash        string            `json:"-"`
+	BasicPassHash        string            `json:"-"`
+	BasicSessionDuration int               `json:"basicSessionDuration,omitempty"` // Hours, 0 = default (24h)
+	OIDCIssuerURL        string            `json:"oidcIssuerUrl,omitempty"`
+	OIDCClientID         string            `json:"oidcClientId,omitempty"`
+	OIDCClientSecretEnc  string            `json:"-"`
+	OIDCScopes           []string          `json:"oidcScopes,omitempty"`
+	OIDCAllowedDomains   []string          `json:"oidcAllowedDomains,omitempty"`
+	OIDCRequiredClaims   map[string]string `json:"oidcRequiredClaims,omitempty"`
 }
 
 // AppAuthPolicy represents an application-level authentication policy
 type AppAuthPolicy struct {
-	AppID               string            `json:"appId"`
-	AuthType            AuthType          `json:"authType"`
-	BasicUserHash       string            `json:"-"`
-	BasicPassHash       string            `json:"-"`
-	OIDCIssuerURL       string            `json:"oidcIssuerUrl,omitempty"`
-	OIDCClientID        string            `json:"oidcClientId,omitempty"`
-	OIDCClientSecretEnc string            `json:"-"`
-	OIDCScopes          []string          `json:"oidcScopes,omitempty"`
-	OIDCAllowedDomains  []string          `json:"oidcAllowedDomains,omitempty"`
-	OIDCRequiredClaims  map[string]string `json:"oidcRequiredClaims,omitempty"`
+	AppID                string            `json:"appId"`
+	AuthType             AuthType          `json:"authType"`
+	BasicUserHash        string            `json:"-"`
+	BasicPassHash        string            `json:"-"`
+	BasicSessionDuration int               `json:"basicSessionDuration,omitempty"` // Hours, 0 = default (24h)
+	OIDCIssuerURL        string            `json:"oidcIssuerUrl,omitempty"`
+	OIDCClientID         string            `json:"oidcClientId,omitempty"`
+	OIDCClientSecretEnc  string            `json:"-"`
+	OIDCScopes           []string          `json:"oidcScopes,omitempty"`
+	OIDCAllowedDomains   []string          `json:"oidcAllowedDomains,omitempty"`
+	OIDCRequiredClaims   map[string]string `json:"oidcRequiredClaims,omitempty"`
 }
 
 // CreateOrgAuthPolicy creates or updates an organization auth policy
@@ -42,21 +44,22 @@ func (db *DB) CreateOrgAuthPolicy(policy *OrgAuthPolicy) error {
 
 	_, err := db.conn.Exec(`
 		INSERT INTO org_auth_policies (
-			org_id, auth_type, basic_user_hash, basic_pass_hash,
+			org_id, auth_type, basic_user_hash, basic_pass_hash, basic_session_duration,
 			oidc_issuer_url, oidc_client_id, oidc_client_secret_enc,
 			oidc_scopes, oidc_allowed_domains, oidc_required_claims
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(org_id) DO UPDATE SET
 			auth_type = excluded.auth_type,
 			basic_user_hash = excluded.basic_user_hash,
 			basic_pass_hash = excluded.basic_pass_hash,
+			basic_session_duration = excluded.basic_session_duration,
 			oidc_issuer_url = excluded.oidc_issuer_url,
 			oidc_client_id = excluded.oidc_client_id,
 			oidc_client_secret_enc = excluded.oidc_client_secret_enc,
 			oidc_scopes = excluded.oidc_scopes,
 			oidc_allowed_domains = excluded.oidc_allowed_domains,
 			oidc_required_claims = excluded.oidc_required_claims
-	`, policy.OrgID, policy.AuthType, policy.BasicUserHash, policy.BasicPassHash,
+	`, policy.OrgID, policy.AuthType, policy.BasicUserHash, policy.BasicPassHash, policy.BasicSessionDuration,
 		policy.OIDCIssuerURL, policy.OIDCClientID, policy.OIDCClientSecretEnc,
 		string(scopesJSON), string(domainsJSON), string(claimsJSON))
 
@@ -70,15 +73,16 @@ func (db *DB) CreateOrgAuthPolicy(policy *OrgAuthPolicy) error {
 func (db *DB) GetOrgAuthPolicy(orgID string) (*OrgAuthPolicy, error) {
 	policy := &OrgAuthPolicy{OrgID: orgID}
 	var basicUserHash, basicPassHash, oidcIssuerURL, oidcClientID, oidcClientSecretEnc sql.NullString
+	var basicSessionDuration sql.NullInt64
 	var scopesJSON, domainsJSON, claimsJSON sql.NullString
 
 	err := db.conn.QueryRow(`
-		SELECT auth_type, basic_user_hash, basic_pass_hash,
+		SELECT auth_type, basic_user_hash, basic_pass_hash, basic_session_duration,
 			oidc_issuer_url, oidc_client_id, oidc_client_secret_enc,
 			oidc_scopes, oidc_allowed_domains, oidc_required_claims
 		FROM org_auth_policies WHERE org_id = ?
 	`, orgID).Scan(
-		&policy.AuthType, &basicUserHash, &basicPassHash,
+		&policy.AuthType, &basicUserHash, &basicPassHash, &basicSessionDuration,
 		&oidcIssuerURL, &oidcClientID, &oidcClientSecretEnc,
 		&scopesJSON, &domainsJSON, &claimsJSON,
 	)
@@ -95,6 +99,9 @@ func (db *DB) GetOrgAuthPolicy(orgID string) (*OrgAuthPolicy, error) {
 	}
 	if basicPassHash.Valid {
 		policy.BasicPassHash = basicPassHash.String
+	}
+	if basicSessionDuration.Valid {
+		policy.BasicSessionDuration = int(basicSessionDuration.Int64)
 	}
 	if oidcIssuerURL.Valid {
 		policy.OIDCIssuerURL = oidcIssuerURL.String
@@ -132,21 +139,22 @@ func (db *DB) CreateAppAuthPolicy(policy *AppAuthPolicy) error {
 
 	_, err := db.conn.Exec(`
 		INSERT INTO app_auth_policies (
-			app_id, auth_type, basic_user_hash, basic_pass_hash,
+			app_id, auth_type, basic_user_hash, basic_pass_hash, basic_session_duration,
 			oidc_issuer_url, oidc_client_id, oidc_client_secret_enc,
 			oidc_scopes, oidc_allowed_domains, oidc_required_claims
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(app_id) DO UPDATE SET
 			auth_type = excluded.auth_type,
 			basic_user_hash = excluded.basic_user_hash,
 			basic_pass_hash = excluded.basic_pass_hash,
+			basic_session_duration = excluded.basic_session_duration,
 			oidc_issuer_url = excluded.oidc_issuer_url,
 			oidc_client_id = excluded.oidc_client_id,
 			oidc_client_secret_enc = excluded.oidc_client_secret_enc,
 			oidc_scopes = excluded.oidc_scopes,
 			oidc_allowed_domains = excluded.oidc_allowed_domains,
 			oidc_required_claims = excluded.oidc_required_claims
-	`, policy.AppID, policy.AuthType, policy.BasicUserHash, policy.BasicPassHash,
+	`, policy.AppID, policy.AuthType, policy.BasicUserHash, policy.BasicPassHash, policy.BasicSessionDuration,
 		policy.OIDCIssuerURL, policy.OIDCClientID, policy.OIDCClientSecretEnc,
 		string(scopesJSON), string(domainsJSON), string(claimsJSON))
 
@@ -160,15 +168,16 @@ func (db *DB) CreateAppAuthPolicy(policy *AppAuthPolicy) error {
 func (db *DB) GetAppAuthPolicy(appID string) (*AppAuthPolicy, error) {
 	policy := &AppAuthPolicy{AppID: appID}
 	var basicUserHash, basicPassHash, oidcIssuerURL, oidcClientID, oidcClientSecretEnc sql.NullString
+	var basicSessionDuration sql.NullInt64
 	var scopesJSON, domainsJSON, claimsJSON sql.NullString
 
 	err := db.conn.QueryRow(`
-		SELECT auth_type, basic_user_hash, basic_pass_hash,
+		SELECT auth_type, basic_user_hash, basic_pass_hash, basic_session_duration,
 			oidc_issuer_url, oidc_client_id, oidc_client_secret_enc,
 			oidc_scopes, oidc_allowed_domains, oidc_required_claims
 		FROM app_auth_policies WHERE app_id = ?
 	`, appID).Scan(
-		&policy.AuthType, &basicUserHash, &basicPassHash,
+		&policy.AuthType, &basicUserHash, &basicPassHash, &basicSessionDuration,
 		&oidcIssuerURL, &oidcClientID, &oidcClientSecretEnc,
 		&scopesJSON, &domainsJSON, &claimsJSON,
 	)
@@ -185,6 +194,9 @@ func (db *DB) GetAppAuthPolicy(appID string) (*AppAuthPolicy, error) {
 	}
 	if basicPassHash.Valid {
 		policy.BasicPassHash = basicPassHash.String
+	}
+	if basicSessionDuration.Valid {
+		policy.BasicSessionDuration = int(basicSessionDuration.Int64)
 	}
 	if oidcIssuerURL.Valid {
 		policy.OIDCIssuerURL = oidcIssuerURL.String

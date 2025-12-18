@@ -1,6 +1,8 @@
 package policy
 
 import (
+	"time"
+
 	"github.com/niekvdm/digit-link/internal/db"
 )
 
@@ -25,8 +27,9 @@ const (
 
 // BasicConfig holds Basic auth configuration
 type BasicConfig struct {
-	UserHash string
-	PassHash string
+	UserHash        string
+	PassHash        string
+	SessionDuration time.Duration // 0 = use default (24h)
 }
 
 // APIKeyConfig holds API key auth configuration
