@@ -802,7 +802,7 @@ func (s *Server) forwardRequest(w http.ResponseWriter, r *http.Request, tunnel *
 	defer tunnel.RemoveResponseChannel(requestID)
 
 	// Send request to tunnel client
-	if err := tunnel.Conn.WriteMessage(websocket.TextMessage, data); err != nil {
+	if err := tunnel.WriteMessage(websocket.TextMessage, data); err != nil {
 		http.Error(w, "Tunnel error", http.StatusBadGateway)
 		return
 	}
@@ -940,7 +940,7 @@ func (s *Server) pingRoutine() {
 
 		for _, tunnel := range tunnels {
 			// Send WebSocket ping frame (triggers pong response)
-			if err := tunnel.Conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			if err := tunnel.WriteMessage(websocket.PingMessage, nil); err != nil {
 				log.Printf("Failed to send ping to tunnel %s: %v", tunnel.Subdomain, err)
 			}
 		}

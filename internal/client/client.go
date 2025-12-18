@@ -22,6 +22,8 @@ type RequestLog struct {
 	StatusCode int
 	Duration   time.Duration
 	Pending    bool
+	BytesRecv  int64 // Request body size (incoming)
+	BytesSent  int64 // Response body size (outgoing)
 }
 
 // formatBytes formats bytes to human readable format
@@ -102,6 +104,8 @@ type Config struct {
 	Token          string
 	Secret         string // Legacy support
 	LocalPort      int
+	LocalAddr      string        // Local address to forward to (default: localhost)
+	LocalHTTPS     bool          // Use HTTPS for local forwarding
 	Timeout        time.Duration // Request timeout (default: 5 minutes)
 	MaxRetries     int
 	InitialBackoff time.Duration
@@ -131,6 +135,9 @@ func New(cfg Config) *Client {
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 5 * time.Minute // Default 5 minute timeout
 	}
+	if cfg.LocalAddr == "" {
+		cfg.LocalAddr = "localhost"
+	}
 
 	c := &Client{
 		serverURL:      wsURL,
@@ -138,14 +145,14 @@ func New(cfg Config) *Client {
 		token:          cfg.Token,
 		secret:         cfg.Secret,
 		localPort:      cfg.LocalPort,
-		proxy:          NewProxyWithTimeout(cfg.LocalPort, cfg.Timeout),
+		proxy:          NewProxyWithTimeout(cfg.LocalAddr, cfg.LocalPort, cfg.LocalHTTPS, cfg.Timeout),
 		done:           make(chan struct{}),
 		maxRetries:     cfg.MaxRetries,
 		initialBackoff: cfg.InitialBackoff,
 		maxBackoff:     cfg.MaxBackoff,
 		server:         cfg.Server,
 	}
-	c.model = NewModel(c, cfg.Server, cfg.LocalPort)
+	c.model = NewModel(c, cfg.Server, cfg.LocalAddr, cfg.LocalPort, cfg.LocalHTTPS)
 	return c
 }
 
@@ -365,17 +372,18 @@ func (c *Client) handleHTTPRequestRaw(payload json.RawMessage) {
 		return
 	}
 
+	// Calculate bytes received (request body)
+	bytesRecv := int64(len(httpReq.Body))
+
 	// Add request immediately as pending
 	if c.model != nil {
 		c.model.SendUpdate(RequestAddedMsg{
-			ID:     httpReq.ID,
-			Method: httpReq.Method,
-			Path:   httpReq.Path,
+			ID:        httpReq.ID,
+			Method:    httpReq.Method,
+			Path:      httpReq.Path,
+			BytesRecv: bytesRecv,
 		})
 	}
-
-	// Calculate bytes received (request body)
-	bytesRecv := int64(len(httpReq.Body))
 
 	// Forward to local service
 	httpResp, err := c.proxy.Forward(&httpReq)
@@ -407,21 +415,21 @@ func (c *Client) handleHTTPRequestRaw(payload json.RawMessage) {
 
 	data, _ := json.Marshal(respMsg)
 
-	c.mu.RLock()
+	c.mu.Lock()
 	if c.conn != nil {
 		c.conn.WriteMessage(websocket.TextMessage, data)
 	}
-	c.mu.RUnlock()
+	c.mu.Unlock()
 }
 
 // sendPong sends a pong response
 func (c *Client) sendPong() {
 	pongMsg, _ := json.Marshal(protocol.Message{Type: protocol.TypePong})
-	c.mu.RLock()
+	c.mu.Lock()
 	if c.conn != nil {
 		c.conn.WriteMessage(websocket.TextMessage, pongMsg)
 	}
-	c.mu.RUnlock()
+	c.mu.Unlock()
 }
 
 // Close closes the client connection

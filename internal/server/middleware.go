@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/niekvdm/digit-link/internal/auth"
 	"github.com/niekvdm/digit-link/internal/db"
@@ -323,6 +324,26 @@ func (m *AuthMiddleware) sendBasicChallenge(w http.ResponseWriter, ctx *policy.A
 // Default auth implementations (stubs that deny by default)
 
 func (m *AuthMiddleware) defaultBasicAuth(w http.ResponseWriter, r *http.Request, p *policy.EffectivePolicy, ctx *policy.AuthContext) *policy.AuthResult {
+	// First, check for existing session cookie (avoids re-prompting on concurrent requests)
+	if cookie, err := r.Cookie("digit_link_basic_session"); err == nil && cookie.Value != "" {
+		if m.db != nil {
+			var appID, orgID *string
+			if ctx != nil {
+				if ctx.AppID != "" {
+					appID = &ctx.AppID
+				}
+				if ctx.OrgID != "" {
+					orgID = &ctx.OrgID
+				}
+			}
+			session, err := m.db.ValidateSessionForApp(cookie.Value, appID, orgID)
+			if err == nil && session != nil {
+				// Valid session - allow through without re-authenticating
+				return policy.SuccessWithSession(session.ID, session.UserEmail)
+			}
+		}
+	}
+
 	// Check for Authorization header
 	authHeader := r.Header.Get("Authorization")
 	if authHeader == "" || !strings.HasPrefix(authHeader, "Basic ") {
@@ -348,6 +369,33 @@ func (m *AuthMiddleware) defaultBasicAuth(w http.ResponseWriter, r *http.Request
 	// Optionally verify username if configured
 	if p.Basic.UserHash != "" && !auth.VerifyPassword(username, p.Basic.UserHash) {
 		return policy.Challenge("invalid credentials")
+	}
+
+	// Create session for successful Basic Auth to avoid re-prompting on concurrent requests
+	if m.db != nil {
+		var appID, orgID *string
+		if ctx != nil {
+			if ctx.AppID != "" {
+				appID = &ctx.AppID
+			}
+			if ctx.OrgID != "" {
+				orgID = &ctx.OrgID
+			}
+		}
+		// Create session with 24-hour duration
+		session, err := m.db.CreateSession(appID, orgID, username, map[string]string{"auth_type": "basic"}, 24*time.Hour)
+		if err == nil && session != nil {
+			// Set session cookie
+			http.SetCookie(w, &http.Cookie{
+				Name:     "digit_link_basic_session",
+				Value:    session.ID,
+				Path:     "/",
+				MaxAge:   86400, // 24 hours
+				HttpOnly: true,
+				Secure:   true,
+				SameSite: http.SameSiteLaxMode,
+			})
+		}
 	}
 
 	return policy.Success(username)

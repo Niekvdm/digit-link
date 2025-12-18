@@ -15,6 +15,8 @@ func main() {
 	serverAddr := flag.String("server", "tunnel.digit.zone", "Tunnel server address")
 	subdomain := flag.String("subdomain", "", "Subdomain to register (optional, random if not specified)")
 	port := flag.Int("port", 0, "Local port to forward to")
+	localAddr := flag.String("a", "localhost", "Local address to forward to (e.g., localhost, 127.0.0.1, 192.168.1.100)")
+	localHTTPS := flag.Bool("https", false, "Use HTTPS for local forwarding (default: HTTP)")
 	token := flag.String("token", "", "Authentication token (required)")
 	secret := flag.String("secret", "", "Server secret (deprecated, use --token)")
 	timeout := flag.Duration("timeout", 5*time.Minute, "Request timeout for forwarding (e.g., 5m, 10m, 1h)")
@@ -47,6 +49,8 @@ func main() {
 		Token:          authToken,
 		Secret:         *secret, // Legacy support
 		LocalPort:      *port,
+		LocalAddr:      *localAddr,
+		LocalHTTPS:     *localHTTPS,
 		Timeout:        *timeout,
 		MaxRetries:     -1, // Infinite retries
 		InitialBackoff: 1 * time.Second,

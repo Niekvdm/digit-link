@@ -21,14 +21,18 @@ type Proxy struct {
 const DefaultTimeout = 5 * time.Minute
 
 // NewProxy creates a new local proxy
-func NewProxy(localPort int) *Proxy {
-	return NewProxyWithTimeout(localPort, DefaultTimeout)
+func NewProxy(localAddr string, localPort int, useHTTPS bool) *Proxy {
+	return NewProxyWithTimeout(localAddr, localPort, useHTTPS, DefaultTimeout)
 }
 
 // NewProxyWithTimeout creates a new local proxy with a custom timeout
-func NewProxyWithTimeout(localPort int, timeout time.Duration) *Proxy {
+func NewProxyWithTimeout(localAddr string, localPort int, useHTTPS bool, timeout time.Duration) *Proxy {
+	scheme := "http"
+	if useHTTPS {
+		scheme = "https"
+	}
 	return &Proxy{
-		localAddr: fmt.Sprintf("http://localhost:%d", localPort),
+		localAddr: fmt.Sprintf("%s://%s:%d", scheme, localAddr, localPort),
 		client: &http.Client{
 			Timeout: timeout,
 			Transport: &http.Transport{

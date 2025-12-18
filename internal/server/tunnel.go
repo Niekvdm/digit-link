@@ -14,7 +14,8 @@ type Tunnel struct {
 	Conn       *websocket.Conn
 	CreatedAt  time.Time
 	ResponseCh map[string]chan []byte // Request ID -> response channel
-	mu         sync.RWMutex
+	mu         sync.RWMutex           // Protects ResponseCh map
+	writeMu    sync.Mutex             // Protects websocket writes
 
 	// Auth context for this tunnel
 	AccountID string          // The account that owns this tunnel
@@ -89,4 +90,13 @@ func (t *Tunnel) Close() {
 		delete(t.ResponseCh, id)
 	}
 	t.Conn.Close()
+}
+
+// WriteMessage sends a message to the tunnel client in a thread-safe manner.
+// This method must be used for all writes to the websocket connection to prevent
+// concurrent write panics.
+func (t *Tunnel) WriteMessage(messageType int, data []byte) error {
+	t.writeMu.Lock()
+	defer t.writeMu.Unlock()
+	return t.Conn.WriteMessage(messageType, data)
 }
