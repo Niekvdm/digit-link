@@ -17,10 +17,14 @@ const { formatDate } = useFormatters()
 // Timeframe selection state
 const selectedTimeframe = ref<'daily' | 'weekly' | 'monthly'>('daily')
 
+// Metric selection state
+type MetricType = 'bandwidth' | 'requests' | 'tunnel_hours'
+const selectedMetric = ref<MetricType>('bandwidth')
+
 // Chart data state
 const chartLoading = ref(false)
 const chartError = ref<string | null>(null)
-const chartDatasets = ref<Dataset[]>([])
+const allChartDatasets = ref<Dataset[]>([])
 
 const summary = ref<{
   organizations: Array<{
@@ -89,6 +93,52 @@ const chartTimeUnit = computed<'hour' | 'day' | 'week' | 'month'>(() => {
   }
 })
 
+// Filter datasets based on selected metric
+const chartDatasets = computed<Dataset[]>(() => {
+  const metricLabelMap: Record<MetricType, string> = {
+    bandwidth: 'Bandwidth',
+    requests: 'Requests',
+    tunnel_hours: 'Tunnel Hours'
+  }
+  const targetLabel = metricLabelMap[selectedMetric.value]
+  return allChartDatasets.value.filter(d => d.label === targetLabel)
+})
+
+// Get Y-axis formatter based on selected metric
+const chartYAxisFormatter = computed(() => {
+  switch (selectedMetric.value) {
+    case 'bandwidth':
+      return formatBytes
+    case 'requests':
+      return formatNumber
+    case 'tunnel_hours':
+      return (hours: number) => `${formatNumber(hours)} hrs`
+    default:
+      return formatNumber
+  }
+})
+
+// Get Y-axis label based on selected metric
+const chartYAxisLabel = computed(() => {
+  switch (selectedMetric.value) {
+    case 'bandwidth':
+      return 'Bandwidth'
+    case 'requests':
+      return 'Requests'
+    case 'tunnel_hours':
+      return 'Hours'
+    default:
+      return ''
+  }
+})
+
+// Metric options for selector
+const metricOptions = [
+  { value: 'bandwidth' as MetricType, label: 'Bandwidth' },
+  { value: 'requests' as MetricType, label: 'Requests' },
+  { value: 'tunnel_hours' as MetricType, label: 'Tunnel Hours' }
+]
+
 // Get API period and days based on timeframe
 function getChartParams(): { period: 'hourly' | 'daily' | 'monthly'; days: number } {
   switch (selectedTimeframe.value) {
@@ -146,6 +196,13 @@ function transformToChartData(history: UsageSnapshot[]): Dataset[] {
         x: new Date(date),
         y: data.requestCount
       }))
+    },
+    {
+      label: 'Tunnel Hours',
+      data: sortedEntries.map(([date, data]) => ({
+        x: new Date(date),
+        y: Math.round(data.tunnelSeconds / 3600)
+      }))
     }
   ]
 }
@@ -161,13 +218,13 @@ async function loadChartData() {
     const result = await getUsageHistory(null, period, days)
 
     if (result) {
-      chartDatasets.value = transformToChartData(result.history)
+      allChartDatasets.value = transformToChartData(result.history)
     } else {
-      chartDatasets.value = []
+      allChartDatasets.value = []
     }
   } catch (e) {
     chartError.value = e instanceof Error ? e.message : 'Failed to load chart data'
-    chartDatasets.value = []
+    allChartDatasets.value = []
   } finally {
     chartLoading.value = false
   }
@@ -278,22 +335,45 @@ function getUsagePercent(value: number, limit?: number): number | null {
 
       <!-- Usage Trends Section -->
       <div class="bg-bg-surface border border-border-subtle rounded-xs p-6 mb-10">
-        <div class="flex items-center justify-between mb-6">
+        <div class="flex items-center justify-between mb-6 flex-wrap gap-4">
           <h2 class="font-display text-xl font-semibold text-text-primary m-0">Usage Trends</h2>
 
-          <!-- Timeframe Selector -->
-          <div class="flex gap-1 p-1 bg-bg-deep rounded-xs">
-            <button
-              v-for="timeframe in ['daily', 'weekly', 'monthly'] as const"
-              :key="timeframe"
-              class="px-3 py-1.5 text-sm rounded transition-all duration-200"
-              :class="selectedTimeframe === timeframe
-                ? 'bg-bg-surface text-text-primary shadow-sm'
-                : 'text-text-secondary hover:text-text-primary'"
-              @click="changeTimeframe(timeframe)"
-            >
-              {{ timeframe.charAt(0).toUpperCase() + timeframe.slice(1) }}
-            </button>
+          <div class="flex items-center gap-4">
+            <!-- Metric Selector -->
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-text-muted uppercase tracking-wider">Metric</span>
+              <div class="flex gap-1 p-1 bg-bg-deep rounded-xs">
+                <button
+                  v-for="metric in metricOptions"
+                  :key="metric.value"
+                  class="px-3 py-1.5 text-sm rounded transition-all duration-200"
+                  :class="selectedMetric === metric.value
+                    ? 'bg-bg-surface text-text-primary shadow-sm'
+                    : 'text-text-secondary hover:text-text-primary'"
+                  @click="selectedMetric = metric.value"
+                >
+                  {{ metric.label }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Timeframe Selector -->
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-text-muted uppercase tracking-wider">Period</span>
+              <div class="flex gap-1 p-1 bg-bg-deep rounded-xs">
+                <button
+                  v-for="timeframe in ['daily', 'weekly', 'monthly'] as const"
+                  :key="timeframe"
+                  class="px-3 py-1.5 text-sm rounded transition-all duration-200"
+                  :class="selectedTimeframe === timeframe
+                    ? 'bg-bg-surface text-text-primary shadow-sm'
+                    : 'text-text-secondary hover:text-text-primary'"
+                  @click="changeTimeframe(timeframe)"
+                >
+                  {{ timeframe.charAt(0).toUpperCase() + timeframe.slice(1) }}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -316,11 +396,11 @@ function getUsagePercent(value: number, limit?: number): number | null {
           :use-time-scale="true"
           :time-unit="chartTimeUnit"
           :height="256"
-          :show-legend="true"
+          :show-legend="false"
           :fill="true"
-          :y-axis-formatter="formatBytes"
-          :tooltip-formatter="formatBytes"
-          y-axis-label="Bandwidth"
+          :y-axis-formatter="chartYAxisFormatter"
+          :tooltip-formatter="chartYAxisFormatter"
+          :y-axis-label="chartYAxisLabel"
         />
       </div>
 
