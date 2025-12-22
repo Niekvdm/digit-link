@@ -1,18 +1,26 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { PageHeader, DataTable, StatCard, LoadingSpinner } from '@/components/ui'
+import UsageChart from '@/components/charts/UsageChart.vue'
 import { useUsage, usePlans } from '@/composables/api'
 import { useFormatters } from '@/composables/useFormatters'
 import { BarChart3, Building2, TrendingUp, AlertTriangle, Package } from 'lucide-vue-next'
+import type { UsageSnapshot } from '@/types/api'
+import type { Dataset } from '@/components/charts/UsageChart.vue'
 
 const router = useRouter()
-const { getUsageSummary, loading, error } = useUsage()
+const { getUsageSummary, getUsageHistory, loading, error } = useUsage()
 const { plans, fetchAll: fetchPlans } = usePlans()
 const { formatDate } = useFormatters()
 
 // Timeframe selection state
 const selectedTimeframe = ref<'daily' | 'weekly' | 'monthly'>('daily')
+
+// Chart data state
+const chartLoading = ref(false)
+const chartError = ref<string | null>(null)
+const chartDatasets = ref<Dataset[]>([])
 
 const summary = ref<{
   organizations: Array<{
@@ -71,10 +79,110 @@ const tableData = computed(() => {
   }))
 })
 
+// Map timeframe to API period and chart time unit
+const chartTimeUnit = computed<'hour' | 'day' | 'week' | 'month'>(() => {
+  switch (selectedTimeframe.value) {
+    case 'daily': return 'day'
+    case 'weekly': return 'week'
+    case 'monthly': return 'month'
+    default: return 'day'
+  }
+})
+
+// Get API period and days based on timeframe
+function getChartParams(): { period: 'hourly' | 'daily' | 'monthly'; days: number } {
+  switch (selectedTimeframe.value) {
+    case 'daily':
+      return { period: 'hourly', days: 7 }
+    case 'weekly':
+      return { period: 'daily', days: 30 }
+    case 'monthly':
+      return { period: 'daily', days: 90 }
+    default:
+      return { period: 'daily', days: 30 }
+  }
+}
+
+// Transform UsageSnapshot[] to Chart.js dataset format
+function transformToChartData(history: UsageSnapshot[]): Dataset[] {
+  if (!history.length) return []
+
+  // Aggregate data across all organizations by timestamp
+  const aggregatedData = new Map<string, {
+    bandwidthBytes: number
+    tunnelSeconds: number
+    requestCount: number
+  }>()
+
+  history.forEach(snapshot => {
+    const key = snapshot.periodStart
+    const existing = aggregatedData.get(key) || {
+      bandwidthBytes: 0,
+      tunnelSeconds: 0,
+      requestCount: 0
+    }
+    aggregatedData.set(key, {
+      bandwidthBytes: existing.bandwidthBytes + snapshot.bandwidthBytes,
+      tunnelSeconds: existing.tunnelSeconds + snapshot.tunnelSeconds,
+      requestCount: existing.requestCount + snapshot.requestCount
+    })
+  })
+
+  // Sort by date and create data points
+  const sortedEntries = Array.from(aggregatedData.entries())
+    .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
+
+  return [
+    {
+      label: 'Bandwidth',
+      data: sortedEntries.map(([date, data]) => ({
+        x: new Date(date),
+        y: data.bandwidthBytes
+      }))
+    },
+    {
+      label: 'Requests',
+      data: sortedEntries.map(([date, data]) => ({
+        x: new Date(date),
+        y: data.requestCount
+      }))
+    }
+  ]
+}
+
+// Load chart data from API
+async function loadChartData() {
+  chartLoading.value = true
+  chartError.value = null
+
+  try {
+    const { period, days } = getChartParams()
+    // Pass null for orgId to get aggregate data for all orgs
+    const result = await getUsageHistory(null, period, days)
+
+    if (result) {
+      chartDatasets.value = transformToChartData(result.history)
+    } else {
+      chartDatasets.value = []
+    }
+  } catch (e) {
+    chartError.value = e instanceof Error ? e.message : 'Failed to load chart data'
+    chartDatasets.value = []
+  } finally {
+    chartLoading.value = false
+  }
+}
+
+// Watch for timeframe changes and reload chart data
+watch(selectedTimeframe, () => {
+  loadChartData()
+})
+
 onMounted(async () => {
   await Promise.all([
     fetchPlans(),
-    loadSummary()
+    loadSummary(),
+    loadChartData()
   ])
 })
 
@@ -87,7 +195,6 @@ async function loadSummary() {
 
 function changeTimeframe(timeframe: 'daily' | 'weekly' | 'monthly') {
   selectedTimeframe.value = timeframe
-  // Future: reload chart data when timeframe changes
 }
 
 function viewOrg(org: { orgId: string }) {
@@ -190,10 +297,31 @@ function getUsagePercent(value: number, limit?: number): number | null {
           </div>
         </div>
 
-        <!-- Chart placeholder - will be added in subtask-2-2 -->
-        <div class="h-64 flex items-center justify-center text-text-muted border border-dashed border-border-subtle rounded-xs">
-          Chart will be rendered here
+        <!-- Error State -->
+        <div v-if="chartError" class="h-64 flex flex-col items-center justify-center text-text-muted border border-dashed border-border-subtle rounded-xs gap-3">
+          <span class="text-accent-red">{{ chartError }}</span>
+          <button
+            class="px-4 py-2 text-sm font-medium text-text-primary bg-bg-elevated hover:bg-bg-deep rounded-xs transition-colors"
+            @click="loadChartData"
+          >
+            Retry
+          </button>
         </div>
+
+        <!-- Usage Chart -->
+        <UsageChart
+          v-else
+          :datasets="chartDatasets"
+          :loading="chartLoading"
+          :use-time-scale="true"
+          :time-unit="chartTimeUnit"
+          :height="256"
+          :show-legend="true"
+          :fill="true"
+          :y-axis-formatter="formatBytes"
+          :tooltip-formatter="formatBytes"
+          y-axis-label="Bandwidth"
+        />
       </div>
 
       <!-- Table -->

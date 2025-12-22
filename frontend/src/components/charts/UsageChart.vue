@@ -109,12 +109,13 @@ const defaultColors = [
 ]
 
 // Transform datasets with default styling
-const chartData = computed<ChartData<'line'>>(() => {
+const chartData = computed(() => {
   const transformedDatasets = props.datasets.map((dataset, index) => {
-    const colorSet = defaultColors[index % defaultColors.length]
+    const colorIndex = index % defaultColors.length
+    const colorSet = defaultColors[colorIndex]!
     return {
       label: dataset.label,
-      data: dataset.data,
+      data: dataset.data as unknown[],
       borderColor: dataset.borderColor || colorSet.border,
       backgroundColor: dataset.backgroundColor || colorSet.background,
       fill: dataset.fill ?? props.fill,
@@ -128,7 +129,7 @@ const chartData = computed<ChartData<'line'>>(() => {
   return {
     labels: props.labels,
     datasets: transformedDatasets
-  }
+  } as ChartData<'line'>
 })
 
 // Chart options with responsive configuration
@@ -187,6 +188,7 @@ const chartOptions = computed<ChartOptions<'line'>>(() => {
         callbacks: {
           label: (context) => {
             const value = context.parsed.y
+            if (value === null || value === undefined) return ''
             const formattedValue = props.tooltipFormatter
               ? props.tooltipFormatter(value)
               : value.toLocaleString()
