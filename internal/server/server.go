@@ -116,12 +116,6 @@ func New(domain, scheme, secret string, database *db.DB) *Server {
 
 // ServeHTTP handles all incoming HTTP requests
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Health check endpoint
-	if r.URL.Path == "/health" {
-		s.handleHealth(w, r)
-		return
-	}
-
 	// WebSocket upgrade for tunnel clients
 	if r.URL.Path == "/_tunnel" {
 		s.handleWebSocket(w, r)
@@ -214,14 +208,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Forward request through tunnel
 	s.forwardRequest(w, r, tunnel)
-}
-
-// handleHealth returns basic health status (no sensitive info)
-func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status": "ok",
-	})
 }
 
 // handlePublicAPI handles public API endpoints that don't require authentication

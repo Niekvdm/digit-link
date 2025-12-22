@@ -62,6 +62,10 @@ func main() {
 
 	// Start server
 	srv := server.New(domain, scheme, secret, database)
+
+	// Start health check server on separate port (default: 8081)
+	srv.StartHealthCheckServer()
+
 	log.Fatal(srv.Run(port))
 }
 
