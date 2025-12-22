@@ -1,15 +1,30 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { PageHeader, DataTable, StatCard, LoadingSpinner } from '@/components/ui'
+import { PageHeader, DataTable, StatCard, LoadingSpinner, EmptyState } from '@/components/ui'
+import UsageChart from '@/components/charts/UsageChart.vue'
 import { useUsage, usePlans } from '@/composables/api'
 import { useFormatters } from '@/composables/useFormatters'
-import { BarChart3, Building2, TrendingUp, AlertTriangle, Package } from 'lucide-vue-next'
+import { BarChart3, Building2, TrendingUp, AlertTriangle, Package, Download, RefreshCw } from 'lucide-vue-next'
+import type { UsageSnapshot } from '@/types/api'
+import type { Dataset } from '@/components/charts/UsageChart.vue'
 
 const router = useRouter()
-const { getUsageSummary, loading, error } = useUsage()
+const { getUsageSummary, getUsageHistory, loading, error } = useUsage()
 const { plans, fetchAll: fetchPlans } = usePlans()
 const { formatDate } = useFormatters()
+
+// Timeframe selection state
+const selectedTimeframe = ref<'daily' | 'weekly' | 'monthly'>('daily')
+
+// Metric selection state
+type MetricType = 'bandwidth' | 'requests' | 'tunnel_hours'
+const selectedMetric = ref<MetricType>('bandwidth')
+
+// Chart data state
+const chartLoading = ref(false)
+const chartError = ref<string | null>(null)
+const allChartDatasets = ref<Dataset[]>([])
 
 const summary = ref<{
   organizations: Array<{
@@ -68,10 +83,172 @@ const tableData = computed(() => {
   }))
 })
 
+// Map timeframe to API period and chart time unit
+const chartTimeUnit = computed<'hour' | 'day' | 'week' | 'month'>(() => {
+  switch (selectedTimeframe.value) {
+    case 'daily': return 'day'
+    case 'weekly': return 'week'
+    case 'monthly': return 'month'
+    default: return 'day'
+  }
+})
+
+// Filter datasets based on selected metric
+const chartDatasets = computed<Dataset[]>(() => {
+  const metricLabelMap: Record<MetricType, string> = {
+    bandwidth: 'Bandwidth',
+    requests: 'Requests',
+    tunnel_hours: 'Tunnel Hours'
+  }
+  const targetLabel = metricLabelMap[selectedMetric.value]
+  return allChartDatasets.value.filter(d => d.label === targetLabel)
+})
+
+// Get Y-axis formatter based on selected metric
+const chartYAxisFormatter = computed(() => {
+  switch (selectedMetric.value) {
+    case 'bandwidth':
+      return formatBytes
+    case 'requests':
+      return formatNumber
+    case 'tunnel_hours':
+      return (hours: number) => `${formatNumber(hours)} hrs`
+    default:
+      return formatNumber
+  }
+})
+
+// Get Y-axis label based on selected metric
+const chartYAxisLabel = computed(() => {
+  switch (selectedMetric.value) {
+    case 'bandwidth':
+      return 'Bandwidth'
+    case 'requests':
+      return 'Requests'
+    case 'tunnel_hours':
+      return 'Hours'
+    default:
+      return ''
+  }
+})
+
+// Check if chart data is empty (no data points in any dataset)
+const isChartEmpty = computed(() => {
+  if (allChartDatasets.value.length === 0) return true
+  return allChartDatasets.value.every(d => !d.data || d.data.length === 0)
+})
+
+// Skeleton bar heights for loading state (deterministic pattern)
+const skeletonBarHeights = [45, 65, 35, 80, 55, 70, 40, 90, 50, 75, 60, 85]
+
+// Metric options for selector
+const metricOptions = [
+  { value: 'bandwidth' as MetricType, label: 'Bandwidth' },
+  { value: 'requests' as MetricType, label: 'Requests' },
+  { value: 'tunnel_hours' as MetricType, label: 'Tunnel Hours' }
+]
+
+// Get API period and days based on timeframe
+function getChartParams(): { period: 'hourly' | 'daily' | 'monthly'; days: number } {
+  switch (selectedTimeframe.value) {
+    case 'daily':
+      return { period: 'hourly', days: 7 }
+    case 'weekly':
+      return { period: 'daily', days: 30 }
+    case 'monthly':
+      return { period: 'daily', days: 90 }
+    default:
+      return { period: 'daily', days: 30 }
+  }
+}
+
+// Transform UsageSnapshot[] to Chart.js dataset format
+function transformToChartData(history: UsageSnapshot[]): Dataset[] {
+  if (!history.length) return []
+
+  // Aggregate data across all organizations by timestamp
+  const aggregatedData = new Map<string, {
+    bandwidthBytes: number
+    tunnelSeconds: number
+    requestCount: number
+  }>()
+
+  history.forEach(snapshot => {
+    const key = snapshot.periodStart
+    const existing = aggregatedData.get(key) || {
+      bandwidthBytes: 0,
+      tunnelSeconds: 0,
+      requestCount: 0
+    }
+    aggregatedData.set(key, {
+      bandwidthBytes: existing.bandwidthBytes + snapshot.bandwidthBytes,
+      tunnelSeconds: existing.tunnelSeconds + snapshot.tunnelSeconds,
+      requestCount: existing.requestCount + snapshot.requestCount
+    })
+  })
+
+  // Sort by date and create data points
+  const sortedEntries = Array.from(aggregatedData.entries())
+    .sort((a, b) => new Date(a[0]).getTime() - new Date(b[0]).getTime())
+
+  return [
+    {
+      label: 'Bandwidth',
+      data: sortedEntries.map(([date, data]) => ({
+        x: new Date(date),
+        y: data.bandwidthBytes
+      }))
+    },
+    {
+      label: 'Requests',
+      data: sortedEntries.map(([date, data]) => ({
+        x: new Date(date),
+        y: data.requestCount
+      }))
+    },
+    {
+      label: 'Tunnel Hours',
+      data: sortedEntries.map(([date, data]) => ({
+        x: new Date(date),
+        y: Math.round(data.tunnelSeconds / 3600)
+      }))
+    }
+  ]
+}
+
+// Load chart data from API
+async function loadChartData() {
+  chartLoading.value = true
+  chartError.value = null
+
+  try {
+    const { period, days } = getChartParams()
+    // Pass null for orgId to get aggregate data for all orgs
+    const result = await getUsageHistory(null, period, days)
+
+    if (result) {
+      allChartDatasets.value = transformToChartData(result.history)
+    } else {
+      allChartDatasets.value = []
+    }
+  } catch (e) {
+    chartError.value = e instanceof Error ? e.message : 'Failed to load chart data'
+    allChartDatasets.value = []
+  } finally {
+    chartLoading.value = false
+  }
+}
+
+// Watch for timeframe changes and reload chart data
+watch(selectedTimeframe, () => {
+  loadChartData()
+})
+
 onMounted(async () => {
   await Promise.all([
     fetchPlans(),
-    loadSummary()
+    loadSummary(),
+    loadChartData()
   ])
 })
 
@@ -80,6 +257,10 @@ async function loadSummary() {
   if (result) {
     summary.value = result
   }
+}
+
+function changeTimeframe(timeframe: 'daily' | 'weekly' | 'monthly') {
+  selectedTimeframe.value = timeframe
 }
 
 function viewOrg(org: { orgId: string }) {
@@ -108,14 +289,97 @@ function getUsagePercent(value: number, limit?: number): number | null {
   if (!limit) return null
   return Math.round((value / limit) * 100)
 }
+
+// Export data functions
+function getExportData() {
+  if (!summary.value) return []
+  return summary.value.organizations.map(org => ({
+    organization: org.orgName,
+    plan: org.planName || '',
+    bandwidthBytes: org.bandwidthBytes,
+    bandwidthFormatted: formatBytes(org.bandwidthBytes),
+    tunnelHours: Math.round(org.tunnelSeconds / 3600),
+    requests: org.requestCount,
+    peakConcurrentTunnels: org.peakConcurrentTunnels
+  }))
+}
+
+function downloadFile(content: string, filename: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+function exportCSV() {
+  const data = getExportData()
+  if (!data.length) return
+
+  const headers = ['Organization', 'Plan', 'Bandwidth (bytes)', 'Bandwidth', 'Tunnel Hours', 'Requests', 'Peak Concurrent']
+  const rows = data.map(row => [
+    `"${row.organization}"`,
+    `"${row.plan}"`,
+    row.bandwidthBytes,
+    `"${row.bandwidthFormatted}"`,
+    row.tunnelHours,
+    row.requests,
+    row.peakConcurrentTunnels
+  ].join(','))
+
+  const csv = [headers.join(','), ...rows].join('\n')
+  const timestamp = new Date().toISOString().split('T')[0]
+  downloadFile(csv, `usage-export-${timestamp}.csv`, 'text/csv')
+}
+
+function exportJSON() {
+  const data = getExportData()
+  if (!data.length) return
+
+  const exportObj = {
+    exportDate: new Date().toISOString(),
+    period: summary.value ? {
+      start: summary.value.periodStart,
+      end: summary.value.periodEnd
+    } : null,
+    organizations: data
+  }
+
+  const json = JSON.stringify(exportObj, null, 2)
+  const timestamp = new Date().toISOString().split('T')[0]
+  downloadFile(json, `usage-export-${timestamp}.json`, 'application/json')
+}
 </script>
 
 <template>
   <div class="max-w-[1400px]">
-    <PageHeader 
-      title="Usage Overview" 
+    <PageHeader
+      title="Usage Overview"
       description="Monitor usage across all organizations"
-    />
+    >
+      <template #actions>
+        <button
+          class="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-border-subtle rounded-xs bg-bg-surface text-text-primary cursor-pointer transition-all duration-200 hover:bg-bg-elevated hover:border-border-accent disabled:opacity-50 disabled:cursor-not-allowed"
+          :disabled="!summary?.organizations.length"
+          @click="exportCSV"
+        >
+          <Download class="w-4 h-4" />
+          Export CSV
+        </button>
+        <button
+          class="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-border-subtle rounded-xs bg-bg-surface text-text-primary cursor-pointer transition-all duration-200 hover:bg-bg-elevated hover:border-border-accent disabled:opacity-50 disabled:cursor-not-allowed"
+          :disabled="!summary?.organizations.length"
+          @click="exportJSON"
+        >
+          <Download class="w-4 h-4" />
+          Export JSON
+        </button>
+      </template>
+    </PageHeader>
 
     <!-- Loading -->
     <div v-if="loading && !summary" class="flex items-center justify-center py-20">
@@ -158,6 +422,108 @@ function getUsagePercent(value: number, limit?: number): number | null {
           :value="orgsNearLimit"
           :icon="AlertTriangle"
           :color="orgsNearLimit > 0 ? 'amber' : 'blue'"
+        />
+      </div>
+
+      <!-- Usage Trends Section -->
+      <div class="bg-bg-surface border border-border-subtle rounded-xs p-6 mb-10">
+        <div class="flex items-center justify-between mb-6 flex-wrap gap-4">
+          <h2 class="font-display text-xl font-semibold text-text-primary m-0">Usage Trends</h2>
+
+          <div class="flex items-center gap-4">
+            <!-- Metric Selector -->
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-text-muted uppercase tracking-wider">Metric</span>
+              <div class="flex gap-1 p-1 bg-bg-deep rounded-xs">
+                <button
+                  v-for="metric in metricOptions"
+                  :key="metric.value"
+                  class="px-3 py-1.5 text-sm rounded transition-all duration-200"
+                  :class="selectedMetric === metric.value
+                    ? 'bg-bg-surface text-text-primary shadow-sm'
+                    : 'text-text-secondary hover:text-text-primary'"
+                  @click="selectedMetric = metric.value"
+                >
+                  {{ metric.label }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Timeframe Selector -->
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-text-muted uppercase tracking-wider">Period</span>
+              <div class="flex gap-1 p-1 bg-bg-deep rounded-xs">
+                <button
+                  v-for="timeframe in ['daily', 'weekly', 'monthly'] as const"
+                  :key="timeframe"
+                  class="px-3 py-1.5 text-sm rounded transition-all duration-200"
+                  :class="selectedTimeframe === timeframe
+                    ? 'bg-bg-surface text-text-primary shadow-sm'
+                    : 'text-text-secondary hover:text-text-primary'"
+                  @click="changeTimeframe(timeframe)"
+                >
+                  {{ timeframe.charAt(0).toUpperCase() + timeframe.slice(1) }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Loading Skeleton -->
+        <div v-if="chartLoading" class="h-64 flex flex-col gap-4">
+          <div class="flex-1 flex items-end gap-2">
+            <div
+              v-for="(height, i) in skeletonBarHeights"
+              :key="i"
+              class="flex-1 bg-bg-elevated rounded animate-pulse"
+              :style="{ height: `${height}%` }"
+            />
+          </div>
+          <div class="flex justify-between">
+            <div v-for="i in 6" :key="i" class="h-3 w-12 bg-bg-elevated rounded animate-pulse" />
+          </div>
+        </div>
+
+        <!-- Error State -->
+        <EmptyState
+          v-else-if="chartError"
+          title="Failed to load chart data"
+          :description="chartError"
+          :icon="AlertTriangle"
+        >
+          <template #action>
+            <button
+              class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-text-primary bg-bg-elevated hover:bg-bg-deep rounded-xs transition-colors"
+              @click="loadChartData"
+            >
+              <RefreshCw class="w-4 h-4" />
+              Retry
+            </button>
+          </template>
+        </EmptyState>
+
+        <!-- Empty State -->
+        <EmptyState
+          v-else-if="isChartEmpty"
+          title="No usage data yet"
+          description="Usage trends will appear here once organizations start using tunnels."
+          :icon="BarChart3"
+        />
+
+        <!-- Usage Chart -->
+        <UsageChart
+          v-else
+          :datasets="chartDatasets"
+          :loading="false"
+          :use-time-scale="true"
+          :time-unit="chartTimeUnit"
+          :height="256"
+          :show-legend="false"
+          :fill="true"
+          :y-axis-formatter="chartYAxisFormatter"
+          :tooltip-formatter="chartYAxisFormatter"
+          :y-axis-label="chartYAxisLabel"
+          :show-peak-annotations="true"
         />
       </div>
 
