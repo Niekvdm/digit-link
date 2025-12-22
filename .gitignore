@@ -37,3 +37,6 @@ Thumbs.db
 # Env files
 .env
 .env.local
+
+# Auto Claude data directory
+.auto-claude/
