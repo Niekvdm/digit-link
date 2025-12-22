@@ -5,7 +5,7 @@ import { PageHeader, DataTable, StatCard, LoadingSpinner } from '@/components/ui
 import UsageChart from '@/components/charts/UsageChart.vue'
 import { useUsage, usePlans } from '@/composables/api'
 import { useFormatters } from '@/composables/useFormatters'
-import { BarChart3, Building2, TrendingUp, AlertTriangle, Package } from 'lucide-vue-next'
+import { BarChart3, Building2, TrendingUp, AlertTriangle, Package, Download } from 'lucide-vue-next'
 import type { UsageSnapshot } from '@/types/api'
 import type { Dataset } from '@/components/charts/UsageChart.vue'
 
@@ -280,14 +280,97 @@ function getUsagePercent(value: number, limit?: number): number | null {
   if (!limit) return null
   return Math.round((value / limit) * 100)
 }
+
+// Export data functions
+function getExportData() {
+  if (!summary.value) return []
+  return summary.value.organizations.map(org => ({
+    organization: org.orgName,
+    plan: org.planName || '',
+    bandwidthBytes: org.bandwidthBytes,
+    bandwidthFormatted: formatBytes(org.bandwidthBytes),
+    tunnelHours: Math.round(org.tunnelSeconds / 3600),
+    requests: org.requestCount,
+    peakConcurrentTunnels: org.peakConcurrentTunnels
+  }))
+}
+
+function downloadFile(content: string, filename: string, mimeType: string) {
+  const blob = new Blob([content], { type: mimeType })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  URL.revokeObjectURL(url)
+}
+
+function exportCSV() {
+  const data = getExportData()
+  if (!data.length) return
+
+  const headers = ['Organization', 'Plan', 'Bandwidth (bytes)', 'Bandwidth', 'Tunnel Hours', 'Requests', 'Peak Concurrent']
+  const rows = data.map(row => [
+    `"${row.organization}"`,
+    `"${row.plan}"`,
+    row.bandwidthBytes,
+    `"${row.bandwidthFormatted}"`,
+    row.tunnelHours,
+    row.requests,
+    row.peakConcurrentTunnels
+  ].join(','))
+
+  const csv = [headers.join(','), ...rows].join('\n')
+  const timestamp = new Date().toISOString().split('T')[0]
+  downloadFile(csv, `usage-export-${timestamp}.csv`, 'text/csv')
+}
+
+function exportJSON() {
+  const data = getExportData()
+  if (!data.length) return
+
+  const exportObj = {
+    exportDate: new Date().toISOString(),
+    period: summary.value ? {
+      start: summary.value.periodStart,
+      end: summary.value.periodEnd
+    } : null,
+    organizations: data
+  }
+
+  const json = JSON.stringify(exportObj, null, 2)
+  const timestamp = new Date().toISOString().split('T')[0]
+  downloadFile(json, `usage-export-${timestamp}.json`, 'application/json')
+}
 </script>
 
 <template>
   <div class="max-w-[1400px]">
-    <PageHeader 
-      title="Usage Overview" 
+    <PageHeader
+      title="Usage Overview"
       description="Monitor usage across all organizations"
-    />
+    >
+      <template #actions>
+        <button
+          class="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-border-subtle rounded-xs bg-bg-surface text-text-primary cursor-pointer transition-all duration-200 hover:bg-bg-elevated hover:border-border-accent disabled:opacity-50 disabled:cursor-not-allowed"
+          :disabled="!summary?.organizations.length"
+          @click="exportCSV"
+        >
+          <Download class="w-4 h-4" />
+          Export CSV
+        </button>
+        <button
+          class="flex items-center gap-2 px-4 py-2 text-sm font-medium border border-border-subtle rounded-xs bg-bg-surface text-text-primary cursor-pointer transition-all duration-200 hover:bg-bg-elevated hover:border-border-accent disabled:opacity-50 disabled:cursor-not-allowed"
+          :disabled="!summary?.organizations.length"
+          @click="exportJSON"
+        >
+          <Download class="w-4 h-4" />
+          Export JSON
+        </button>
+      </template>
+    </PageHeader>
 
     <!-- Loading -->
     <div v-if="loading && !summary" class="flex items-center justify-center py-20">
