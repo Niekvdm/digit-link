@@ -11,6 +11,9 @@ const { getUsageSummary, loading, error } = useUsage()
 const { plans, fetchAll: fetchPlans } = usePlans()
 const { formatDate } = useFormatters()
 
+// Timeframe selection state
+const selectedTimeframe = ref<'daily' | 'weekly' | 'monthly'>('daily')
+
 const summary = ref<{
   organizations: Array<{
     orgId: string
@@ -80,6 +83,11 @@ async function loadSummary() {
   if (result) {
     summary.value = result
   }
+}
+
+function changeTimeframe(timeframe: 'daily' | 'weekly' | 'monthly') {
+  selectedTimeframe.value = timeframe
+  // Future: reload chart data when timeframe changes
 }
 
 function viewOrg(org: { orgId: string }) {
@@ -159,6 +167,33 @@ function getUsagePercent(value: number, limit?: number): number | null {
           :icon="AlertTriangle"
           :color="orgsNearLimit > 0 ? 'amber' : 'blue'"
         />
+      </div>
+
+      <!-- Usage Trends Section -->
+      <div class="bg-bg-surface border border-border-subtle rounded-xs p-6 mb-10">
+        <div class="flex items-center justify-between mb-6">
+          <h2 class="font-display text-xl font-semibold text-text-primary m-0">Usage Trends</h2>
+
+          <!-- Timeframe Selector -->
+          <div class="flex gap-1 p-1 bg-bg-deep rounded-xs">
+            <button
+              v-for="timeframe in ['daily', 'weekly', 'monthly'] as const"
+              :key="timeframe"
+              class="px-3 py-1.5 text-sm rounded transition-all duration-200"
+              :class="selectedTimeframe === timeframe
+                ? 'bg-bg-surface text-text-primary shadow-sm'
+                : 'text-text-secondary hover:text-text-primary'"
+              @click="changeTimeframe(timeframe)"
+            >
+              {{ timeframe.charAt(0).toUpperCase() + timeframe.slice(1) }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Chart placeholder - will be added in subtask-2-2 -->
+        <div class="h-64 flex items-center justify-center text-text-muted border border-dashed border-border-subtle rounded-xs">
+          Chart will be rendered here
+        </div>
       </div>
 
       <!-- Table -->
