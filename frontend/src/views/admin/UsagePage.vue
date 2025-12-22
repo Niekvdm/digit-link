@@ -484,6 +484,7 @@ function exportJSON() {
           :y-axis-formatter="chartYAxisFormatter"
           :tooltip-formatter="chartYAxisFormatter"
           :y-axis-label="chartYAxisLabel"
+          :show-peak-annotations="true"
         />
       </div>
 

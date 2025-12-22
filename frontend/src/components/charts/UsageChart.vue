@@ -21,6 +21,7 @@ import {
   type ChartData,
   type ChartOptions
 } from 'chart.js'
+import annotationPlugin from 'chartjs-plugin-annotation'
 import 'chartjs-adapter-date-fns'
 
 // Register Chart.js components (required for tree-shaking)
@@ -33,7 +34,8 @@ ChartJS.register(
   Tooltip,
   Legend,
   TimeScale,
-  Filler
+  Filler,
+  annotationPlugin
 )
 
 // Props interface for type safety
@@ -51,6 +53,17 @@ export interface Dataset {
   tension?: number
   pointRadius?: number
   pointHoverRadius?: number
+}
+
+export interface PeakAnnotation {
+  /** X-coordinate for the peak point (Date, string, or index) */
+  x: Date | string | number
+  /** Y-coordinate value for the peak point */
+  y: number
+  /** Label to display on the annotation */
+  label?: string
+  /** Additional value to show in tooltip (e.g., peak concurrent tunnels) */
+  tooltipValue?: number | string
 }
 
 const props = withDefaults(defineProps<{
@@ -84,6 +97,10 @@ const props = withDefaults(defineProps<{
   showLegend?: boolean
   /** Loading state */
   loading?: boolean
+  /** Peak annotations to highlight on the chart */
+  peakAnnotations?: PeakAnnotation[]
+  /** Show peak annotations (auto-detect max values if peakAnnotations not provided) */
+  showPeakAnnotations?: boolean
 }>(), {
   labels: () => [],
   title: '',
@@ -96,7 +113,9 @@ const props = withDefaults(defineProps<{
   fill: false,
   enableDecimation: true,
   showLegend: true,
-  loading: false
+  loading: false,
+  peakAnnotations: () => [],
+  showPeakAnnotations: false
 })
 
 // Default color palette matching design system
@@ -130,6 +149,107 @@ const chartData = computed(() => {
     labels: props.labels,
     datasets: transformedDatasets
   } as ChartData<'line'>
+})
+
+// Compute peak annotations from provided data or auto-detect from datasets
+const computedPeakAnnotations = computed(() => {
+  // If explicit peak annotations are provided, use them
+  if (props.peakAnnotations && props.peakAnnotations.length > 0) {
+    return props.peakAnnotations
+  }
+
+  // If showPeakAnnotations is enabled, auto-detect max values from each dataset
+  if (props.showPeakAnnotations && props.datasets.length > 0) {
+    const peaks: PeakAnnotation[] = []
+
+    props.datasets.forEach((dataset) => {
+      const dataPoints = dataset.data
+      if (!dataPoints || dataPoints.length === 0) return
+
+      // Find the maximum value point - store x and y separately to avoid type narrowing issues
+      let maxX: Date | string | number | null = null
+      let maxY: number | null = null
+      let maxValue = -Infinity
+
+      dataPoints.forEach((point) => {
+        // Handle both DataPoint objects and plain numbers
+        if (typeof point === 'object' && point !== null && 'y' in point) {
+          const dataPoint = point as DataPoint
+          if (dataPoint.y > maxValue) {
+            maxValue = dataPoint.y
+            maxX = dataPoint.x
+            maxY = dataPoint.y
+          }
+        } else if (typeof point === 'number') {
+          if (point > maxValue) {
+            maxValue = point
+          }
+        }
+      })
+
+      if (maxX !== null && maxY !== null && maxValue > 0) {
+        peaks.push({
+          x: maxX,
+          y: maxY,
+          label: `Peak: ${dataset.label}`,
+          tooltipValue: maxValue
+        })
+      }
+    })
+
+    return peaks
+  }
+
+  return []
+})
+
+// Generate Chart.js annotation objects from peak annotations
+const chartAnnotations = computed(() => {
+  const annotations: Record<string, unknown> = {}
+
+  computedPeakAnnotations.value.forEach((peak, index) => {
+    // Point annotation to highlight the peak
+    annotations[`peak-point-${index}`] = {
+      type: 'point',
+      xValue: peak.x,
+      yValue: peak.y,
+      xScaleID: 'x',
+      yScaleID: 'y',
+      backgroundColor: 'rgba(251, 191, 36, 0.3)', // amber with transparency
+      borderColor: 'rgb(251, 191, 36)', // amber
+      borderWidth: 2,
+      radius: 8,
+      pointStyle: 'circle',
+      drawTime: 'afterDatasetsDraw'
+    }
+
+    // Label annotation to show "Peak" text
+    if (peak.label) {
+      annotations[`peak-label-${index}`] = {
+        type: 'label',
+        xValue: peak.x,
+        yValue: peak.y,
+        xScaleID: 'x',
+        yScaleID: 'y',
+        content: peak.tooltipValue !== undefined
+          ? `⬆ Peak${peak.tooltipValue ? `: ${peak.tooltipValue}` : ''}`
+          : '⬆ Peak',
+        backgroundColor: 'rgba(17, 24, 39, 0.9)',
+        color: 'rgb(251, 191, 36)',
+        font: {
+          size: 11,
+          weight: 'bold',
+          family: "'Inter', sans-serif"
+        },
+        padding: { top: 4, bottom: 4, left: 6, right: 6 },
+        borderRadius: 4,
+        yAdjust: -20,
+        drawTime: 'afterDatasetsDraw'
+      }
+    }
+  })
+
+  return annotations
 })
 
 // Chart options with responsive configuration
@@ -193,6 +313,38 @@ const chartOptions = computed<ChartOptions<'line'>>(() => {
               ? props.tooltipFormatter(value)
               : value.toLocaleString()
             return `${context.dataset.label}: ${formattedValue}`
+          },
+          afterBody: (tooltipItems) => {
+            // Check if this point is a peak and add peak info to tooltip
+            if (tooltipItems.length === 0 || computedPeakAnnotations.value.length === 0) {
+              return ''
+            }
+
+            const item = tooltipItems[0]
+            if (!item) return ''
+
+            const xValue = item.parsed.x
+            const yValue = item.parsed.y
+
+            // Find if this point matches any peak annotation
+            const matchingPeak = computedPeakAnnotations.value.find(peak => {
+              const peakX = peak.x instanceof Date ? peak.x.getTime() : peak.x
+              let itemX: number | string
+              if (typeof xValue === 'number') {
+                itemX = xValue
+              } else if (xValue !== null && xValue !== undefined) {
+                itemX = new Date(String(xValue)).getTime()
+              } else {
+                return false
+              }
+              return peakX === itemX && peak.y === yValue
+            })
+
+            if (matchingPeak && matchingPeak.tooltipValue !== undefined) {
+              return `\n⭐ Peak Value: ${matchingPeak.tooltipValue}`
+            }
+
+            return ''
           }
         }
       }
@@ -287,6 +439,16 @@ const chartOptions = computed<ChartOptions<'line'>>(() => {
         algorithm: 'lttb',
         samples: 500
       }
+    }
+  }
+
+  // Add peak annotations if enabled
+  const annotations = chartAnnotations.value
+  if (Object.keys(annotations).length > 0) {
+    // Use type assertion since we're building valid annotation objects dynamically
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (options.plugins as any).annotation = {
+      annotations
     }
   }
 
