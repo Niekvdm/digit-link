@@ -8,5 +8,5 @@ resources:
   - tcp-tunnel.yaml
 images:
   - name: ghcr.io/niekvdm/digit-link
-    newTag: v0.2.9
+    newTag: v0.3.0
     newName: ghcr.io/niekvdm/digit-link
