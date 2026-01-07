@@ -205,6 +205,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Handle CORS preflight at tunnel level (before auth and forwarding)
+	if r.Method == http.MethodOptions {
+		origin := r.Header.Get("Origin")
+		if origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", r.Header.Get("Access-Control-Request-Headers"))
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Max-Age", "86400")
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	// Apply tunnel-level authentication if middleware is configured
 	if s.authMiddleware != nil {
 		result, authCtx := s.authMiddleware.AuthenticateRequest(w, r, subdomain)

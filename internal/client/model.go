@@ -238,7 +238,7 @@ func NewModel(client *Client, server string, localAddr string, localPort int, lo
 		spinner:         s,
 		paginator:       p,
 		pageSize:        5,
-		updateCh:        make(chan tea.Msg, 100),
+		updateCh:        make(chan tea.Msg, 500),
 		client:          client,
 		connectionStart: now,
 		responseTimes:   make([]time.Duration, 100), // Ring buffer for P95 calculation
@@ -267,7 +267,7 @@ func NewTCPModel() *Model {
 		spinner:         s,
 		paginator:       p,
 		pageSize:        5,
-		updateCh:        make(chan tea.Msg, 100),
+		updateCh:        make(chan tea.Msg, 500),
 		connectionStart: now,
 		responseTimes:   make([]time.Duration, 100),
 		deprecated:      false, // TCP client is not deprecated
@@ -348,7 +348,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Status == "online" && (prevStatus == "connecting" || prevStatus == "reconnecting") {
 			m.connectionStart = time.Now()
 		}
-		return m, m.tick()
+		// Keep draining channel
+		return m, m.waitForUpdates()
 
 	case RequestAddedMsg:
 		req := RequestLog{
@@ -373,7 +374,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.paginator.SetTotalPages(len(m.requests))
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(nil)
-		return m, tea.Batch(m.tick(), m.fastTick(), cmd)
+		// Keep draining channel + fast tick for pending display
+		return m, tea.Batch(m.waitForUpdates(), m.fastTick(), cmd)
 
 	case RequestCompletedMsg:
 		for i := range m.requests {
@@ -402,7 +404,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.addResponseTime(msg.Duration)
 		// Update paginator total pages (pass item count, not page count)
 		m.paginator.SetTotalPages(len(m.requests))
-		return m, m.tick()
+		// Keep draining channel for more completions
+		return m, m.waitForUpdates()
 
 	case TickMsg:
 		var cmd tea.Cmd
@@ -726,13 +729,25 @@ func (m *Model) fastTick() tea.Cmd {
 }
 
 // hasPendingRequests checks if any requests are still pending
+// Also auto-expires stale pending requests (older than 5 minutes)
 func (m *Model) hasPendingRequests() bool {
-	for _, req := range m.requests {
-		if req.Pending {
-			return true
+	now := time.Now()
+	const maxPendingAge = 5 * time.Minute
+
+	hasPending := false
+	for i := range m.requests {
+		if m.requests[i].Pending {
+			// Auto-expire stale pending requests
+			if now.Sub(m.requests[i].Time) > maxPendingAge {
+				m.requests[i].Pending = false
+				m.requests[i].StatusCode = 504 // Gateway Timeout
+				m.requests[i].Duration = maxPendingAge
+			} else {
+				hasPending = true
+			}
 		}
 	}
-	return false
+	return hasPending
 }
 
 // addResponseTime adds a duration to the ring buffer for avg/P95 calculation
