@@ -1,48 +1,11 @@
 # TCP Tunnel Service Configuration
 #
 # This configuration enables the TCP+TLS tunnel listener (yamux-based multiplexing)
-# for multi-forward client connections. The tunnel port (4443) must be exposed via
-# TCP passthrough, NOT HTTP/HTTPS ingress.
-#
-# IMPORTANT: HAProxy Ingress Controller TCP Services Setup
-#
-# HAProxy Ingress requires TCP services to be configured separately from HTTP ingress.
-# The tunnel port needs TCP passthrough (not HTTP termination) to preserve TLS.
-#
-# Option 1: ConfigMap-based TCP services (Recommended)
-# =====================================================
-# Create a ConfigMap in the HAProxy namespace to define TCP services:
-#
-#   kubectl -n haproxy-ingress create configmap haproxy-tcp-services \
-#     --from-literal=4443="dzone-dev/digit-link-tunnel:4443"
-#
-# Then patch the HAProxy deployment to use this ConfigMap:
-#
-#   kubectl -n haproxy-ingress patch deployment haproxy-kubernetes-ingress \
-#     --type=json -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--tcp-services-configmap=haproxy-ingress/haproxy-tcp-services"}]'
-#
-# And expose port 4443 on the HAProxy service:
-#
-#   kubectl -n haproxy-ingress patch svc haproxy-kubernetes-ingress \
-#     --type=json -p='[{"op":"add","path":"/spec/ports/-","value":{"name":"tcp-tunnel","port":4443,"targetPort":4443,"protocol":"TCP"}}]'
-#
-#
-# Option 2: Separate LoadBalancer Service
-# =======================================
-# If your ingress controller doesn't support TCP services, you can expose the
-# tunnel port via a dedicated LoadBalancer service (see tcp-tunnel-lb.yaml below).
-#
-#
-# DNS Configuration
-# =================
-# Ensure tunnel.link.digit.zone (or your tunnel domain) resolves to:
-# - The HAProxy ingress IP if using Option 1
-# - The LoadBalancer IP if using Option 2
-#
-# If using the same domain as HTTP traffic, clients should connect to port 4443.
+# for multi-forward client connections. Uses HAProxy TCP Custom Resource for
+# TCP passthrough on port 4443.
 #
 ---
-# TCP Tunnel ClusterIP Service
+# ClusterIP Service for the tunnel endpoint
 apiVersion: v1
 kind: Service
 metadata:
@@ -55,35 +18,49 @@ spec:
   selector:
     app: digit-link
   ports:
-    - name: tcp-tunnel
-      protocol: TCP
-      port: 4443
-      targetPort: 4443
+  - name: tcp-tunnel
+    protocol: TCP
+    port: 4443
+    targetPort: 4443
   type: ClusterIP
 ---
-# Optional: Direct LoadBalancer for TCP tunnel (use if ingress doesn't support TCP)
-# Uncomment this if you need a dedicated LoadBalancer for tunnel connections
-#
-# apiVersion: v1
-# kind: Service
-# metadata:
-#   name: digit-link-tunnel-lb
-#   namespace: dzone-dev
-#   labels:
-#     app: digit-link
-#     component: tunnel
-#   annotations:
-#     # Preserve client IP for connection logging
-#     # This is important for security/audit purposes
-#     service.beta.kubernetes.io/aws-load-balancer-proxy-protocol: "*"
-# spec:
-#   selector:
-#     app: digit-link
-#   ports:
-#     - name: tcp-tunnel
-#       protocol: TCP
-#       port: 4443
-#       targetPort: 4443
-#   type: LoadBalancer
-#   # Preserve client source IP (important for TCP tunnels)
-#   externalTrafficPolicy: Local
+# HAProxy Backend CR with PROXY v2 protocol to preserve client IPs
+apiVersion: ingress.v1.haproxy.org/v1
+kind: Backend
+metadata:
+  name: digit-link-tunnel-backend
+  namespace: dzone-dev
+  annotations:
+    ingress.class: haproxy
+spec:
+  config:
+    # MUST match the backend name created by the TCP CR
+    # You already confirmed this name in HAProxy logs
+    name: dzone-dev_svc_digit-link-tunnel_tcp-tunnel
+
+    # Enable PROXY protocol v2 towards backend servers
+    # Apply server-* options to all servers in this backend
+    default_server:
+      send-proxy-v2: enabled
+---
+# HAProxy TCP Custom Resource for external TCP passthrough
+apiVersion: ingress.v1.haproxy.org/v1
+kind: TCP
+metadata:
+  name: digit-link-tunnel
+  namespace: dzone-dev
+  annotations:
+    ingress.class: haproxy
+spec:
+- name: digit-link-tunnel
+  frontend:
+    name: fe-digit-link-tunnel-4443
+    tcplog: true
+    mode: tcp
+    default_backend: digit-link-tunnel-backend
+    binds:
+    - name: tunnel-bind
+      port: 4443
+  service:
+    name: digit-link-tunnel
+    port: 4443

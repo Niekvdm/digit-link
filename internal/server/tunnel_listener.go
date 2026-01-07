@@ -13,6 +13,7 @@ import (
 	"github.com/niekvdm/digit-link/internal/auth"
 	"github.com/niekvdm/digit-link/internal/db"
 	"github.com/niekvdm/digit-link/internal/tunnel"
+	proxyproto "github.com/pires/go-proxyproto"
 )
 
 // TunnelListener handles TCP+TLS tunnel connections using yamux
@@ -57,7 +58,17 @@ func (tl *TunnelListener) Start(port int) error {
 		log.Printf("TCP tunnel listener started on %s (WARNING: TLS disabled)", addr)
 	}
 
-	tl.listener = listener
+	// Wrap listener with PROXY protocol support to get real client IPs
+	// when behind HAProxy or other load balancers using PROXY protocol
+	proxyListener := &proxyproto.Listener{
+		Listener: listener,
+		Policy: func(upstream net.Addr) (proxyproto.Policy, error) {
+			// Accept PROXY protocol from any source (trusted internal network)
+			// The header is optional - connections without it still work
+			return proxyproto.USE, nil
+		},
+	}
+	tl.listener = proxyListener
 
 	go tl.acceptLoop()
 
