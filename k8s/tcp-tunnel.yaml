@@ -14,6 +14,8 @@ metadata:
   labels:
     app: digit-link
     component: tunnel
+  annotations:
+    haproxy.org/send-proxy-protocol: "proxy-v2"
 spec:
   selector:
     app: digit-link

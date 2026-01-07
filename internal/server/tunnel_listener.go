@@ -40,35 +40,30 @@ func NewTunnelListener(server *Server, tlsConfig *tls.Config) *TunnelListener {
 func (tl *TunnelListener) Start(port int) error {
 	addr := fmt.Sprintf(":%d", port)
 
-	var listener net.Listener
-	var err error
-
-	if tl.tlsConfig != nil {
-		listener, err = tls.Listen("tcp", addr, tl.tlsConfig)
-		if err != nil {
-			return fmt.Errorf("failed to start TLS listener: %w", err)
-		}
-		log.Printf("TCP+TLS tunnel listener started on %s", addr)
-	} else {
-		// Non-TLS mode for development/testing
-		listener, err = net.Listen("tcp", addr)
-		if err != nil {
-			return fmt.Errorf("failed to start TCP listener: %w", err)
-		}
-		log.Printf("TCP tunnel listener started on %s (WARNING: TLS disabled)", addr)
+	// Always start with a plain TCP listener
+	// Order: TCP -> PROXY protocol -> TLS -> yamux
+	tcpListener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("failed to start TCP listener: %w", err)
 	}
 
-	// Wrap listener with PROXY protocol support to get real client IPs
-	// when behind HAProxy or other load balancers using PROXY protocol
+	// Wrap with PROXY protocol support BEFORE TLS
+	// PROXY protocol header comes at TCP level, before TLS handshake
 	proxyListener := &proxyproto.Listener{
-		Listener: listener,
+		Listener: tcpListener,
 		Policy: func(upstream net.Addr) (proxyproto.Policy, error) {
 			// Accept PROXY protocol from any source (trusted internal network)
-			// The header is optional - connections without it still work
+			// USE means: use PROXY header if present, otherwise use connection address
 			return proxyproto.USE, nil
 		},
 	}
 	tl.listener = proxyListener
+
+	if tl.tlsConfig != nil {
+		log.Printf("TCP+TLS tunnel listener started on %s (with PROXY protocol support)", addr)
+	} else {
+		log.Printf("TCP tunnel listener started on %s (WARNING: TLS disabled)", addr)
+	}
 
 	go tl.acceptLoop()
 
@@ -104,26 +99,35 @@ func (tl *TunnelListener) handleConnection(conn net.Conn) {
 	remoteAddr := conn.RemoteAddr().String()
 	log.Printf("New TCP tunnel connection from %s", remoteAddr)
 
+	// Perform TLS handshake if TLS is configured
+	// This happens AFTER PROXY protocol parsing
+	var tlsConn net.Conn = conn
+	if tl.tlsConfig != nil {
+		tlsConn = tls.Server(conn, tl.tlsConfig)
+		// Perform handshake with timeout
+		tlsConn.SetDeadline(time.Now().Add(10 * time.Second))
+		if err := tlsConn.(*tls.Conn).Handshake(); err != nil {
+			log.Printf("TLS handshake failed for %s: %v", remoteAddr, err)
+			conn.Close()
+			return
+		}
+		tlsConn.SetDeadline(time.Time{}) // Clear deadline
+	}
+
 	// Enable TCP_NODELAY for lower latency
 	if tcpConn, ok := conn.(*net.TCPConn); ok {
 		tcpConn.SetNoDelay(true)
-	} else if tlsConn, ok := conn.(*tls.Conn); ok {
-		// For TLS connections, get the underlying TCP connection
-		if tcpConn, ok := tlsConn.NetConn().(*net.TCPConn); ok {
-			tcpConn.SetNoDelay(true)
-		}
 	}
 
 	// Create yamux server session
-	session, err := tunnel.NewServerSession(conn, nil)
+	session, err := tunnel.NewServerSession(tlsConn, nil)
 	if err != nil {
 		log.Printf("Failed to create yamux session for %s: %v", remoteAddr, err)
-		conn.Close()
+		tlsConn.Close()
 		return
 	}
 
 	// Handle the session (auth, registration, etc.)
-	// This will be implemented in task 399
 	tl.handleSession(session)
 }
 
