@@ -66,6 +66,11 @@ func main() {
 	// Start health check server on separate port (default: 8081)
 	srv.StartHealthCheckServer()
 
+	// Start TCP tunnel listener (if configured via TUNNEL_ENABLED or TLS certs)
+	if err := srv.StartTunnelListener(); err != nil {
+		log.Printf("Warning: Failed to start tunnel listener: %v", err)
+	}
+
 	log.Fatal(srv.Run(port))
 }
 
