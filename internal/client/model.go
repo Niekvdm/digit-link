@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/niekvdm/digit-link/internal/tunnel"
 )
 
 // Style definitions
@@ -134,14 +135,16 @@ var (
 type StatusUpdateMsg struct {
 	Status    string
 	Server    string
-	PublicURL string
-	Error     string // Error message for rejected/error status
+	PublicURL string             // Primary URL (for backward compatibility)
+	Tunnels   []tunnel.TunnelInfo // All tunnel URLs (for multi-forward)
+	Error     string             // Error message for rejected/error status
 }
 
 type RequestAddedMsg struct {
 	ID        string
 	Method    string
 	Path      string
+	Subdomain string // Subdomain this request came from (for multi-forward)
 	BytesRecv int64
 }
 
@@ -163,7 +166,8 @@ type QuitMsg struct{}
 type Model struct {
 	status       string
 	server       string
-	publicURL    string
+	publicURL    string              // Primary URL (for backward compatibility)
+	tunnels      []tunnel.TunnelInfo // All tunnels (for multi-forward)
 	localPort    int
 	localAddr    string
 	localHTTPS   bool
@@ -204,6 +208,9 @@ type Model struct {
 	// Selection and detail view
 	selectedIndex  int
 	detailExpanded bool
+
+	// Deprecation notice (for WebSocket client)
+	deprecated bool
 }
 
 // NewModel creates a new Bubbletea model
@@ -235,6 +242,35 @@ func NewModel(client *Client, server string, localAddr string, localPort int, lo
 		client:          client,
 		connectionStart: now,
 		responseTimes:   make([]time.Duration, 100), // Ring buffer for P95 calculation
+		deprecated:      true,                       // WebSocket client is deprecated
+	}
+}
+
+// NewTCPModel creates a new Bubbletea model for TCP client (not deprecated)
+func NewTCPModel() *Model {
+	s := spinner.New()
+	s.Spinner = spinner.Dot
+	s.Style = lipgloss.NewStyle().Foreground(colorMustardYellow)
+
+	p := paginator.New()
+	p.Type = paginator.Dots
+	p.PerPage = 5
+	p.ActiveDot = lipgloss.NewStyle().Foreground(colorMustardYellow).Render("•")
+	p.InactiveDot = lipgloss.NewStyle().Foreground(colorGray).Render("•")
+
+	now := time.Now()
+	return &Model{
+		status:          "connecting",
+		requests:        make([]RequestLog, 0, 50),
+		maxRequests:     50,
+		startTime:       now,
+		spinner:         s,
+		paginator:       p,
+		pageSize:        5,
+		updateCh:        make(chan tea.Msg, 100),
+		connectionStart: now,
+		responseTimes:   make([]time.Duration, 100),
+		deprecated:      false, // TCP client is not deprecated
 	}
 }
 
@@ -295,6 +331,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.PublicURL != "" {
 			m.publicURL = msg.PublicURL
 		}
+		if len(msg.Tunnels) > 0 {
+			m.tunnels = msg.Tunnels
+			// Set primary URL from first tunnel if not already set
+			if m.publicURL == "" && len(m.tunnels) > 0 {
+				m.publicURL = m.tunnels[0].URL
+			}
+		}
 		if msg.Error != "" {
 			m.errorMessage = msg.Error
 		}
@@ -313,6 +356,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			Time:      time.Now(),
 			Method:    msg.Method,
 			Path:      msg.Path,
+			Subdomain: msg.Subdomain,
 			Pending:   true,
 			BytesRecv: msg.BytesRecv,
 		}
@@ -474,23 +518,44 @@ func (m *Model) View() string {
 		content = append(content, hintStyle.Render("Check your token, IP whitelist settings, or contact your administrator."))
 	}
 
+	// Show deprecation notice for WebSocket client
+	if m.deprecated {
+		content = append(content, "")
+		deprecationStyle := lipgloss.NewStyle().
+			Foreground(colorMustardYellow).
+			Bold(true)
+		content = append(content, deprecationStyle.Render("⚠ DEPRECATED: Use 'digit-link --tcp' for the new multi-forward client"))
+	}
+
 	content = append(content, "")
 	content = append(content, labelStyle.Render("Version")+valueStyle.MarginLeft(2).Render("1.0.0"))
 	content = append(content, labelStyle.Render("Server")+valueStyle.MarginLeft(2).Render(m.server))
 
-	// Forwarding line
-	forwardingText := m.publicURL
-	if forwardingText == "" {
-		forwardingText = "..."
+	// Forwarding section - show all tunnels if multi-forward, otherwise single line
+	if len(m.tunnels) > 1 {
+		// Multi-tunnel display
+		content = append(content, labelStyle.Render("Forwarding"))
+		for _, t := range m.tunnels {
+			line := "  " + urlPublicStyle.Render(t.URL) +
+				" → " +
+				urlLocalStyle.Render(fmt.Sprintf("localhost:%d", t.LocalPort))
+			content = append(content, line)
+		}
+	} else {
+		// Single tunnel display (backward compatible)
+		forwardingText := m.publicURL
+		if forwardingText == "" {
+			forwardingText = "..."
+		}
+		localScheme := "http"
+		if m.localHTTPS {
+			localScheme = "https"
+		}
+		forwarding := urlPublicStyle.Render(forwardingText) +
+			" → " +
+			urlLocalStyle.Render(fmt.Sprintf("%s://%s:%d", localScheme, m.localAddr, m.localPort))
+		content = append(content, labelStyle.Render("Forwarding")+valueStyle.MarginLeft(2).Render(forwarding))
 	}
-	localScheme := "http"
-	if m.localHTTPS {
-		localScheme = "https"
-	}
-	forwarding := urlPublicStyle.Render(forwardingText) +
-		" → " +
-		urlLocalStyle.Render(fmt.Sprintf("%s://%s:%d", localScheme, m.localAddr, m.localPort))
-	content = append(content, labelStyle.Render("Forwarding")+valueStyle.MarginLeft(2).Render(forwarding))
 	content = append(content, "")
 
 	// Stats Section with tabs
@@ -539,8 +604,12 @@ func (m *Model) View() string {
 			// Calculate actual index in reversed list for selection
 			actualIndex := start + i
 
-			// Truncate path if too long
+			// Build display path with subdomain prefix for multi-tunnel
 			path := req.Path
+			if len(m.tunnels) > 1 && req.Subdomain != "" {
+				// Show subdomain prefix for multi-tunnel mode
+				path = "[" + req.Subdomain + "] " + path
+			}
 			if len(path) > 40 {
 				path = path[:37] + "..."
 			}

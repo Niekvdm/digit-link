@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/niekvdm/digit-link/internal/protocol"
+	"github.com/niekvdm/digit-link/internal/tunnel"
 )
 
 // Proxy handles forwarding requests to the local service
@@ -117,4 +118,56 @@ func ForwardError(requestID string, statusCode int, message string) *protocol.HT
 		Headers:    map[string]string{"Content-Type": "application/json"},
 		Body:       body,
 	}
+}
+
+// ForwardRaw forwards a raw HTTP request and returns a tunnel.ResponseFrame
+// Used by the TCP client for yamux-based forwarding
+func (p *Proxy) ForwardRaw(method, path string, headers map[string]string, reqBody []byte) (*tunnel.ResponseFrame, error) {
+	url := p.localAddr + path
+
+	var body io.Reader
+	if len(reqBody) > 0 {
+		body = bytes.NewReader(reqBody)
+	}
+
+	httpReq, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	for key, value := range headers {
+		switch key {
+		case "Connection", "Keep-Alive", "Proxy-Authenticate", "Proxy-Authorization",
+			"Te", "Trailers", "Transfer-Encoding", "Upgrade":
+			continue
+		}
+		httpReq.Header.Set(key, value)
+	}
+
+	resp, err := p.client.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to forward request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	respHeaders := make(map[string]string)
+	for key, values := range resp.Header {
+		switch key {
+		case "Connection", "Keep-Alive", "Proxy-Authenticate", "Proxy-Authorization",
+			"Te", "Trailers", "Transfer-Encoding", "Upgrade":
+			continue
+		}
+		respHeaders[key] = values[0]
+	}
+
+	return &tunnel.ResponseFrame{
+		Status:  resp.StatusCode,
+		Headers: respHeaders,
+		Body:    respBody,
+	}, nil
 }

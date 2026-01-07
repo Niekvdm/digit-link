@@ -1,6 +1,7 @@
 package server
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,6 +19,7 @@ import (
 	"github.com/niekvdm/digit-link/internal/db"
 	"github.com/niekvdm/digit-link/internal/policy"
 	"github.com/niekvdm/digit-link/internal/protocol"
+	"github.com/niekvdm/digit-link/internal/tunnel"
 )
 
 // Server manages tunnel connections and HTTP routing
@@ -42,6 +44,9 @@ type Server struct {
 	// Usage tracking and quota enforcement
 	usageCache   *UsageCache
 	quotaChecker *QuotaChecker
+
+	// TCP tunnel listener (yamux-based)
+	tunnelListener *TunnelListener
 }
 
 // New creates a new tunnel server
@@ -183,12 +188,19 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find tunnel for subdomain
+	// Find tunnel for subdomain - check WebSocket tunnels first
 	s.mu.RLock()
-	tunnel, ok := s.tunnels[subdomain]
+	wsTunnel, wsOk := s.tunnels[subdomain]
 	s.mu.RUnlock()
 
-	if !ok {
+	// Check TCP tunnels if no WebSocket tunnel found
+	var tcpSession *tunnel.Session
+	var tcpOk bool
+	if !wsOk && s.tunnelListener != nil {
+		tcpSession, tcpOk = s.tunnelListener.GetSession(subdomain)
+	}
+
+	if !wsOk && !tcpOk {
 		http.Error(w, fmt.Sprintf("Tunnel '%s' not found", subdomain), http.StatusNotFound)
 		return
 	}
@@ -206,8 +218,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Forward request through tunnel
-	s.forwardRequest(w, r, tunnel)
+	// Forward request through appropriate tunnel type
+	if wsOk {
+		s.forwardRequest(w, r, wsTunnel)
+	} else {
+		s.forwardRequestViaTCP(w, r, tcpSession, subdomain)
+	}
 }
 
 // handlePublicAPI handles public API endpoints that don't require authentication
@@ -838,6 +854,99 @@ func (s *Server) forwardRequest(w http.ResponseWriter, r *http.Request, tunnel *
 	}
 }
 
+// forwardRequestViaTCP forwards an HTTP request through a TCP/yamux tunnel
+func (s *Server) forwardRequestViaTCP(w http.ResponseWriter, r *http.Request, session *tunnel.Session, subdomain string) {
+	// Get org ID for quota checking
+	accountID, orgID, _ := session.GetAccountInfo()
+
+	// Check quota before processing request
+	if s.quotaChecker != nil && orgID != "" {
+		allowed, reason := s.quotaChecker.CanProcessRequest(orgID)
+		if !allowed {
+			headers := s.quotaChecker.GetQuotaHeaders(orgID, QuotaRequests)
+			for k, v := range headers {
+				w.Header().Set(k, v)
+			}
+			w.Header().Set("Retry-After", "86400")
+			http.Error(w, fmt.Sprintf("Quota exceeded: %s", reason), http.StatusTooManyRequests)
+			return
+		}
+	}
+
+	// Open a new yamux stream for this request
+	stream, err := session.Open()
+	if err != nil {
+		log.Printf("Failed to open yamux stream for %s: %v", subdomain, err)
+		http.Error(w, "Tunnel unavailable", http.StatusBadGateway)
+		return
+	}
+	defer stream.Close()
+
+	requestID := uuid.New().String()
+
+	// Build request headers
+	headers := make(map[string]string)
+	for key, values := range r.Header {
+		headers[key] = values[0]
+	}
+
+	// Read request body
+	var body []byte
+	if r.Body != nil {
+		body, _ = io.ReadAll(r.Body)
+	}
+
+	// Create request frame
+	reqFrame := tunnel.RequestFrame{
+		ID:        requestID,
+		Subdomain: subdomain,
+		Method:    r.Method,
+		Path:      r.URL.RequestURI(),
+		Headers:   headers,
+		Body:      body,
+	}
+
+	// Send request frame
+	if err := tunnel.WriteFrame(stream, &reqFrame); err != nil {
+		log.Printf("Failed to write request frame for %s: %v", subdomain, err)
+		http.Error(w, "Tunnel error", http.StatusBadGateway)
+		return
+	}
+
+	// Track bytes sent
+	bytesSent := int64(len(body) + 500) // Approximate frame overhead
+
+	// Read response frame with timeout
+	stream.SetReadDeadline(time.Now().Add(5 * time.Minute))
+	respFrame, err := tunnel.ReadFrame[tunnel.ResponseFrame](stream)
+	if err != nil {
+		log.Printf("Failed to read response frame for %s: %v", subdomain, err)
+		http.Error(w, "Tunnel timeout or error", http.StatusGatewayTimeout)
+		return
+	}
+
+	// Track bytes received
+	bytesReceived := int64(len(respFrame.Body) + 500) // Approximate frame overhead
+
+	// Update usage tracking
+	if s.usageCache != nil && orgID != "" {
+		s.usageCache.RecordBandwidth(orgID, bytesSent+bytesReceived)
+		s.usageCache.RecordRequest(orgID)
+	}
+
+	// Log request (optional - for debugging)
+	_ = accountID // Silence unused variable if not logging
+
+	// Write response headers
+	for key, value := range respFrame.Headers {
+		w.Header().Set(key, value)
+	}
+	w.WriteHeader(respFrame.Status)
+	if len(respFrame.Body) > 0 {
+		w.Write(respFrame.Body)
+	}
+}
+
 // reservedSubdomains contains subdomains that cannot be registered by users
 // to prevent confusion and potential security issues
 var reservedSubdomains = map[string]bool{
@@ -906,6 +1015,49 @@ func (s *Server) Run(port int) error {
 	go s.pingRoutine()
 
 	return http.ListenAndServe(addr, s)
+}
+
+// StartTunnelListener starts the TCP+TLS tunnel listener if configured
+func (s *Server) StartTunnelListener() error {
+	if !IsTunnelEnabled() {
+		log.Printf("TCP tunnel listener disabled (set TUNNEL_ENABLED=true or provide TUNNEL_TLS_CERT/TUNNEL_TLS_KEY)")
+		return nil
+	}
+
+	certFile := GetTunnelTLSCertFile()
+	keyFile := GetTunnelTLSKeyFile()
+
+	var tlsConfig *tls.Config
+	var err error
+
+	if certFile != "" && keyFile != "" {
+		tlsConfig, err = tunnel.TLSServerConfig(certFile, keyFile)
+		if err != nil {
+			return fmt.Errorf("failed to load TLS config: %w", err)
+		}
+	}
+
+	s.tunnelListener = NewTunnelListener(s, tlsConfig)
+	port := GetTunnelPort()
+
+	if err := s.tunnelListener.Start(port); err != nil {
+		return fmt.Errorf("failed to start tunnel listener: %w", err)
+	}
+
+	return nil
+}
+
+// StopTunnelListener stops the TCP tunnel listener
+func (s *Server) StopTunnelListener() error {
+	if s.tunnelListener != nil {
+		return s.tunnelListener.Stop()
+	}
+	return nil
+}
+
+// GetTunnelListener returns the tunnel listener (for request forwarding)
+func (s *Server) GetTunnelListener() *TunnelListener {
+	return s.tunnelListener
 }
 
 // pingPeriod is the period between pings (must be less than pongWait)

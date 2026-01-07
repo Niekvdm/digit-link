@@ -49,11 +49,24 @@ spec:
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
+              name: http
+            - containerPort: 4443
+              name: tcp-tunnel
           env:
             - name: PORT
               value: "8080"
             - name: DOMAIN
               value: "link.digit.zone"
+            # TCP Tunnel configuration (yamux-based multi-forward)
+            - name: TUNNEL_ENABLED
+              value: "true"
+            - name: TUNNEL_PORT
+              value: "4443"
+            # TLS certificates for tunnel (mount via secret)
+            - name: TUNNEL_TLS_CERT
+              value: "/etc/tunnel-tls/tls.crt"
+            - name: TUNNEL_TLS_KEY
+              value: "/etc/tunnel-tls/tls.key"
             - name: DB_PATH
               value: "/data/digit-link.db"
             # Trust proxy headers from internal cluster IPs (required for correct client IP detection)
@@ -78,6 +91,9 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+            - name: tunnel-tls
+              mountPath: /etc/tunnel-tls
+              readOnly: true
           resources:
             requests:
               memory: "64Mi"
@@ -101,3 +117,7 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: digit-link-data
+        # TLS certificate for TCP tunnel (reuse the ingress TLS secret)
+        - name: tunnel-tls
+          secret:
+            secretName: digit-link-tls

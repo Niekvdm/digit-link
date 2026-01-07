@@ -19,6 +19,7 @@ type RequestLog struct {
 	Time       time.Time
 	Method     string
 	Path       string
+	Subdomain  string // Subdomain this request came from (for multi-forward)
 	StatusCode int
 	Duration   time.Duration
 	Pending    bool
