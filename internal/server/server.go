@@ -858,6 +858,10 @@ func (s *Server) forwardRequest(w http.ResponseWriter, r *http.Request, tunnel *
 		for key, value := range httpResp.Headers {
 			w.Header().Set(key, value)
 		}
+
+		// Add CORS headers if Origin was present in request
+		addCORSHeaders(w, r)
+
 		w.WriteHeader(httpResp.StatusCode)
 		if len(httpResp.Body) > 0 {
 			w.Write(httpResp.Body)
@@ -955,9 +959,26 @@ func (s *Server) forwardRequestViaTCP(w http.ResponseWriter, r *http.Request, se
 	for key, value := range respFrame.Headers {
 		w.Header().Set(key, value)
 	}
+
+	// Add CORS headers if Origin was present in request
+	addCORSHeaders(w, r)
+
 	w.WriteHeader(respFrame.Status)
 	if len(respFrame.Body) > 0 {
 		w.Write(respFrame.Body)
+	}
+}
+
+// addCORSHeaders adds CORS headers to response if Origin header was present in request
+func addCORSHeaders(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return
+	}
+	// Only add if not already set by backend
+	if w.Header().Get("Access-Control-Allow-Origin") == "" {
+		w.Header().Set("Access-Control-Allow-Origin", origin)
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
 	}
 }
 
