@@ -188,6 +188,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Handle CORS preflight at tunnel level FIRST (before tunnel lookup)
+	// This ensures CORS works even if tunnel lookup has issues
+	if r.Method == http.MethodOptions {
+		origin := r.Header.Get("Origin")
+		if origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", r.Header.Get("Access-Control-Request-Headers"))
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Max-Age", "86400")
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
 	// Find tunnel for subdomain - check WebSocket tunnels first
 	s.mu.RLock()
 	wsTunnel, wsOk := s.tunnels[subdomain]
@@ -202,20 +217,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if !wsOk && !tcpOk {
 		http.Error(w, fmt.Sprintf("Tunnel '%s' not found", subdomain), http.StatusNotFound)
-		return
-	}
-
-	// Handle CORS preflight at tunnel level (before auth and forwarding)
-	if r.Method == http.MethodOptions {
-		origin := r.Header.Get("Origin")
-		if origin != "" {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", r.Header.Get("Access-Control-Request-Headers"))
-			w.Header().Set("Access-Control-Allow-Credentials", "true")
-			w.Header().Set("Access-Control-Max-Age", "86400")
-		}
-		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
