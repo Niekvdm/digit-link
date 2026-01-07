@@ -139,16 +139,16 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Public API endpoints (no auth required)
-	if strings.HasPrefix(r.URL.Path, "/api/") {
-		s.handlePublicAPI(w, r)
-		return
-	}
-
 	// For main domain requests, distinguish between API calls and SPA navigation
 	// API calls have auth headers; browser navigation does not
 	isMainDomain := s.extractSubdomain(r.Host) == ""
 	if isMainDomain {
+		// Public API endpoints (no auth required) - only on main domain
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			s.handlePublicAPI(w, r)
+			return
+		}
+
 		// Check if this is an API request (has auth headers) or browser navigation
 		hasAuthHeader := r.Header.Get("X-Admin-Token") != "" ||
 			strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ")
