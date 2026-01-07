@@ -65,7 +65,7 @@ func NewTCPClient(cfg TCPConfig) *TCPClient {
 	// Create proxy for each forward
 	proxies := make(map[string]*Proxy)
 	for _, fwd := range cfg.Forwards {
-		proxies[fwd.Subdomain] = NewProxyWithTimeout("localhost", fwd.LocalPort, false, cfg.Timeout)
+		proxies[fwd.Subdomain] = NewProxyWithTimeout("localhost", fwd.LocalPort, fwd.LocalHTTPS, cfg.Timeout)
 	}
 
 	return &TCPClient{

@@ -574,35 +574,31 @@ func (m *Model) View() string {
 	content = append(content, headerRow)
 	content = append(content, timeStyle.Render(strings.Repeat("─", 80)))
 
-	// Reverse requests to show most recent first
-	reversed := make([]RequestLog, len(m.requests))
-	for i := range m.requests {
-		reversed[i] = m.requests[len(m.requests)-1-i]
-	}
-
-	// Ensure paginator total pages is set (pass item count, not page count)
-	m.paginator.SetTotalPages(len(reversed))
+	// Paginate requests (shown most recent first, without allocating reversed slice)
+	requestCount := len(m.requests)
+	m.paginator.SetTotalPages(requestCount)
 	totalPages := m.paginator.TotalPages
 	if totalPages == 0 {
 		totalPages = 1
 	}
 
-	// Use paginator's GetSliceBounds to get the correct slice
-	start, end := m.paginator.GetSliceBounds(len(reversed))
-	var paginatedRequests []RequestLog
-	if len(reversed) > 0 && start < len(reversed) {
-		if end > len(reversed) {
-			end = len(reversed)
-		}
-		paginatedRequests = reversed[start:end]
+	// Calculate start/end indices for the current page (in reversed order)
+	start, end := m.paginator.GetSliceBounds(requestCount)
+	pageItemCount := end - start
+	if pageItemCount < 0 {
+		pageItemCount = 0
 	}
 
-	// Display paginated requests (always show 5 rows)
+	// Display paginated requests (always show 5 rows, most recent first without allocation)
 	for i := 0; i < m.pageSize; i++ {
-		if i < len(paginatedRequests) {
-			req := paginatedRequests[i]
-			// Calculate actual index in reversed list for selection
+		if i < pageItemCount {
+			// Reverse index: page item i corresponds to requests[requestCount - 1 - (start + i)]
 			actualIndex := start + i
+			reverseIdx := requestCount - 1 - actualIndex
+			if reverseIdx < 0 || reverseIdx >= requestCount {
+				continue
+			}
+			req := m.requests[reverseIdx]
 
 			// Build display path with subdomain prefix for multi-tunnel
 			path := req.Path
@@ -700,10 +696,14 @@ func (m *Model) tick() tea.Cmd {
 // waitForUpdates waits for a message from the update channel
 func (m *Model) waitForUpdates() tea.Cmd {
 	return func() tea.Msg {
+		// Use a reusable timer to avoid memory leaks from time.After
+		timer := time.NewTimer(100 * time.Millisecond)
+		defer timer.Stop() // Critical: stop timer to prevent leak
+
 		select {
 		case msg := <-m.updateCh:
 			return msg
-		case <-time.After(100 * time.Millisecond):
+		case <-timer.C:
 			return nil
 		}
 	}

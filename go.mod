@@ -12,6 +12,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/hashicorp/yamux v0.1.2
 	github.com/mattn/go-sqlite3 v1.14.24
+	github.com/pires/go-proxyproto v0.8.1
 	github.com/pquerna/otp v1.5.0
 	golang.org/x/crypto v0.46.0
 	golang.org/x/oauth2 v0.34.0
@@ -34,7 +35,6 @@ require (
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/termenv v0.16.0 // indirect
-	github.com/pires/go-proxyproto v0.8.1 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
 	golang.org/x/sys v0.39.0 // indirect

@@ -127,6 +127,11 @@ func NewAuthMiddleware(database *db.DB, opts ...AuthMiddlewareOption) *AuthMiddl
 
 // AuthenticateRequest authenticates an incoming request based on the subdomain
 func (m *AuthMiddleware) AuthenticateRequest(w http.ResponseWriter, r *http.Request, subdomain string) (*policy.AuthResult, *policy.AuthContext) {
+	// Skip auth for CORS preflight requests (OPTIONS never carry credentials)
+	if r.Method == http.MethodOptions {
+		return policy.Success("cors_preflight"), &policy.AuthContext{Subdomain: subdomain}
+	}
+
 	// Skip auth for internal endpoints
 	if m.isInternalEndpoint(r.URL.Path) {
 		return policy.Success("internal"), &policy.AuthContext{Subdomain: subdomain}
@@ -160,6 +165,11 @@ func (m *AuthMiddleware) AuthenticateRequest(w http.ResponseWriter, r *http.Requ
 // AuthenticateWithContext authenticates using a pre-resolved context
 // This is used when we already know the org/app context (e.g., from tunnel registration)
 func (m *AuthMiddleware) AuthenticateWithContext(w http.ResponseWriter, r *http.Request, authCtx *policy.AuthContext) (*policy.AuthResult, *policy.AuthContext) {
+	// Skip auth for CORS preflight requests (OPTIONS never carry credentials)
+	if r.Method == http.MethodOptions {
+		return policy.Success("cors_preflight"), authCtx
+	}
+
 	// Skip auth for internal endpoints
 	if m.isInternalEndpoint(r.URL.Path) {
 		return policy.Success("internal"), authCtx

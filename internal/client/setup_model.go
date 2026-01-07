@@ -31,6 +31,7 @@ type SetupModel struct {
 	// Add forward view inputs
 	subdomainInput textinput.Model
 	portInput      textinput.Model
+	localHTTPS     bool // HTTPS for local forwarding (in add forward view)
 
 	// Forwards list
 	forwards       []tunnel.ForwardConfig
@@ -276,6 +277,11 @@ func (m *SetupModel) updateAddForward(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case "enter":
 			return m.handleAddForward()
+
+		case "h":
+			// Toggle local HTTPS
+			m.localHTTPS = !m.localHTTPS
+			return m, nil
 		}
 	}
 
@@ -376,6 +382,7 @@ func (m *SetupModel) handleEnter() (tea.Model, tea.Cmd) {
 		m.view = SetupViewAddForward
 		m.subdomainInput.SetValue("")
 		m.portInput.SetValue("")
+		m.localHTTPS = false // Reset for new forward
 		m.subdomainInput.Focus()
 		m.portInput.Blur()
 		return m, nil
@@ -417,9 +424,10 @@ func (m *SetupModel) handleAddForward() (tea.Model, tea.Cmd) {
 
 	// Add forward
 	m.forwards = append(m.forwards, tunnel.ForwardConfig{
-		Subdomain: subdomain,
-		LocalPort: port,
-		Primary:   len(m.forwards) == 0, // First one is primary
+		Subdomain:  subdomain,
+		LocalPort:  port,
+		LocalHTTPS: m.localHTTPS,
+		Primary:    len(m.forwards) == 0, // First one is primary
 	})
 
 	// Go back to main view
@@ -537,7 +545,11 @@ func (m *SetupModel) viewMain() string {
 		fwdContent.WriteString(timeStyle.Render("No forwards configured"))
 	} else {
 		for i, fwd := range m.forwards {
-			line := fmt.Sprintf(":%d → %s", fwd.LocalPort, fwd.Subdomain)
+			proto := "http"
+			if fwd.LocalHTTPS {
+				proto = "https"
+			}
+			line := fmt.Sprintf("%s://:%d → %s", proto, fwd.LocalPort, fwd.Subdomain)
 			if i == m.primaryFwdIdx {
 				line += " ★"
 			}
@@ -631,6 +643,14 @@ func (m *SetupModel) viewAddForward() string {
 	b.WriteString(portStyle.Render(m.portInput.View()))
 	b.WriteString("\n\n")
 
+	// Local HTTPS toggle
+	httpsStatus := timeStyle.Render("○ http")
+	if m.localHTTPS {
+		httpsStatus = urlPublicStyle.Render("● https")
+	}
+	b.WriteString(timeStyle.Render("Local protocol: ") + httpsStatus + timeStyle.Render(" (press 'h' to toggle)"))
+	b.WriteString("\n\n")
+
 	// Preview
 	subdomain := m.subdomainInput.Value()
 	if subdomain == "" {
@@ -640,7 +660,11 @@ func (m *SetupModel) viewAddForward() string {
 	if port == "" {
 		port = "3000"
 	}
-	preview := fmt.Sprintf("%s.link.digit.zone → localhost:%s", subdomain, port)
+	localProto := "http"
+	if m.localHTTPS {
+		localProto = "https"
+	}
+	preview := fmt.Sprintf("%s.link.digit.zone → %s://localhost:%s", subdomain, localProto, port)
 	b.WriteString(timeStyle.Render("Preview: ") + urlPublicStyle.Render(preview))
 	b.WriteString("\n\n")
 

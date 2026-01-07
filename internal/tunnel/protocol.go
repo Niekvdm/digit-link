@@ -20,9 +20,10 @@ const (
 
 // ForwardConfig defines a single port forwarding configuration
 type ForwardConfig struct {
-	Subdomain string `json:"subdomain"`
-	LocalPort int    `json:"localPort"`
-	Primary   bool   `json:"primary,omitempty"`
+	Subdomain  string `json:"subdomain"`
+	LocalPort  int    `json:"localPort"`
+	LocalHTTPS bool   `json:"localHttps,omitempty"` // Use HTTPS for local forwarding
+	Primary    bool   `json:"primary,omitempty"`
 }
 
 // AuthRequest is sent by the client after establishing the yamux session
