@@ -41,6 +41,12 @@ metadata:
     haproxy.org/ssl-redirect: "true"
     # Forward real client IP to backend
     haproxy.org/forwarded-for: "true"
+    # CORS - allow preflight requests to pass through to backend
+    haproxy.org/cors-enable: "true"
+    haproxy.org/cors-allow-origin: "*"
+    haproxy.org/cors-allow-methods: "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+    haproxy.org/cors-allow-headers: "*"
+    haproxy.org/cors-allow-credentials: "true"
 spec:
   rules:
   # Main domain for admin dashboard, API, and WebSocket control connections
