@@ -97,7 +97,7 @@ func (tl *TunnelListener) acceptLoop() {
 // handleConnection handles a new TCP connection
 func (tl *TunnelListener) handleConnection(conn net.Conn) {
 	remoteAddr := conn.RemoteAddr().String()
-	log.Printf("New TCP tunnel connection from %s", remoteAddr)
+	// Only log after successful TLS handshake to reduce noise from health checks
 
 	// Perform TLS handshake if TLS is configured
 	// This happens AFTER PROXY protocol parsing
@@ -107,11 +107,17 @@ func (tl *TunnelListener) handleConnection(conn net.Conn) {
 		// Perform handshake with timeout
 		tlsConn.SetDeadline(time.Now().Add(10 * time.Second))
 		if err := tlsConn.(*tls.Conn).Handshake(); err != nil {
-			log.Printf("TLS handshake failed for %s: %v", remoteAddr, err)
+			// Don't log connection resets - likely health checks
+			if !strings.Contains(err.Error(), "connection reset") {
+				log.Printf("TLS handshake failed for %s: %v", remoteAddr, err)
+			}
 			conn.Close()
 			return
 		}
 		tlsConn.SetDeadline(time.Time{}) // Clear deadline
+		log.Printf("New TCP tunnel connection from %s", remoteAddr)
+	} else {
+		log.Printf("New TCP tunnel connection from %s (no TLS)", remoteAddr)
 	}
 
 	// Enable TCP_NODELAY for lower latency
