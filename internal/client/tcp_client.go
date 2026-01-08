@@ -154,6 +154,16 @@ func (c *TCPClient) Connect() error {
 	c.tunnels = authResp.Tunnels
 	c.connected = true
 
+	// Copy LocalHTTPS from forwards to tunnels (matched by subdomain)
+	for i := range c.tunnels {
+		for _, fwd := range c.forwards {
+			if fwd.Subdomain == c.tunnels[i].Subdomain {
+				c.tunnels[i].LocalHTTPS = fwd.LocalHTTPS
+				break
+			}
+		}
+	}
+
 	// Update session with forwards
 	session.SetForwards(c.forwards)
 
@@ -240,8 +250,10 @@ func (c *TCPClient) Run() error {
 
 		if c.model != nil {
 			c.model.SendUpdate(StatusUpdateMsg{
-				Status: "reconnecting",
-				Server: c.server,
+				Status:       "reconnecting",
+				Server:       c.server,
+				RetryCount:   retries + 1,
+				RetryBackoff: backoff,
 			})
 		}
 	}

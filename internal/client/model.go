@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/paginator"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -22,8 +23,9 @@ var (
 	colorGray          = lipgloss.Color("244") // Light gray
 	colorDarkGray      = lipgloss.Color("238") // Darker gray
 	colorRed           = lipgloss.Color("196") // Bright red for errors
+	colorOrange        = lipgloss.Color("208") // Orange for client errors (4xx)
 	colorBlue          = lipgloss.Color("75")  // Soft blue
-	colorCyan          = lipgloss.Color("87")  // Cyan blue
+	colorCyan          = lipgloss.Color("87")  // Cyan blue for redirects (3xx)
 
 	// Header styles
 	headerTitleStyle = lipgloss.NewStyle().
@@ -119,9 +121,11 @@ var (
 				Foreground(colorWhite)
 
 	// Status code styles
-	statusCodeSuccess     = lipgloss.NewStyle().Foreground(colorGreen).Bold(true)
-	statusCodeClientError = lipgloss.NewStyle().Foreground(colorMustardYellow).Bold(true)
-	statusCodeServerError = lipgloss.NewStyle().Foreground(colorRed).Bold(true)
+	statusCodeSuccess     = lipgloss.NewStyle().Foreground(colorGreen).Bold(true)      // 2xx
+	statusCodeRedirect    = lipgloss.NewStyle().Foreground(colorCyan).Bold(true)       // 3xx
+	statusCodeClientError = lipgloss.NewStyle().Foreground(colorOrange).Bold(true)     // 4xx
+	statusCodeServerError = lipgloss.NewStyle().Foreground(colorRed).Bold(true)        // 5xx
+	statusCodePending     = lipgloss.NewStyle().Foreground(colorGray).Italic(true)     // Pending
 
 	// Time style
 	timeStyle = lipgloss.NewStyle().Foreground(colorGray)
@@ -133,11 +137,13 @@ var (
 
 // Message types for Bubbletea
 type StatusUpdateMsg struct {
-	Status    string
-	Server    string
-	PublicURL string             // Primary URL (for backward compatibility)
-	Tunnels   []tunnel.TunnelInfo // All tunnel URLs (for multi-forward)
-	Error     string             // Error message for rejected/error status
+	Status       string
+	Server       string
+	PublicURL    string              // Primary URL (for backward compatibility)
+	Tunnels      []tunnel.TunnelInfo // All tunnel URLs (for multi-forward)
+	Error        string              // Error message for rejected/error status
+	RetryCount   int                 // Retry count when reconnecting
+	RetryBackoff time.Duration       // Backoff duration when reconnecting
 }
 
 type RequestAddedMsg struct {
@@ -208,6 +214,18 @@ type Model struct {
 	// Selection and detail view
 	selectedIndex  int
 	detailExpanded bool
+
+	// Clipboard notification
+	clipboardMsg     string
+	clipboardMsgTime time.Time
+
+	// Request filtering
+	filterText    string
+	filterEnabled bool
+
+	// Reconnection state (exposed for UI)
+	retryCount   int
+	retryBackoff time.Duration
 
 	// Deprecation notice (for WebSocket client)
 	deprecated bool
@@ -316,6 +334,44 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Toggle detail view
 			m.detailExpanded = !m.detailExpanded
 			return m, nil
+		case "c":
+			// Copy primary URL to clipboard
+			if m.publicURL != "" {
+				if err := clipboard.WriteAll(m.publicURL); err == nil {
+					m.clipboardMsg = "Copied!"
+					m.clipboardMsgTime = time.Now()
+				} else {
+					m.clipboardMsg = "Copy failed"
+					m.clipboardMsgTime = time.Now()
+				}
+			}
+			return m, nil
+		case "/":
+			// Toggle filter mode
+			m.filterEnabled = !m.filterEnabled
+			if !m.filterEnabled {
+				m.filterText = ""
+			}
+			return m, nil
+		case "esc":
+			// Clear filter if active
+			if m.filterEnabled {
+				m.filterEnabled = false
+				m.filterText = ""
+				return m, nil
+			}
+		case "backspace":
+			// Handle backspace in filter mode
+			if m.filterEnabled && len(m.filterText) > 0 {
+				m.filterText = m.filterText[:len(m.filterText)-1]
+				return m, nil
+			}
+		default:
+			// Handle typing in filter mode
+			if m.filterEnabled && len(msg.String()) == 1 {
+				m.filterText += msg.String()
+				return m, nil
+			}
 		}
 		// Let paginator handle navigation keys (left/right/h/l)
 		var cmd tea.Cmd
@@ -341,6 +397,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Error != "" {
 			m.errorMessage = msg.Error
 		}
+		// Copy retry info for reconnecting status
+		m.retryCount = msg.RetryCount
+		m.retryBackoff = msg.RetryBackoff
 		// Track reconnections
 		if prevStatus == "reconnecting" && msg.Status == "online" {
 			m.reconnectCount++
@@ -440,11 +499,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) getStatusBadge() string {
 	switch m.status {
 	case "online":
-		return statusBadgeOnline.Render("● ONLINE")
+		// Show uptime when online
+		uptime := time.Since(m.connectionStart)
+		uptimeStr := formatDuration(uptime)
+		return statusBadgeOnline.Render("● ONLINE") + timeStyle.MarginLeft(2).Render("("+uptimeStr+")")
 	case "connecting":
 		return statusBadgeConnecting.Render("◉ CONNECTING")
 	case "reconnecting":
-		return statusBadgeReconnecting.Render("◉ RECONNECTING")
+		// Show retry count and backoff when reconnecting
+		retryInfo := fmt.Sprintf("◉ RECONNECTING #%d", m.retryCount)
+		if m.retryBackoff > 0 {
+			retryInfo += fmt.Sprintf(" (%.0fs)", m.retryBackoff.Seconds())
+		}
+		return statusBadgeReconnecting.Render(retryInfo)
 	case "rejected":
 		return statusBadgeRejected.Render("✕ REJECTED")
 	default:
@@ -470,16 +537,30 @@ func getMethodBadge(method string) string {
 	}
 }
 
+// HTTP status code range constants
+const (
+	httpStatusSuccessMin  = 200
+	httpStatusSuccessMax  = 299
+	httpStatusRedirectMax = 399
+	httpStatusClientMax   = 499
+)
+
 // getStatusCodeStyle returns the appropriate status code style
 func getStatusCodeStyle(code int) lipgloss.Style {
-	if code >= 200 && code < 300 {
+	switch {
+	case code == 0:
+		return statusCodePending // Pending request
+	case code >= httpStatusSuccessMin && code <= httpStatusSuccessMax:
+		return statusCodeSuccess // 2xx success
+	case code > httpStatusSuccessMax && code <= httpStatusRedirectMax:
+		return statusCodeRedirect // 3xx redirect
+	case code > httpStatusRedirectMax && code <= httpStatusClientMax:
+		return statusCodeClientError // 4xx client error
+	case code > httpStatusClientMax:
+		return statusCodeServerError // 5xx server error
+	default:
 		return statusCodeSuccess
-	} else if code >= 400 && code < 500 {
-		return statusCodeClientError
-	} else if code >= 500 {
-		return statusCodeServerError
 	}
-	return statusCodeSuccess
 }
 
 // View renders the UI
@@ -539,9 +620,13 @@ func (m *Model) View() string {
 		// Multi-tunnel display
 		content = append(content, labelStyle.Render("Forwarding"))
 		for _, t := range m.tunnels {
+			localScheme := "http"
+			if t.LocalHTTPS {
+				localScheme = "https"
+			}
 			line := "  " + urlPublicStyle.Render(t.URL) +
 				" → " +
-				urlLocalStyle.Render(fmt.Sprintf("localhost:%d", t.LocalPort))
+				urlLocalStyle.Render(fmt.Sprintf("%s://localhost:%d", localScheme, t.LocalPort))
 			content = append(content, line)
 		}
 	} else {
@@ -559,12 +644,35 @@ func (m *Model) View() string {
 			urlLocalStyle.Render(fmt.Sprintf("%s://%s:%d", localScheme, m.localAddr, m.localPort))
 		content = append(content, labelStyle.Render("Forwarding")+valueStyle.MarginLeft(2).Render(forwarding))
 	}
+
+	// Show clipboard notification (fades after 2 seconds)
+	if m.clipboardMsg != "" && time.Since(m.clipboardMsgTime) < 2*time.Second {
+		clipStyle := lipgloss.NewStyle().Foreground(colorGreen).Italic(true)
+		content = append(content, clipStyle.Render("  "+m.clipboardMsg))
+	}
 	content = append(content, "")
 
 	// Stats Section with tabs
 	content = append(content, m.renderStatsSection())
 	content = append(content, "")
 	content = append(content, timeStyle.Render(strings.Repeat("─", 80)))
+
+	// Filter bar (if enabled)
+	if m.filterEnabled {
+		filterStyle := lipgloss.NewStyle().
+			Foreground(colorMustardYellow).
+			Bold(true)
+		filterBox := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorMustardYellow).
+			Padding(0, 1)
+		filterText := m.filterText
+		if filterText == "" {
+			filterText = timeStyle.Render("type to filter...")
+		}
+		content = append(content, filterStyle.Render("Filter: ")+filterBox.Render(filterText))
+		content = append(content, "")
+	}
 
 	// Table header
 	headerRow := lipgloss.JoinHorizontal(lipgloss.Left,
@@ -577,8 +685,9 @@ func (m *Model) View() string {
 	content = append(content, headerRow)
 	content = append(content, timeStyle.Render(strings.Repeat("─", 80)))
 
-	// Paginate requests (shown most recent first, without allocating reversed slice)
-	requestCount := len(m.requests)
+	// Get filtered requests (if filter is active)
+	filteredRequests := m.getFilteredRequests()
+	requestCount := len(filteredRequests)
 	m.paginator.SetTotalPages(requestCount)
 	totalPages := m.paginator.TotalPages
 	if totalPages == 0 {
@@ -592,16 +701,16 @@ func (m *Model) View() string {
 		pageItemCount = 0
 	}
 
-	// Display paginated requests (always show 5 rows, most recent first without allocation)
+	// Display paginated requests (always show 5 rows, most recent first)
 	for i := 0; i < m.pageSize; i++ {
 		if i < pageItemCount {
-			// Reverse index: page item i corresponds to requests[requestCount - 1 - (start + i)]
+			// Reverse index for most recent first
 			actualIndex := start + i
 			reverseIdx := requestCount - 1 - actualIndex
 			if reverseIdx < 0 || reverseIdx >= requestCount {
 				continue
 			}
-			req := m.requests[reverseIdx]
+			req := filteredRequests[reverseIdx]
 
 			// Build display path with subdomain prefix for multi-tunnel
 			path := req.Path
@@ -675,7 +784,12 @@ func (m *Model) View() string {
 		content = append(content, m.paginator.View())
 	}
 	// Help text
-	helpText := timeStyle.Render("Tab: stats | ↑↓: select | Enter: details | ←→: page | q: quit")
+	var helpText string
+	if m.filterEnabled {
+		helpText = timeStyle.Render("Type to filter | Esc: clear filter | Enter: details | q: quit")
+	} else {
+		helpText = timeStyle.Render("Tab: stats | ↑↓: select | Enter: details | c: copy URL | /: filter | q: quit")
+	}
 	content = append(content, helpText)
 
 	// Add detail view if expanded
@@ -726,6 +840,26 @@ func (m *Model) fastTick() tea.Cmd {
 	return tea.Tick(100*time.Millisecond, func(t time.Time) tea.Msg {
 		return FastTickMsg(t)
 	})
+}
+
+// getFilteredRequests returns requests filtered by the current filter text
+func (m *Model) getFilteredRequests() []RequestLog {
+	if !m.filterEnabled || m.filterText == "" {
+		return m.requests
+	}
+
+	filter := strings.ToLower(m.filterText)
+	filtered := make([]RequestLog, 0)
+	for _, req := range m.requests {
+		// Match against path, method, subdomain, or status code
+		if strings.Contains(strings.ToLower(req.Path), filter) ||
+			strings.Contains(strings.ToLower(req.Method), filter) ||
+			strings.Contains(strings.ToLower(req.Subdomain), filter) ||
+			strings.Contains(fmt.Sprintf("%d", req.StatusCode), filter) {
+			filtered = append(filtered, req)
+		}
+	}
+	return filtered
 }
 
 // hasPendingRequests checks if any requests are still pending

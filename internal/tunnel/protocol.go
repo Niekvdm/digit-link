@@ -36,9 +36,10 @@ type AuthRequest struct {
 
 // TunnelInfo contains information about a registered tunnel endpoint
 type TunnelInfo struct {
-	Subdomain string `json:"subdomain"`
-	URL       string `json:"url"`
-	LocalPort int    `json:"localPort"`
+	Subdomain  string `json:"subdomain"`
+	URL        string `json:"url"`
+	LocalPort  int    `json:"localPort"`
+	LocalHTTPS bool   `json:"-"` // Client-side only: forward to HTTPS locally
 }
 
 // AuthResponse is sent by the server to confirm or reject authentication

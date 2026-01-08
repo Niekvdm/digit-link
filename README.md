@@ -4,13 +4,16 @@ A lightweight ngrok-like tunnel system for exposing local services to the intern
 
 ## Features
 
-- **Secure Tunneling**: Expose local services via WebSocket-based tunnels
+- **Secure Tunneling**: TCP+TLS tunnels with yamux multiplexing for high performance
+- **Multi-Forward**: Expose multiple local services through a single connection
+- **Interactive TUI**: Real-time request monitoring with filtering and stats
 - **Multi-Tenancy**: Organizations and Applications for resource isolation
 - **Authentication Options**: Basic Auth, API Keys, or OIDC/SSO for tunnel access
 - **IP Whitelisting**: Global, organization, application, and account-level controls
 - **Admin Dashboard**: Modern Vue 3 web interface for management
 - **Rate Limiting**: Protection against brute-force attacks
 - **SQLite Storage**: Zero-dependency persistent storage
+- **Static Binaries**: Client builds with no external dependencies
 
 ## Quick Start
 
@@ -32,17 +35,31 @@ Alternative CLI setup:
 ### Client
 
 ```bash
-# Build the client
+# Build the client (static binary, no dependencies)
 make build-client
 
-# Connect to tunnel server
+# Interactive mode - launches setup TUI
+./build/bin/digit-link
+
+# Or with command-line flags
 ./build/bin/digit-link \
   --server link.digit.zone \
   --subdomain myapp \
   --port 3000 \
   --token YOUR_TOKEN
 
-# Your service is now available at: https://myapp.link.digit.zone
+# Multi-forward: expose multiple services
+./build/bin/digit-link \
+  --server link.digit.zone \
+  --token YOUR_TOKEN \
+  --forward myapp:3000 \
+  --forward api:8080 \
+  --forward admin:9000
+
+# Your services are available at:
+# https://myapp.link.digit.zone
+# https://api.link.digit.zone
+# https://admin.link.digit.zone
 ```
 
 ### Client Options
@@ -50,10 +67,28 @@ make build-client
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--server` | Tunnel server address | `link.digit.zone` |
-| `--subdomain` | Subdomain to register | (required) |
-| `--port` | Local port to forward | (required) |
-| `--token` | Authentication token | (required) |
-| `--timeout` | Request timeout | `5m` |
+| `--subdomain` | Subdomain to register | - |
+| `--port` | Local port to forward | - |
+| `--forward` | Forward definition (subdomain:port) | - |
+| `--token` | Authentication token | - |
+| `--local-https` | Forward to local HTTPS server | `false` |
+| `--insecure` | Skip TLS verification | `false` |
+
+### Interactive TUI
+
+The client includes an interactive terminal UI with:
+- Real-time request monitoring
+- Connection status and uptime
+- Request filtering (press `/`)
+- Copy URL to clipboard (press `c`)
+- Stats tabs (press `Tab`)
+
+### Configuration
+
+The client saves configuration to:
+- **Windows**: `%APPDATA%\digit-link\config.json`
+- **macOS**: `~/Library/Application Support/digit-link/config.json`
+- **Linux**: `~/.config/digit-link/config.json`
 
 ## Environment Variables
 
@@ -94,9 +129,15 @@ TRUSTED_PROXIES=10.0.0.1,10.0.0.2
 ## Building
 
 ```bash
-make build          # Current platform
-make build-all      # All platforms (windows, linux, darwin, darwin-arm)
+make build          # Build frontend + server + client
+make build-client   # Build client only (static binary, no CGO)
+make build-server   # Build server only (requires CGO for SQLite)
+make build-all      # Cross-compile for all platforms
 ```
+
+**Client binaries** are fully static (`CGO_ENABLED=0`) and require no dependencies on target machines.
+
+**Server binaries** require CGO for SQLite support.
 
 ## Deployment
 
@@ -142,17 +183,18 @@ Comprehensive documentation is available in the [`docs/`](docs/) directory:
 ## How It Works
 
 ```
-┌─────────────┐     WebSocket      ┌─────────────┐     HTTP        ┌──────────┐
+┌─────────────┐     TCP+TLS        ┌─────────────┐     HTTP        ┌──────────┐
 │   Client    │◄──────────────────►│   Server    │◄───────────────►│ Internet │
-│ (local:3000)│    /_tunnel        │  (k3s)      │   subdomain     │          │
+│ (local:3000)│    yamux mux       │  (k3s)      │   subdomain     │          │
 └─────────────┘                    └─────────────┘                 └──────────┘
 ```
 
-1. Client connects via WebSocket with authentication token
+1. Client connects via TCP+TLS with yamux multiplexing
 2. Server validates token and IP whitelist
-3. Server registers subdomain and provides public URL
-4. Incoming requests are forwarded to client over WebSocket
+3. Server registers subdomain(s) and provides public URL(s)
+4. Incoming HTTP requests are forwarded to client over multiplexed streams
 5. Client forwards to local service and returns response
+6. PROXY protocol preserves original client IPs
 
 ## Security Highlights
 

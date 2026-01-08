@@ -1,5 +1,8 @@
 .PHONY: all build build-server build-client build-frontend deps build-windows build-linux build-darwin clean help
 
+# Build flags
+LDFLAGS := -ldflags="-s -w"
+
 # Default target
 all: build
 
@@ -26,11 +29,11 @@ build-server:
 	@mkdir -p build/bin
 	go build -o build/bin/digit-link-server ./cmd/server
 
-# Build client
+# Build client (static binary, no CGO)
 build-client:
-	@echo "Building client..."
+	@echo "Building client (static)..."
 	@mkdir -p build/bin
-	go build -o build/bin/digit-link ./cmd/client
+	CGO_ENABLED=0 go build $(LDFLAGS) -o build/bin/digit-link ./cmd/client
 
 # Cross-compilation targets
 
@@ -38,29 +41,29 @@ build-client:
 build-windows:
 	@echo "Building for Windows..."
 	@mkdir -p build/bin/windows
-	GOOS=windows GOARCH=amd64 go build -o build/bin/windows/digit-link-server.exe ./cmd/server
-	GOOS=windows GOARCH=amd64 go build -o build/bin/windows/digit-link.exe ./cmd/client
+	GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o build/bin/windows/digit-link-server.exe ./cmd/server
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build $(LDFLAGS) -o build/bin/windows/digit-link.exe ./cmd/client
 
 # Linux
 build-linux:
 	@echo "Building for Linux..."
 	@mkdir -p build/bin/linux
-	GOOS=linux GOARCH=amd64 go build -o build/bin/linux/digit-link-server ./cmd/server
-	GOOS=linux GOARCH=amd64 go build -o build/bin/linux/digit-link ./cmd/client
+	GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o build/bin/linux/digit-link-server ./cmd/server
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build $(LDFLAGS) -o build/bin/linux/digit-link ./cmd/client
 
 # macOS Intel
 build-darwin:
 	@echo "Building for macOS (Intel)..."
 	@mkdir -p build/bin/darwin
-	GOOS=darwin GOARCH=amd64 go build -o build/bin/darwin/digit-link-server ./cmd/server
-	GOOS=darwin GOARCH=amd64 go build -o build/bin/darwin/digit-link ./cmd/client
+	GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o build/bin/darwin/digit-link-server ./cmd/server
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(LDFLAGS) -o build/bin/darwin/digit-link ./cmd/client
 
 # macOS Apple Silicon
 build-darwin-arm:
 	@echo "Building for macOS (Apple Silicon)..."
 	@mkdir -p build/bin/darwin-arm64
-	GOOS=darwin GOARCH=arm64 go build -o build/bin/darwin-arm64/digit-link-server ./cmd/server
-	GOOS=darwin GOARCH=arm64 go build -o build/bin/darwin-arm64/digit-link ./cmd/client
+	GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o build/bin/darwin-arm64/digit-link-server ./cmd/server
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(LDFLAGS) -o build/bin/darwin-arm64/digit-link ./cmd/client
 
 # Build all platforms
 build-all: build-windows build-linux build-darwin build-darwin-arm

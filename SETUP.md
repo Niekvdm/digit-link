@@ -115,6 +115,8 @@ Before any clients can connect, you must whitelist their IP addresses:
 make build-client
 ```
 
+This creates a **static binary** (`build/bin/digit-link`) with no external dependencies. You can distribute this single file to users.
+
 ### 2. Get Your Token
 
 Ask your administrator for:
@@ -122,6 +124,22 @@ Ask your administrator for:
 - Confirmation that your IP is whitelisted
 
 ### 3. Connect
+
+#### Option A: Interactive Mode (Recommended)
+
+Simply run the client without arguments to launch the setup TUI:
+
+```bash
+./build/bin/digit-link
+```
+
+The interactive UI lets you:
+- Configure server and token
+- Add multiple port forwards
+- Edit and reorder forwards
+- Save configuration for future use
+
+#### Option B: Command Line
 
 ```bash
 ./build/bin/digit-link \
@@ -131,23 +149,81 @@ Ask your administrator for:
   --token YOUR_TOKEN
 ```
 
-Or use an environment variable:
+#### Option C: Multi-Forward Mode
+
+Expose multiple local services through one connection:
+
+```bash
+./build/bin/digit-link \
+  --server tunnel.yourdomain.com \
+  --token YOUR_TOKEN \
+  --forward myapp:3000 \
+  --forward api:8080
+```
+
+#### Option D: Environment Variable
 
 ```bash
 export DIGIT_LINK_TOKEN=YOUR_TOKEN
 ./build/bin/digit-link --server tunnel.yourdomain.com --subdomain myapp --port 3000
 ```
 
-### 4. Verify Connection
+### 4. Using the TUI
 
-On successful connection, you'll see:
+Once connected, the interactive TUI shows:
 
 ```
-Connected! Public URL: https://myapp.tunnel.yourdomain.com
-Forwarding to localhost:3000
+digit-link                                                    [q] quit
+Session Status ● ONLINE (5m 23s)
+
+Version    1.0.0
+Server     tunnel.yourdomain.com
+Forwarding
+  https://myapp.tunnel.yourdomain.com → http://localhost:3000
+  https://api.tunnel.yourdomain.com → http://localhost:8080
+
+─────────────────────────────────────────────────────────────────────
+Time       Method   Path                                 Status  Duration
+─────────────────────────────────────────────────────────────────────
+12:34:56   GET      /api/users                           200     45ms
+12:34:55   POST     /api/login                           200     120ms
+
+Tab: stats | ↑↓: select | Enter: details | c: copy URL | /: filter | q: quit
 ```
+
+**Keyboard shortcuts:**
+| Key | Action |
+|-----|--------|
+| `Tab` | Cycle through stats tabs |
+| `↑↓` | Select request |
+| `Enter` | Toggle request details |
+| `c` | Copy public URL to clipboard |
+| `/` | Toggle request filter |
+| `q` | Quit |
+
+### 5. Configuration File
+
+The client automatically saves your configuration to:
+
+| OS | Path |
+|----|------|
+| Windows | `%APPDATA%\digit-link\config.json` |
+| macOS | `~/Library/Application Support/digit-link/config.json` |
+| Linux | `~/.config/digit-link/config.json` |
+
+On next launch, your settings will be pre-filled.
 
 ## Troubleshooting
+
+### Windows: "Can't access the file" or "Access Denied"
+
+If you receive permission errors when running the client on Windows:
+
+1. **Unblock the file**: Right-click `digit-link.exe` → Properties → Check "Unblock" → Apply
+2. **Move from Downloads**: Copy to a different folder (e.g., `C:\Tools\`)
+3. **Add antivirus exclusion**: Windows Defender may block unsigned executables
+
+The client is built as a static binary with no dependencies, so no installation is required.
 
 ### "Authentication required: provide a valid token"
 

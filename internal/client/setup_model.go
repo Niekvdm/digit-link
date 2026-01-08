@@ -17,6 +17,15 @@ type SetupView int
 const (
 	SetupViewMain SetupView = iota
 	SetupViewAddForward
+	SetupViewEditForward
+)
+
+// UI dimension constants
+const (
+	inputBoxWidth    = 44
+	forwardsBoxWidth = 60
+	subdomainWidth   = 34
+	portWidth        = 14
 )
 
 // SetupModel holds the state for the setup TUI
@@ -37,6 +46,7 @@ type SetupModel struct {
 	forwards       []tunnel.ForwardConfig
 	selectedFwd    int
 	primaryFwdIdx  int // Index of primary forward
+	editingFwdIdx  int // Index of forward being edited (-1 if adding new)
 
 	// Focus management (main view)
 	focusIndex int // 0=server, 1=token, 2=forwards list, 3=add button, 4=connect button
@@ -93,6 +103,7 @@ func NewSetupModel() *SetupModel {
 		forwards:       make([]tunnel.ForwardConfig, 0),
 		selectedFwd:    -1,
 		primaryFwdIdx:  0,
+		editingFwdIdx:  -1,
 		focusIndex:     0,
 	}
 }
@@ -172,7 +183,7 @@ func (m *SetupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.view {
 	case SetupViewMain:
 		return m.updateMain(msg)
-	case SetupViewAddForward:
+	case SetupViewAddForward, SetupViewEditForward:
 		return m.updateAddForward(msg)
 	}
 	return m, nil
@@ -188,12 +199,38 @@ func (m *SetupModel) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "esc":
 			return m, tea.Quit
 
-		case "tab", "down":
+		case "tab":
 			m.focusNext()
 			return m, nil
 
-		case "shift+tab", "up":
+		case "shift+tab":
 			m.focusPrev()
+			return m, nil
+
+		case "down":
+			// Navigate within forwards list or to next element
+			if m.focusIndex == 2 && len(m.forwards) > 0 {
+				if m.selectedFwd < len(m.forwards)-1 {
+					m.selectedFwd++
+				} else {
+					m.focusNext() // Move to add button
+				}
+			} else {
+				m.focusNext()
+			}
+			return m, nil
+
+		case "up":
+			// Navigate within forwards list or to previous element
+			if m.focusIndex == 2 && len(m.forwards) > 0 {
+				if m.selectedFwd > 0 {
+					m.selectedFwd--
+				} else {
+					m.focusPrev() // Move to token input
+				}
+			} else {
+				m.focusPrev()
+			}
 			return m, nil
 
 		case "enter":
@@ -217,6 +254,40 @@ func (m *SetupModel) updateMain(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Toggle primary on selected forward
 			if m.focusIndex == 2 && len(m.forwards) > 0 && m.selectedFwd >= 0 {
 				m.primaryFwdIdx = m.selectedFwd
+				return m, nil
+			}
+
+		case "e":
+			// Edit selected forward
+			if m.focusIndex == 2 && len(m.forwards) > 0 && m.selectedFwd >= 0 {
+				return m.openEditForward(m.selectedFwd)
+			}
+
+		case "ctrl+up":
+			// Move selected forward up
+			if m.focusIndex == 2 && len(m.forwards) > 1 && m.selectedFwd > 0 {
+				m.forwards[m.selectedFwd], m.forwards[m.selectedFwd-1] = m.forwards[m.selectedFwd-1], m.forwards[m.selectedFwd]
+				// Adjust primary index if needed
+				if m.primaryFwdIdx == m.selectedFwd {
+					m.primaryFwdIdx--
+				} else if m.primaryFwdIdx == m.selectedFwd-1 {
+					m.primaryFwdIdx++
+				}
+				m.selectedFwd--
+				return m, nil
+			}
+
+		case "ctrl+down":
+			// Move selected forward down
+			if m.focusIndex == 2 && len(m.forwards) > 1 && m.selectedFwd < len(m.forwards)-1 {
+				m.forwards[m.selectedFwd], m.forwards[m.selectedFwd+1] = m.forwards[m.selectedFwd+1], m.forwards[m.selectedFwd]
+				// Adjust primary index if needed
+				if m.primaryFwdIdx == m.selectedFwd {
+					m.primaryFwdIdx++
+				} else if m.primaryFwdIdx == m.selectedFwd+1 {
+					m.primaryFwdIdx--
+				}
+				m.selectedFwd++
 				return m, nil
 			}
 
@@ -371,15 +442,16 @@ func (m *SetupModel) updateInputFocus() {
 func (m *SetupModel) handleEnter() (tea.Model, tea.Cmd) {
 	switch m.focusIndex {
 	case 2:
-		// In forwards list - could show details or toggle primary
+		// In forwards list - edit selected forward
 		if len(m.forwards) > 0 && m.selectedFwd >= 0 {
-			m.primaryFwdIdx = m.selectedFwd
+			return m.openEditForward(m.selectedFwd)
 		}
 		return m, nil
 
 	case 3:
 		// Add forward button
 		m.view = SetupViewAddForward
+		m.editingFwdIdx = -1 // Not editing, adding new
 		m.subdomainInput.SetValue("")
 		m.portInput.SetValue("")
 		m.localHTTPS = false // Reset for new forward
@@ -397,7 +469,24 @@ func (m *SetupModel) handleEnter() (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// handleAddForward adds a new forward
+// openEditForward opens the edit view for a forward
+func (m *SetupModel) openEditForward(idx int) (tea.Model, tea.Cmd) {
+	if idx < 0 || idx >= len(m.forwards) {
+		return m, nil
+	}
+
+	fwd := m.forwards[idx]
+	m.view = SetupViewEditForward
+	m.editingFwdIdx = idx
+	m.subdomainInput.SetValue(fwd.Subdomain)
+	m.portInput.SetValue(strconv.Itoa(fwd.LocalPort))
+	m.localHTTPS = fwd.LocalHTTPS
+	m.subdomainInput.Focus()
+	m.portInput.Blur()
+	return m, nil
+}
+
+// handleAddForward adds or updates a forward
 func (m *SetupModel) handleAddForward() (tea.Model, tea.Cmd) {
 	subdomain := strings.TrimSpace(m.subdomainInput.Value())
 	portStr := strings.TrimSpace(m.portInput.Value())
@@ -414,26 +503,35 @@ func (m *SetupModel) handleAddForward() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Check for duplicate subdomain
-	for _, fwd := range m.forwards {
-		if fwd.Subdomain == subdomain {
+	// Check for duplicate subdomain (skip the one being edited)
+	for i, fwd := range m.forwards {
+		if fwd.Subdomain == subdomain && i != m.editingFwdIdx {
 			m.errorMsg = "Subdomain already exists"
 			return m, nil
 		}
 	}
 
-	// Add forward
-	m.forwards = append(m.forwards, tunnel.ForwardConfig{
-		Subdomain:  subdomain,
-		LocalPort:  port,
-		LocalHTTPS: m.localHTTPS,
-		Primary:    len(m.forwards) == 0, // First one is primary
-	})
+	if m.editingFwdIdx >= 0 {
+		// Update existing forward
+		m.forwards[m.editingFwdIdx].Subdomain = subdomain
+		m.forwards[m.editingFwdIdx].LocalPort = port
+		m.forwards[m.editingFwdIdx].LocalHTTPS = m.localHTTPS
+		m.selectedFwd = m.editingFwdIdx
+	} else {
+		// Add new forward
+		m.forwards = append(m.forwards, tunnel.ForwardConfig{
+			Subdomain:  subdomain,
+			LocalPort:  port,
+			LocalHTTPS: m.localHTTPS,
+			Primary:    len(m.forwards) == 0, // First one is primary
+		})
+		m.selectedFwd = len(m.forwards) - 1
+	}
 
 	// Go back to main view
 	m.view = SetupViewMain
 	m.focusIndex = 2 // Focus forwards list
-	m.selectedFwd = len(m.forwards) - 1
+	m.editingFwdIdx = -1
 
 	return m, nil
 }
@@ -477,7 +575,7 @@ func (m *SetupModel) View() string {
 	switch m.view {
 	case SetupViewMain:
 		return m.viewMain()
-	case SetupViewAddForward:
+	case SetupViewAddForward, SetupViewEditForward:
 		return m.viewAddForward()
 	}
 	return ""
@@ -505,7 +603,7 @@ func (m *SetupModel) viewMain() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(m.getBorderColor(0)).
 		Padding(0, 1).
-		Width(44)
+		Width(inputBoxWidth)
 	b.WriteString(serverStyle.Render(m.serverInput.View()))
 	b.WriteString("\n\n")
 
@@ -521,7 +619,7 @@ func (m *SetupModel) viewMain() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(m.getBorderColor(1)).
 		Padding(0, 1).
-		Width(44)
+		Width(inputBoxWidth)
 	b.WriteString(tokenStyle.Render(m.tokenInput.View()))
 	b.WriteString("\n\n")
 
@@ -538,18 +636,25 @@ func (m *SetupModel) viewMain() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(m.getBorderColor(2)).
 		Padding(0, 1).
-		Width(44)
+		Width(forwardsBoxWidth)
 
 	var fwdContent strings.Builder
 	if len(m.forwards) == 0 {
 		fwdContent.WriteString(timeStyle.Render("No forwards configured"))
 	} else {
+		// Get server for URL preview
+		server := strings.TrimSpace(m.serverInput.Value())
+		if server == "" {
+			server = "link.digit.zone"
+		}
 		for i, fwd := range m.forwards {
 			proto := "http"
 			if fwd.LocalHTTPS {
 				proto = "https"
 			}
-			line := fmt.Sprintf("%s://:%d → %s", proto, fwd.LocalPort, fwd.Subdomain)
+			// Show full URL: subdomain.server → proto://localhost:port
+			fullURL := fmt.Sprintf("%s.%s", fwd.Subdomain, server)
+			line := fmt.Sprintf("%s → %s://:%d", fullURL, proto, fwd.LocalPort)
 			if i == m.primaryFwdIdx {
 				line += " ★"
 			}
@@ -596,19 +701,25 @@ func (m *SetupModel) viewMain() string {
 	}
 
 	// Help
-	b.WriteString(timeStyle.Render("Tab/↑↓: navigate | Enter: select | Del: remove forward | p: set primary | Esc: quit"))
+	b.WriteString(timeStyle.Render("Tab/↑↓: navigate | Enter/e: edit | Del: remove | p: primary | Ctrl+↑↓: reorder | Esc: quit"))
 
 	return mainBoxStyle.Render(b.String())
 }
 
-// viewAddForward renders the add forward view
+// viewAddForward renders the add/edit forward view
 func (m *SetupModel) viewAddForward() string {
 	var b strings.Builder
 
-	// Header
-	b.WriteString(headerTitleStyle.Render("Add Forward"))
-	b.WriteString("\n")
-	b.WriteString(headerSubtextStyle.Render("Configure a new port forward"))
+	// Header - varies based on add vs edit mode
+	if m.view == SetupViewEditForward {
+		b.WriteString(headerTitleStyle.Render("Edit Forward"))
+		b.WriteString("\n")
+		b.WriteString(headerSubtextStyle.Render("Modify port forward settings"))
+	} else {
+		b.WriteString(headerTitleStyle.Render("Add Forward"))
+		b.WriteString("\n")
+		b.WriteString(headerSubtextStyle.Render("Configure a new port forward"))
+	}
 	b.WriteString("\n\n")
 
 	// Subdomain input
@@ -623,7 +734,7 @@ func (m *SetupModel) viewAddForward() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(m.getInputBorderColor(m.subdomainInput.Focused())).
 		Padding(0, 1).
-		Width(34)
+		Width(subdomainWidth)
 	b.WriteString(subStyle.Render(m.subdomainInput.View()))
 	b.WriteString("\n\n")
 
@@ -639,7 +750,7 @@ func (m *SetupModel) viewAddForward() string {
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(m.getInputBorderColor(m.portInput.Focused())).
 		Padding(0, 1).
-		Width(14)
+		Width(portWidth)
 	b.WriteString(portStyle.Render(m.portInput.View()))
 	b.WriteString("\n\n")
 
@@ -677,8 +788,12 @@ func (m *SetupModel) viewAddForward() string {
 		b.WriteString("\n\n")
 	}
 
-	// Help
-	b.WriteString(timeStyle.Render("Tab: switch field | Enter: add forward | Esc: cancel"))
+	// Help - varies based on add vs edit mode
+	if m.view == SetupViewEditForward {
+		b.WriteString(timeStyle.Render("Tab: switch field | Enter: save | Esc: cancel"))
+	} else {
+		b.WriteString(timeStyle.Render("Tab: switch field | Enter: add forward | Esc: cancel"))
+	}
 
 	return mainBoxStyle.Render(b.String())
 }
