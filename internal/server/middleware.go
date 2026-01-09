@@ -343,6 +343,9 @@ func (m *AuthMiddleware) HandleAuthResult(w http.ResponseWriter, r *http.Request
 
 	// Handle failed authentication
 	if result.ShouldRedirect && result.RedirectURL != "" {
+		// Prevent caching of auth redirects
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
 		http.Redirect(w, r, result.RedirectURL, http.StatusFound)
 		return false
 	}
@@ -361,6 +364,9 @@ func (m *AuthMiddleware) HandleAuthResult(w http.ResponseWriter, r *http.Request
 			subdomain = ctx.Subdomain // Fallback to context
 		}
 		loginURL := auth.BuildLoginURL(r.URL.String(), subdomain)
+		// Prevent caching of auth redirects
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
 		http.Redirect(w, r, loginURL, http.StatusFound)
 	} else {
 		http.Error(w, "Unauthorized: "+result.Error, http.StatusUnauthorized)
@@ -379,6 +385,9 @@ func (m *AuthMiddleware) sendChallenge(w http.ResponseWriter, r *http.Request, p
 			subdomain = ctx.Subdomain // Fallback to context
 		}
 		loginURL := auth.BuildLoginURL(r.URL.String(), subdomain)
+		// Prevent caching of auth redirects
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
 		http.Redirect(w, r, loginURL, http.StatusFound)
 
 	case policy.AuthTypeAPIKey:
