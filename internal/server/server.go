@@ -223,6 +223,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Handle Basic Auth login endpoint (single prompt for all requests)
+	if r.URL.Path == GetBasicAuthLoginPath() && s.authMiddleware != nil {
+		s.authMiddleware.HandleBasicAuthLogin(w, r)
+		return
+	}
+
 	// Handle CORS preflight at tunnel level FIRST (before tunnel lookup)
 	// This ensures CORS works even if tunnel lookup has issues
 	if r.Method == http.MethodOptions {

@@ -26,15 +26,6 @@ const (
 	ContextKeyEffectivePolicy contextKey = "effectivePolicy"
 )
 
-// pendingAuthEntry tracks a pending basic auth challenge
-type pendingAuthEntry struct {
-	created   time.Time
-	done      chan struct{} // Closed when auth completes
-	succeeded bool          // True if auth succeeded (set before closing done)
-	username  string        // Authenticated username (if succeeded)
-	sessionID string        // Session ID (if succeeded)
-}
-
 // AuthMiddleware handles authentication for tunnel traffic
 type AuthMiddleware struct {
 	db             *db.DB
@@ -42,19 +33,17 @@ type AuthMiddleware struct {
 	policyLoader   *policy.Loader
 
 	// Auth handlers
-	basicHandler  AuthHandler
-	apiKeyHandler AuthHandler
-	oidcHandler   AuthHandler
+	basicHandler      AuthHandler
+	basicLoginHandler *auth.BasicAuthLoginHandler
+	apiKeyHandler     AuthHandler
+	oidcHandler       AuthHandler
 
 	// Rate limiter
 	rateLimiter *auth.RateLimiter
 
 	// Per-app rate limiter cache
-	appRateLimiters sync.Map // map[string]*auth.RateLimiter
+	appRateLimiters  sync.Map // map[string]*auth.RateLimiter
 	appRLConfigCache sync.Map // map[string]*appRateLimitCacheEntry
-
-	// Pending basic auth challenges (prevents multiple 401s for concurrent requests)
-	pendingBasicAuth sync.Map // map[string]*pendingAuthEntry (key: clientIP+subdomain)
 
 	// Configuration
 	defaultDeny bool   // If true, deny when policy cannot be determined
@@ -134,13 +123,17 @@ func NewAuthMiddleware(database *db.DB, opts ...AuthMiddlewareOption) *AuthMiddl
 		db:             database,
 		policyResolver: resolver,
 		policyLoader:   loader,
-		defaultDeny:    true, // Fail closed by default
+		defaultDeny:    true,   // Fail closed by default
+		scheme:         "https", // Default to https
 		rateLimiter:    auth.NewRateLimiter(database, auth.DefaultRateLimiterConfig()),
 	}
 
 	for _, opt := range opts {
 		opt(m)
 	}
+
+	// Initialize basic login handler after opts (needs scheme)
+	m.basicLoginHandler = auth.NewBasicAuthLoginHandler(database, m.scheme)
 
 	return m
 }
@@ -423,159 +416,74 @@ func getClientIP(r *http.Request) string {
 }
 
 func (m *AuthMiddleware) defaultBasicAuth(w http.ResponseWriter, r *http.Request, p *policy.EffectivePolicy, ctx *policy.AuthContext) *policy.AuthResult {
-	var appID, orgID *string
-	if ctx != nil {
-		if ctx.AppID != "" {
-			appID = &ctx.AppID
-		}
-		if ctx.OrgID != "" {
-			orgID = &ctx.OrgID
-		}
-	}
-
-	// Helper to check session cookie
-	checkSession := func() *policy.AuthResult {
-		if cookie, err := r.Cookie("digit_link_basic_session"); err == nil && cookie.Value != "" {
-			if m.db != nil {
-				session, err := m.db.ValidateSessionForApp(cookie.Value, appID, orgID)
-				if err == nil && session != nil {
-					return policy.SuccessWithSession(session.ID, session.UserEmail)
-				}
+	// Check for existing session cookie first
+	if m.basicLoginHandler != nil {
+		var appID, orgID *string
+		if ctx != nil {
+			if ctx.AppID != "" {
+				appID = &ctx.AppID
+			}
+			if ctx.OrgID != "" {
+				orgID = &ctx.OrgID
 			}
 		}
-		return nil
+
+		session, err := m.basicLoginHandler.ValidateSession(r, appID, orgID)
+		if err == nil && session != nil {
+			return policy.SuccessWithSession(session.ID, session.UserEmail)
+		}
 	}
 
-	// First, check for existing session cookie
-	if result := checkSession(); result != nil {
-		return result
-	}
-
-	// Build pending auth key (client IP + subdomain)
+	// No valid session - redirect to login endpoint
+	// This is the key change: we redirect instead of sending 401 directly
+	// This ensures only ONE request (the login endpoint) ever triggers the browser prompt
 	subdomain := ""
 	if ctx != nil {
 		subdomain = ctx.Subdomain
 	}
-	pendingKey := getClientIP(r) + ":" + subdomain
 
-	// Check for Authorization header
-	authHeader := r.Header.Get("Authorization")
-	hasCredentials := authHeader != "" && strings.HasPrefix(authHeader, "Basic ")
+	loginURL := auth.BuildLoginURL(r.URL.String(), subdomain)
+	return policy.Redirect(loginURL)
+}
 
-	if !hasCredentials {
-		// Try to be the primary auth request - only the primary sends the 401 challenge
-		entry := &pendingAuthEntry{
-			created: time.Now(),
-			done:    make(chan struct{}),
-		}
+// HandleBasicAuthLogin handles the Basic Auth login endpoint
+// This is the ONLY endpoint that sends the 401 challenge, ensuring single prompt
+func (m *AuthMiddleware) HandleBasicAuthLogin(w http.ResponseWriter, r *http.Request) {
+	// Parse query parameters
+	returnURL := r.URL.Query().Get("return")
+	subdomain := r.URL.Query().Get("subdomain")
 
-		actual, loaded := m.pendingBasicAuth.LoadOrStore(pendingKey, entry)
-
-		if loaded {
-			// Someone else is the primary - wait for them (don't send another 401)
-			existingEntry := actual.(*pendingAuthEntry)
-			// Only wait if the entry is recent
-			if time.Since(existingEntry.created) < 60*time.Second {
-				select {
-				case <-existingEntry.done:
-					if existingEntry.succeeded {
-						// Also set session cookie for this request so browser has it
-						if existingEntry.sessionID != "" {
-							sessionDuration := 24 * time.Hour
-							if p.Basic != nil && p.Basic.SessionDuration > 0 {
-								sessionDuration = p.Basic.SessionDuration
-							}
-							http.SetCookie(w, &http.Cookie{
-								Name:     "digit_link_basic_session",
-								Value:    existingEntry.sessionID,
-								Path:     "/",
-								MaxAge:   int(sessionDuration.Seconds()),
-								HttpOnly: true,
-								Secure:   m.scheme == "https",
-								SameSite: http.SameSiteLaxMode,
-							})
-							return policy.SuccessWithSession(existingEntry.sessionID, existingEntry.username)
-						}
-						return policy.Success(existingEntry.username)
-					}
-					// Primary auth failed - return failure without sending another 401
-					// This prevents multiple auth prompts
-					return policy.Failure("authentication failed")
-				case <-time.After(60 * time.Second):
-					// Timeout - check session in case auth completed
-					if result := checkSession(); result != nil {
-						return result
-					}
-					// Return failure without 401 to prevent multiple prompts
-					return policy.Failure("authentication timeout")
-				case <-r.Context().Done():
-					return policy.Failure("request cancelled")
-				}
-			}
-			// Entry is stale, we become the new primary
-			m.pendingBasicAuth.Store(pendingKey, entry)
-		}
-
-		// We're the primary - send the 401 challenge
-		return policy.Challenge("basic auth required")
+	if subdomain == "" {
+		http.Error(w, "Missing subdomain parameter", http.StatusBadRequest)
+		return
 	}
 
-	// Has credentials - parse and validate
-	username, password, ok := r.BasicAuth()
-	if !ok {
-		return policy.Challenge("invalid basic auth header")
+	// Load the policy for this subdomain
+	effectivePolicy, authCtx, err := m.policyLoader.LoadForSubdomain(subdomain)
+	if err != nil {
+		log.Printf("Failed to load policy for subdomain %s: %v", subdomain, err)
+		http.Error(w, "Failed to load auth policy", http.StatusInternalServerError)
+		return
 	}
 
-	// Verify credentials against policy
-	if p.Basic == nil {
-		return policy.Failure("basic auth not configured")
+	if effectivePolicy == nil || effectivePolicy.Basic == nil {
+		http.Error(w, "Basic auth not configured for this subdomain", http.StatusBadRequest)
+		return
 	}
 
-	// Use constant-time comparison via bcrypt verify
-	if !auth.VerifyPassword(password, p.Basic.PassHash) {
-		return policy.Challenge("invalid credentials")
+	// Delegate to the login handler
+	config := &auth.LoginConfig{
+		Policy:    effectivePolicy,
+		AuthCtx:   authCtx,
+		ReturnURL: returnURL,
 	}
 
-	// Optionally verify username if configured
-	if p.Basic.UserHash != "" && !auth.VerifyPassword(username, p.Basic.UserHash) {
-		return policy.Challenge("invalid credentials")
-	}
+	m.basicLoginHandler.HandleLogin(w, r, config)
+}
 
-	// Create session for successful Basic Auth
-	var sessionID string
-	if m.db != nil {
-		// Determine session duration (default 24 hours if not configured)
-		sessionDuration := 24 * time.Hour
-		if p.Basic != nil && p.Basic.SessionDuration > 0 {
-			sessionDuration = p.Basic.SessionDuration
-		}
-		// Create session with configured duration
-		session, err := m.db.CreateSession(appID, orgID, username, map[string]string{"auth_type": "basic"}, sessionDuration)
-		if err == nil && session != nil {
-			sessionID = session.ID
-			// Set session cookie with matching duration
-			http.SetCookie(w, &http.Cookie{
-				Name:     "digit_link_basic_session",
-				Value:    session.ID,
-				Path:     "/",
-				MaxAge:   int(sessionDuration.Seconds()),
-				HttpOnly: true,
-				Secure:   m.scheme == "https",
-				SameSite: http.SameSiteLaxMode,
-			})
-		}
-	}
-
-	// Signal completion to any waiting requests
-	if existing, loaded := m.pendingBasicAuth.LoadAndDelete(pendingKey); loaded {
-		entry := existing.(*pendingAuthEntry)
-		entry.succeeded = true
-		entry.username = username
-		entry.sessionID = sessionID
-		close(entry.done)
-	}
-
-	return policy.Success(username)
+// GetBasicAuthLoginPath returns the path for the basic auth login endpoint
+func GetBasicAuthLoginPath() string {
+	return auth.BasicAuthLoginPath
 }
 
 func (m *AuthMiddleware) defaultAPIKeyAuth(w http.ResponseWriter, r *http.Request, p *policy.EffectivePolicy, ctx *policy.AuthContext) *policy.AuthResult {
