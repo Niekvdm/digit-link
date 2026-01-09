@@ -292,13 +292,12 @@ func (c *TCPClient) handleStreams() {
 
 // handleRequest processes a single HTTP request from a yamux stream
 func (c *TCPClient) handleRequest(stream net.Conn) {
-	defer stream.Close()
-
 	startTime := time.Now()
 
 	// Read request frame
 	reqFrame, err := tunnel.ReadFrame[tunnel.RequestFrame](stream)
 	if err != nil {
+		stream.Close()
 		return
 	}
 
@@ -322,6 +321,7 @@ func (c *TCPClient) handleRequest(stream net.Conn) {
 			},
 			Body: []byte("No proxy configured for subdomain"),
 		})
+		stream.Close()
 		return
 	}
 
@@ -339,22 +339,16 @@ func (c *TCPClient) handleRequest(stream net.Conn) {
 		})
 	}
 
-	// Forward to local service using existing proxy
-	httpReq := &struct {
-		ID      string
-		Method  string
-		Path    string
-		Headers map[string]string
-		Body    []byte
-	}{
-		ID:      reqFrame.ID,
-		Method:  reqFrame.Method,
-		Path:    reqFrame.Path,
-		Headers: reqFrame.Headers,
-		Body:    reqFrame.Body,
+	// Check if this is a WebSocket upgrade request
+	if IsWebSocketUpgrade(reqFrame.Headers) {
+		c.handleWebSocketRequest(stream, reqFrame, proxy, startTime, bytesRecv)
+		return
 	}
 
-	httpResp, err := proxy.ForwardRaw(httpReq.Method, httpReq.Path, httpReq.Headers, httpReq.Body)
+	// Regular HTTP request - use existing flow
+	defer stream.Close()
+
+	httpResp, err := proxy.ForwardRaw(reqFrame.Method, reqFrame.Path, reqFrame.Headers, reqFrame.Body)
 	if err != nil {
 		httpResp = &tunnel.ResponseFrame{
 			ID:     reqFrame.ID,
@@ -384,6 +378,80 @@ func (c *TCPClient) handleRequest(stream net.Conn) {
 
 	// Send response frame
 	tunnel.WriteFrame(stream, httpResp)
+}
+
+// handleWebSocketRequest handles WebSocket upgrade requests
+func (c *TCPClient) handleWebSocketRequest(stream net.Conn, reqFrame *tunnel.RequestFrame, proxy *Proxy, startTime time.Time, bytesRecv int64) {
+	// Attempt WebSocket upgrade to local service
+	result, err := proxy.ForwardWebSocket(reqFrame.Method, reqFrame.Path, reqFrame.Headers, reqFrame.Body)
+	if err != nil {
+		// Send error response
+		tunnel.WriteFrame(stream, &tunnel.ResponseFrame{
+			ID:     reqFrame.ID,
+			Status: 502,
+			Headers: map[string]string{
+				"Content-Type": "text/plain",
+			},
+			Body: []byte(fmt.Sprintf("WebSocket proxy error: %v", err)),
+		})
+		stream.Close()
+		return
+	}
+
+	// Send the upgrade response back through the tunnel
+	respFrame := &tunnel.ResponseFrame{
+		ID:      reqFrame.ID,
+		Status:  result.StatusCode,
+		Headers: result.Headers,
+	}
+
+	if err := tunnel.WriteFrame(stream, respFrame); err != nil {
+		if result.Conn != nil {
+			result.Conn.Close()
+		}
+		stream.Close()
+		return
+	}
+
+	// If upgrade was successful (101), start bidirectional piping
+	if result.Success && result.Conn != nil {
+		// Notify model that WebSocket is connected
+		if c.model != nil {
+			c.model.SendUpdate(RequestCompletedMsg{
+				ID:         reqFrame.ID,
+				StatusCode: 101,
+				Duration:   time.Since(startTime),
+				BytesSent:  0,
+				BytesRecv:  bytesRecv,
+			})
+		}
+
+		// Pipe data bidirectionally between yamux stream and local WebSocket
+		// This blocks until one side closes
+		bytesSent, bytesRecvWS := Pipe(stream, result.Conn)
+
+		// Cleanup
+		result.Conn.Close()
+		stream.Close()
+
+		// Log WebSocket session stats (optional)
+		_ = bytesSent
+		_ = bytesRecvWS
+	} else {
+		// Not a 101 response - close stream
+		stream.Close()
+
+		// Notify model
+		if c.model != nil {
+			c.model.SendUpdate(RequestCompletedMsg{
+				ID:         reqFrame.ID,
+				StatusCode: result.StatusCode,
+				Duration:   time.Since(startTime),
+				BytesSent:  0,
+				BytesRecv:  bytesRecv,
+			})
+		}
+	}
 }
 
 // getServerName extracts the server name for TLS

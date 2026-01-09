@@ -22,6 +22,41 @@ import (
 	"github.com/niekvdm/digit-link/internal/tunnel"
 )
 
+// isWebSocketUpgrade checks if the request is a WebSocket upgrade request
+func isWebSocketUpgrade(r *http.Request) bool {
+	connection := r.Header.Get("Connection")
+	upgrade := r.Header.Get("Upgrade")
+	return strings.Contains(strings.ToLower(connection), "upgrade") &&
+		strings.EqualFold(upgrade, "websocket")
+}
+
+// pipe copies data bidirectionally between two connections
+func pipe(conn1, conn2 net.Conn) (int64, int64) {
+	var wg sync.WaitGroup
+	var bytes1to2, bytes2to1 int64
+
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		bytes1to2, _ = io.Copy(conn2, conn1)
+		if c, ok := conn2.(interface{ CloseWrite() error }); ok {
+			c.CloseWrite()
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		bytes2to1, _ = io.Copy(conn1, conn2)
+		if c, ok := conn1.(interface{ CloseWrite() error }); ok {
+			c.CloseWrite()
+		}
+	}()
+
+	wg.Wait()
+	return bytes1to2, bytes2to1
+}
+
 // Server manages tunnel connections and HTTP routing
 type Server struct {
 	domain   string
@@ -892,6 +927,9 @@ func (s *Server) forwardRequestViaTCP(w http.ResponseWriter, r *http.Request, se
 		}
 	}
 
+	// Check if this is a WebSocket upgrade request
+	isWS := isWebSocketUpgrade(r)
+
 	// Open a new yamux stream for this request
 	stream, err := session.Open()
 	if err != nil {
@@ -899,7 +937,11 @@ func (s *Server) forwardRequestViaTCP(w http.ResponseWriter, r *http.Request, se
 		http.Error(w, "Tunnel unavailable", http.StatusBadGateway)
 		return
 	}
-	defer stream.Close()
+
+	// For regular HTTP, defer close. For WebSocket, we'll handle it after piping
+	if !isWS {
+		defer stream.Close()
+	}
 
 	requestID := uuid.New().String()
 
@@ -929,6 +971,9 @@ func (s *Server) forwardRequestViaTCP(w http.ResponseWriter, r *http.Request, se
 	if err := tunnel.WriteFrame(stream, &reqFrame); err != nil {
 		log.Printf("Failed to write request frame for %s: %v", subdomain, err)
 		http.Error(w, "Tunnel error", http.StatusBadGateway)
+		if isWS {
+			stream.Close()
+		}
 		return
 	}
 
@@ -941,7 +986,15 @@ func (s *Server) forwardRequestViaTCP(w http.ResponseWriter, r *http.Request, se
 	if err != nil {
 		log.Printf("Failed to read response frame for %s: %v", subdomain, err)
 		http.Error(w, "Tunnel timeout or error", http.StatusGatewayTimeout)
+		if isWS {
+			stream.Close()
+		}
 		return
+	}
+
+	// Clear read deadline for WebSocket piping
+	if isWS {
+		stream.SetReadDeadline(time.Time{})
 	}
 
 	// Track bytes received
@@ -956,6 +1009,13 @@ func (s *Server) forwardRequestViaTCP(w http.ResponseWriter, r *http.Request, se
 	// Log request (optional - for debugging)
 	_ = accountID // Silence unused variable if not logging
 
+	// Handle WebSocket upgrade (101 Switching Protocols)
+	if isWS && respFrame.Status == http.StatusSwitchingProtocols {
+		s.handleWebSocketUpgrade(w, r, stream, respFrame, orgID)
+		return
+	}
+
+	// Regular HTTP response
 	// Write response headers
 	for key, value := range respFrame.Headers {
 		w.Header().Set(key, value)
@@ -968,6 +1028,65 @@ func (s *Server) forwardRequestViaTCP(w http.ResponseWriter, r *http.Request, se
 	if len(respFrame.Body) > 0 {
 		w.Write(respFrame.Body)
 	}
+
+	// Close stream for WebSocket requests that didn't get 101
+	if isWS {
+		stream.Close()
+	}
+}
+
+// handleWebSocketUpgrade handles the WebSocket upgrade response and pipes data bidirectionally
+func (s *Server) handleWebSocketUpgrade(w http.ResponseWriter, r *http.Request, stream net.Conn, respFrame *tunnel.ResponseFrame, orgID string) {
+	// Hijack the HTTP connection to get raw TCP access
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		log.Printf("WebSocket upgrade failed: ResponseWriter does not support hijacking")
+		http.Error(w, "WebSocket not supported", http.StatusInternalServerError)
+		stream.Close()
+		return
+	}
+
+	clientConn, clientBuf, err := hijacker.Hijack()
+	if err != nil {
+		log.Printf("WebSocket upgrade failed: hijack error: %v", err)
+		stream.Close()
+		return
+	}
+
+	// Write the 101 response to the client
+	var responseBuf strings.Builder
+	responseBuf.WriteString("HTTP/1.1 101 Switching Protocols\r\n")
+	for key, value := range respFrame.Headers {
+		responseBuf.WriteString(fmt.Sprintf("%s: %s\r\n", key, value))
+	}
+	responseBuf.WriteString("\r\n")
+
+	if _, err := clientConn.Write([]byte(responseBuf.String())); err != nil {
+		log.Printf("WebSocket upgrade failed: error writing 101 response: %v", err)
+		clientConn.Close()
+		stream.Close()
+		return
+	}
+
+	// Check if there's any buffered data that needs to be written to the stream first
+	if clientBuf.Reader.Buffered() > 0 {
+		buffered := make([]byte, clientBuf.Reader.Buffered())
+		clientBuf.Read(buffered)
+		stream.Write(buffered)
+	}
+
+	// Pipe data bidirectionally between client and tunnel stream
+	// This blocks until one side closes
+	bytesSent, bytesRecv := pipe(clientConn, stream)
+
+	// Update usage tracking for WebSocket traffic
+	if s.usageCache != nil && orgID != "" {
+		s.usageCache.RecordBandwidth(orgID, bytesSent+bytesRecv)
+	}
+
+	// Cleanup
+	clientConn.Close()
+	stream.Close()
 }
 
 // addCORSHeaders adds CORS headers to response if Origin header was present in request
