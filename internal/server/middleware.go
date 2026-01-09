@@ -547,15 +547,19 @@ func (m *AuthMiddleware) defaultAPIKeyAuth(w http.ResponseWriter, r *http.Reques
 		return policy.Challenge("API key required")
 	}
 
+	log.Printf("[APIKey] Validating key with prefix: %s...", apiKey[:min(8, len(apiKey))])
+
 	// Validate API key
 	key, err := m.db.ValidateAPIKey(apiKey)
 	if err != nil {
-		log.Printf("API key validation error: %v", err)
+		log.Printf("[APIKey] Validation error: %v", err)
 		return policy.Failure("API key validation error")
 	}
 	if key == nil {
+		log.Printf("[APIKey] Key not found in database (prefix: %s...)", apiKey[:min(8, len(apiKey))])
 		return policy.Failure("invalid API key")
 	}
+	log.Printf("[APIKey] Key valid: id=%s appID=%v orgID=%v", key.ID, key.AppID, key.OrgID)
 
 	// Check if key is for this org/app
 	if ctx != nil {
