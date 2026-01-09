@@ -2,31 +2,13 @@ package client
 
 import (
 	"fmt"
-	"log"
 	"net"
-	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/niekvdm/digit-link/internal/tunnel"
 )
-
-// wsLogger logs WebSocket debug info to a file (TUI overwrites stdout)
-var wsLogger *log.Logger
-
-func init() {
-	f, err := os.OpenFile("ws_debug.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err == nil {
-		wsLogger = log.New(f, "", log.LstdFlags)
-	}
-}
-
-func wsLog(format string, args ...interface{}) {
-	if wsLogger != nil {
-		wsLogger.Printf(format, args...)
-	}
-}
 
 // TCPClient represents a TCP/yamux-based tunnel client with multi-forward support
 type TCPClient struct {
@@ -400,12 +382,9 @@ func (c *TCPClient) handleRequest(stream net.Conn) {
 
 // handleWebSocketRequest handles WebSocket upgrade requests
 func (c *TCPClient) handleWebSocketRequest(stream net.Conn, reqFrame *tunnel.RequestFrame, proxy *Proxy, startTime time.Time, bytesRecv int64) {
-	wsLog("Forwarding WebSocket upgrade: %s %s (id=%s)", reqFrame.Method, reqFrame.Path, reqFrame.ID)
-
 	// Attempt WebSocket upgrade to local service
 	result, err := proxy.ForwardWebSocket(reqFrame.Method, reqFrame.Path, reqFrame.Headers, reqFrame.Body)
 	if err != nil {
-		wsLog("Error forwarding WebSocket: %v", err)
 		// Send error response
 		tunnel.WriteFrame(stream, &tunnel.ResponseFrame{
 			ID:     reqFrame.ID,
@@ -418,8 +397,6 @@ func (c *TCPClient) handleWebSocketRequest(stream net.Conn, reqFrame *tunnel.Req
 		stream.Close()
 		return
 	}
-
-	wsLog("Local service responded with status %d for %s", result.StatusCode, reqFrame.ID)
 
 	// Send the upgrade response back through the tunnel
 	respFrame := &tunnel.ResponseFrame{
@@ -447,13 +424,9 @@ func (c *TCPClient) handleWebSocketRequest(stream net.Conn, reqFrame *tunnel.Req
 			})
 		}
 
-		wsLog("WebSocket upgrade successful, starting pipe for %s", reqFrame.ID)
-
 		// Pipe data bidirectionally between yamux stream and local WebSocket
 		// This blocks until one side closes
 		bytesSent, bytesRecvWS := Pipe(stream, result.Conn)
-
-		wsLog("WebSocket CLOSED for %s, sent=%d recv=%d", reqFrame.ID, bytesSent, bytesRecvWS)
 
 		// Notify model of data transferred and connection closed
 		if c.model != nil {
