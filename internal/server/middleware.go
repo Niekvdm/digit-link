@@ -463,61 +463,60 @@ func (m *AuthMiddleware) defaultBasicAuth(w http.ResponseWriter, r *http.Request
 	hasCredentials := authHeader != "" && strings.HasPrefix(authHeader, "Basic ")
 
 	if !hasCredentials {
-		// No credentials - check if there's already a pending auth challenge for this client
-		if existing, loaded := m.pendingBasicAuth.Load(pendingKey); loaded {
-			entry := existing.(*pendingAuthEntry)
-			// If the pending entry is recent (within 60 seconds), wait for it
-			if time.Since(entry.created) < 60*time.Second {
-				// Wait for the pending auth to complete (with timeout)
-				select {
-				case <-entry.done:
-					// Auth completed - check if it succeeded
-					if entry.succeeded {
-						if entry.sessionID != "" {
-							return policy.SuccessWithSession(entry.sessionID, entry.username)
-						}
-						return policy.Success(entry.username)
-					}
-					// Auth failed, fall through to challenge
-				case <-time.After(30 * time.Second):
-					// Timeout waiting - user might be slow entering credentials
-					// Check session one more time in case auth completed
-					if result := checkSession(); result != nil {
-						return result
-					}
-				case <-r.Context().Done():
-					// Request cancelled
-					return policy.Failure("request cancelled")
-				}
-			}
-		}
-
-		// Create a new pending auth entry
+		// Try to be the primary auth request - only the primary sends the 401 challenge
 		entry := &pendingAuthEntry{
 			created: time.Now(),
 			done:    make(chan struct{}),
 		}
-		// Only store if there isn't already one (to avoid overwriting)
-		if actual, loaded := m.pendingBasicAuth.LoadOrStore(pendingKey, entry); loaded {
-			// Another goroutine beat us - wait on their entry instead
+
+		actual, loaded := m.pendingBasicAuth.LoadOrStore(pendingKey, entry)
+
+		if loaded {
+			// Someone else is the primary - wait for them (don't send another 401)
 			existingEntry := actual.(*pendingAuthEntry)
-			select {
-			case <-existingEntry.done:
-				if existingEntry.succeeded {
-					if existingEntry.sessionID != "" {
-						return policy.SuccessWithSession(existingEntry.sessionID, existingEntry.username)
+			// Only wait if the entry is recent
+			if time.Since(existingEntry.created) < 60*time.Second {
+				select {
+				case <-existingEntry.done:
+					if existingEntry.succeeded {
+						// Also set session cookie for this request so browser has it
+						if existingEntry.sessionID != "" {
+							sessionDuration := 24 * time.Hour
+							if p.Basic != nil && p.Basic.SessionDuration > 0 {
+								sessionDuration = p.Basic.SessionDuration
+							}
+							http.SetCookie(w, &http.Cookie{
+								Name:     "digit_link_basic_session",
+								Value:    existingEntry.sessionID,
+								Path:     "/",
+								MaxAge:   int(sessionDuration.Seconds()),
+								HttpOnly: true,
+								Secure:   m.scheme == "https",
+								SameSite: http.SameSiteLaxMode,
+							})
+							return policy.SuccessWithSession(existingEntry.sessionID, existingEntry.username)
+						}
+						return policy.Success(existingEntry.username)
 					}
-					return policy.Success(existingEntry.username)
+					// Primary auth failed - return failure without sending another 401
+					// This prevents multiple auth prompts
+					return policy.Failure("authentication failed")
+				case <-time.After(60 * time.Second):
+					// Timeout - check session in case auth completed
+					if result := checkSession(); result != nil {
+						return result
+					}
+					// Return failure without 401 to prevent multiple prompts
+					return policy.Failure("authentication timeout")
+				case <-r.Context().Done():
+					return policy.Failure("request cancelled")
 				}
-			case <-time.After(30 * time.Second):
-				if result := checkSession(); result != nil {
-					return result
-				}
-			case <-r.Context().Done():
-				return policy.Failure("request cancelled")
 			}
+			// Entry is stale, we become the new primary
+			m.pendingBasicAuth.Store(pendingKey, entry)
 		}
 
+		// We're the primary - send the 401 challenge
 		return policy.Challenge("basic auth required")
 	}
 
