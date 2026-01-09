@@ -135,7 +135,7 @@ func New(domain, scheme, secret string, database *db.DB) *Server {
 
 	// Initialize auth handlers if database is available
 	if database != nil {
-		s.authMiddleware = NewAuthMiddleware(database, WithDefaultDeny(true))
+		s.authMiddleware = NewAuthMiddleware(database, WithDefaultDeny(true), WithScheme(scheme))
 		s.oidcHandler = auth.NewOIDCAuthHandler(database, domain)
 		// Initialize rate limiter for login endpoints with stricter settings
 		s.loginRateLimiter = auth.NewRateLimiter(database, auth.RateLimiterConfig{

@@ -70,8 +70,17 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dµs", d.Microseconds())
 	} else if d < time.Second {
 		return fmt.Sprintf("%dms", d.Milliseconds())
+	} else if d < time.Minute {
+		return fmt.Sprintf("%.2fs", d.Seconds())
+	} else if d < time.Hour {
+		m := int(d.Minutes())
+		s := int(d.Seconds()) % 60
+		return fmt.Sprintf("%dm %ds", m, s)
 	}
-	return fmt.Sprintf("%.2fs", d.Seconds())
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	s := int(d.Seconds()) % 60
+	return fmt.Sprintf("%dh %dm %ds", h, m, s)
 }
 
 // Client represents a tunnel client

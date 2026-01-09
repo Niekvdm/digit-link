@@ -45,7 +45,8 @@ type AuthMiddleware struct {
 	appRLConfigCache sync.Map // map[string]*appRateLimitCacheEntry
 
 	// Configuration
-	defaultDeny bool // If true, deny when policy cannot be determined
+	defaultDeny bool   // If true, deny when policy cannot be determined
+	scheme      string // URL scheme (http or https) for cookie security
 }
 
 // appRateLimitCacheEntry caches rate limit config with expiration
@@ -98,6 +99,13 @@ func WithOIDCHandler(h AuthHandler) AuthMiddlewareOption {
 func WithRateLimiter(rl *auth.RateLimiter) AuthMiddlewareOption {
 	return func(m *AuthMiddleware) {
 		m.rateLimiter = rl
+	}
+}
+
+// WithScheme sets the URL scheme for cookie security
+func WithScheme(scheme string) AuthMiddlewareOption {
+	return func(m *AuthMiddleware) {
+		m.scheme = scheme
 	}
 }
 
@@ -455,7 +463,7 @@ func (m *AuthMiddleware) defaultBasicAuth(w http.ResponseWriter, r *http.Request
 				Path:     "/",
 				MaxAge:   int(sessionDuration.Seconds()),
 				HttpOnly: true,
-				Secure:   true,
+				Secure:   m.scheme == "https",
 				SameSite: http.SameSiteLaxMode,
 			})
 		}
