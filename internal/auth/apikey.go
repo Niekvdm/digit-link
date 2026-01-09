@@ -119,10 +119,15 @@ func (h *APIKeyAuthHandler) extractAPIKey(r *http.Request) string {
 		return apiKey
 	}
 
-	// Try Authorization: Bearer header
+	// Try Authorization: Bearer header (only if it's a digit-link API key)
 	authHeader := r.Header.Get("Authorization")
 	if strings.HasPrefix(authHeader, "Bearer ") {
-		return strings.TrimPrefix(authHeader, "Bearer ")
+		token := strings.TrimPrefix(authHeader, "Bearer ")
+		// Only accept Bearer tokens that are digit-link API keys (dlk_ prefix)
+		// This allows apps to use their own Bearer tokens without conflict
+		if strings.HasPrefix(token, "dlk_") {
+			return token
+		}
 	}
 
 	// Try query parameter (less secure, but sometimes needed)
