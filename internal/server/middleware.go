@@ -465,28 +465,10 @@ func (m *AuthMiddleware) defaultBasicAuth(w http.ResponseWriter, r *http.Request
 			}
 		}
 
-		// Debug logging for session validation
-		ctxSubdomain := ""
-		ctxAppID := ""
-		ctxOrgID := ""
-		if ctx != nil {
-			ctxSubdomain = ctx.Subdomain
-			ctxAppID = ctx.AppID
-			ctxOrgID = ctx.OrgID
-		}
-		log.Printf("[BasicAuth] Validating session for path=%s subdomain=%s appID=%s orgID=%s",
-			r.URL.Path, ctxSubdomain, ctxAppID, ctxOrgID)
-
 		session, err := m.basicLoginHandler.ValidateSession(r, appID, orgID)
-		if err != nil {
-			log.Printf("[BasicAuth] Session validation error: %v", err)
-		}
-		if session != nil {
-			log.Printf("[BasicAuth] Session valid: id=%s sessionAppID=%v sessionOrgID=%v",
-				session.ID, session.AppID, session.OrgID)
+		if err == nil && session != nil {
 			return policy.SuccessWithSession(session.ID, session.UserEmail)
 		}
-		log.Printf("[BasicAuth] No valid session, redirecting to login")
 	}
 
 	// No valid session - redirect to login endpoint
@@ -508,12 +490,9 @@ func (m *AuthMiddleware) HandleBasicAuthLogin(w http.ResponseWriter, r *http.Req
 	returnURL := r.URL.Query().Get("return")
 	subdomain := r.URL.Query().Get("subdomain")
 
-	log.Printf("[BasicAuth Login] Host=%s querySubdomain=%s", r.Host, subdomain)
-
 	// Fallback to extracting subdomain from Host header if not in query
 	if subdomain == "" {
 		subdomain = m.extractSubdomainFromHost(r.Host)
-		log.Printf("[BasicAuth Login] Extracted subdomain from host: %s (domain=%s)", subdomain, m.domain)
 	}
 
 	if subdomain == "" {
@@ -522,14 +501,7 @@ func (m *AuthMiddleware) HandleBasicAuthLogin(w http.ResponseWriter, r *http.Req
 	}
 
 	// Load the policy for this subdomain
-	log.Printf("[BasicAuth Login] Loading policy for subdomain: %s", subdomain)
 	effectivePolicy, authCtx, err := m.policyLoader.LoadForSubdomain(subdomain)
-	if authCtx != nil {
-		log.Printf("[BasicAuth Login] AuthCtx: subdomain=%s appID=%s orgID=%s",
-			authCtx.Subdomain, authCtx.AppID, authCtx.OrgID)
-	} else {
-		log.Printf("[BasicAuth Login] AuthCtx is nil")
-	}
 	if err != nil {
 		log.Printf("Failed to load policy for subdomain %s: %v", subdomain, err)
 		http.Error(w, "Failed to load auth policy", http.StatusInternalServerError)
