@@ -48,6 +48,7 @@ type AuthMiddleware struct {
 	// Configuration
 	defaultDeny bool   // If true, deny when policy cannot be determined
 	scheme      string // URL scheme (http or https) for cookie security
+	domain      string // Server domain for subdomain extraction
 }
 
 // appRateLimitCacheEntry caches rate limit config with expiration
@@ -107,6 +108,13 @@ func WithRateLimiter(rl *auth.RateLimiter) AuthMiddlewareOption {
 func WithScheme(scheme string) AuthMiddlewareOption {
 	return func(m *AuthMiddleware) {
 		m.scheme = scheme
+	}
+}
+
+// WithDomain sets the server domain for subdomain extraction
+func WithDomain(domain string) AuthMiddlewareOption {
+	return func(m *AuthMiddleware) {
+		m.domain = domain
 	}
 }
 
@@ -347,9 +355,10 @@ func (m *AuthMiddleware) HandleAuthResult(w http.ResponseWriter, r *http.Request
 	// Generic 401/403 response
 	// For Basic auth, redirect to login page instead of 401 (avoids browser popup)
 	if p != nil && p.Type == policy.AuthTypeBasic {
-		subdomain := ""
-		if ctx != nil {
-			subdomain = ctx.Subdomain
+		// Extract subdomain from request Host header directly (more reliable than context)
+		subdomain := m.extractSubdomainFromHost(r.Host)
+		if subdomain == "" && ctx != nil {
+			subdomain = ctx.Subdomain // Fallback to context
 		}
 		loginURL := auth.BuildLoginURL(r.URL.String(), subdomain)
 		http.Redirect(w, r, loginURL, http.StatusFound)
@@ -364,9 +373,10 @@ func (m *AuthMiddleware) sendChallenge(w http.ResponseWriter, r *http.Request, p
 	switch p.Type {
 	case policy.AuthTypeBasic:
 		// For Basic auth, redirect to login page instead of 401 (avoids browser popup)
-		subdomain := ""
-		if ctx != nil {
-			subdomain = ctx.Subdomain
+		// Extract subdomain from request Host header directly (more reliable than context)
+		subdomain := m.extractSubdomainFromHost(r.Host)
+		if subdomain == "" && ctx != nil {
+			subdomain = ctx.Subdomain // Fallback to context
 		}
 		loginURL := auth.BuildLoginURL(r.URL.String(), subdomain)
 		http.Redirect(w, r, loginURL, http.StatusFound)
@@ -443,11 +453,11 @@ func (m *AuthMiddleware) defaultBasicAuth(w http.ResponseWriter, r *http.Request
 	}
 
 	// No valid session - redirect to login endpoint
-	// This is the key change: we redirect instead of sending 401 directly
 	// This ensures only ONE request (the login endpoint) ever triggers the browser prompt
-	subdomain := ""
-	if ctx != nil {
-		subdomain = ctx.Subdomain
+	// Extract subdomain from request Host header directly (more reliable than context)
+	subdomain := m.extractSubdomainFromHost(r.Host)
+	if subdomain == "" && ctx != nil {
+		subdomain = ctx.Subdomain // Fallback to context
 	}
 
 	loginURL := auth.BuildLoginURL(r.URL.String(), subdomain)
@@ -460,6 +470,11 @@ func (m *AuthMiddleware) HandleBasicAuthLogin(w http.ResponseWriter, r *http.Req
 	// Parse query parameters
 	returnURL := r.URL.Query().Get("return")
 	subdomain := r.URL.Query().Get("subdomain")
+
+	// Fallback to extracting subdomain from Host header if not in query
+	if subdomain == "" {
+		subdomain = m.extractSubdomainFromHost(r.Host)
+	}
 
 	if subdomain == "" {
 		http.Error(w, "Missing subdomain parameter", http.StatusBadRequest)
@@ -714,4 +729,35 @@ func (m *AuthMiddleware) InvalidateAppRateLimitCache(appID string) {
 	if rl, ok := m.appRateLimiters.LoadAndDelete(appID); ok {
 		rl.(*auth.RateLimiter).Stop()
 	}
+}
+
+// extractSubdomainFromHost extracts the subdomain from a Host header value
+func (m *AuthMiddleware) extractSubdomainFromHost(host string) string {
+	if m.domain == "" {
+		return ""
+	}
+
+	// Remove port if present
+	if idx := strings.LastIndex(host, ":"); idx != -1 {
+		host = host[:idx]
+	}
+
+	// Remove port from domain for comparison
+	domain := m.domain
+	if idx := strings.LastIndex(domain, ":"); idx != -1 {
+		domain = domain[:idx]
+	}
+
+	// Check if it's a subdomain of our domain
+	if !strings.HasSuffix(host, domain) {
+		return ""
+	}
+
+	// Extract subdomain
+	subdomain := strings.TrimSuffix(host, "."+domain)
+	if subdomain == host || subdomain == "" {
+		return ""
+	}
+
+	return subdomain
 }
