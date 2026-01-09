@@ -109,8 +109,20 @@ func (p *Proxy) ForwardWebSocket(method, path string, headers map[string]string,
 	fmt.Fprintf(&reqBuf, "%s %s HTTP/1.1\r\n", method, path)
 
 	// Write headers - include Connection and Upgrade for WebSocket
+	// But rewrite the Host header to match the local service
+	wroteHost := false
 	for key, value := range headers {
-		fmt.Fprintf(&reqBuf, "%s: %s\r\n", key, value)
+		// Rewrite Host header to local service address
+		if strings.EqualFold(key, "Host") {
+			fmt.Fprintf(&reqBuf, "Host: %s\r\n", host)
+			wroteHost = true
+		} else {
+			fmt.Fprintf(&reqBuf, "%s: %s\r\n", key, value)
+		}
+	}
+	// Ensure Host header is always present (required for HTTP/1.1)
+	if !wroteHost {
+		fmt.Fprintf(&reqBuf, "Host: %s\r\n", host)
 	}
 	reqBuf.WriteString("\r\n")
 
