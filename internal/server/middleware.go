@@ -345,8 +345,14 @@ func (m *AuthMiddleware) HandleAuthResult(w http.ResponseWriter, r *http.Request
 	}
 
 	// Generic 401/403 response
+	// For Basic auth, redirect to login page instead of 401 (avoids browser popup)
 	if p != nil && p.Type == policy.AuthTypeBasic {
-		m.sendBasicChallenge(w, ctx)
+		subdomain := ""
+		if ctx != nil {
+			subdomain = ctx.Subdomain
+		}
+		loginURL := auth.BuildLoginURL(r.URL.String(), subdomain)
+		http.Redirect(w, r, loginURL, http.StatusFound)
 	} else {
 		http.Error(w, "Unauthorized: "+result.Error, http.StatusUnauthorized)
 	}
@@ -357,11 +363,13 @@ func (m *AuthMiddleware) HandleAuthResult(w http.ResponseWriter, r *http.Request
 func (m *AuthMiddleware) sendChallenge(w http.ResponseWriter, r *http.Request, p *policy.EffectivePolicy, ctx *policy.AuthContext) {
 	switch p.Type {
 	case policy.AuthTypeBasic:
-		if m.basicHandler != nil {
-			m.basicHandler.Challenge(w, r, p, ctx)
-		} else {
-			m.sendBasicChallenge(w, ctx)
+		// For Basic auth, redirect to login page instead of 401 (avoids browser popup)
+		subdomain := ""
+		if ctx != nil {
+			subdomain = ctx.Subdomain
 		}
+		loginURL := auth.BuildLoginURL(r.URL.String(), subdomain)
+		http.Redirect(w, r, loginURL, http.StatusFound)
 
 	case policy.AuthTypeAPIKey:
 		if m.apiKeyHandler != nil {
@@ -568,7 +576,8 @@ func (m *AuthMiddleware) defaultOIDCAuth(w http.ResponseWriter, r *http.Request,
 // isInternalEndpoint checks if the path is an internal endpoint that should bypass auth
 func (m *AuthMiddleware) isInternalEndpoint(path string) bool {
 	internalPaths := []string{
-		"/__auth/", // Auth endpoints
+		"/__auth/", // OIDC Auth endpoints
+		"/_auth/",  // Basic Auth login endpoint
 		"/health",  // Health check
 		"/_tunnel", // Tunnel WebSocket
 		"/setup/",  // Setup endpoints
