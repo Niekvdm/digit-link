@@ -3,13 +3,13 @@ package client
 import (
 	"bufio"
 	"bytes"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/niekvdm/digit-link/internal/protocol"
@@ -38,36 +38,27 @@ func IsWebSocketUpgrade(headers map[string]string) bool {
 // Pipe copies data bidirectionally between two connections until one closes
 // Returns the total bytes transferred in each direction
 func Pipe(conn1, conn2 net.Conn) (int64, int64) {
-	var wg sync.WaitGroup
 	var bytesConn1ToConn2, bytesConn2ToConn1 int64
-
-	wg.Add(2)
+	done := make(chan struct{})
 
 	// conn1 -> conn2
 	go func() {
-		defer wg.Done()
 		bytesConn1ToConn2, _ = io.Copy(conn2, conn1)
-		// Signal EOF to conn2 when conn1 is done reading
-		if tcpConn, ok := conn2.(*net.TCPConn); ok {
-			tcpConn.CloseWrite()
-		} else if closeWriter, ok := conn2.(interface{ CloseWrite() error }); ok {
-			closeWriter.CloseWrite()
-		}
+		// Close both connections to unblock the other goroutine
+		conn1.Close()
+		conn2.Close()
+		close(done)
 	}()
 
 	// conn2 -> conn1
-	go func() {
-		defer wg.Done()
-		bytesConn2ToConn1, _ = io.Copy(conn1, conn2)
-		// Signal EOF to conn1 when conn2 is done reading
-		if tcpConn, ok := conn1.(*net.TCPConn); ok {
-			tcpConn.CloseWrite()
-		} else if closeWriter, ok := conn1.(interface{ CloseWrite() error }); ok {
-			closeWriter.CloseWrite()
-		}
-	}()
+	bytesConn2ToConn1, _ = io.Copy(conn1, conn2)
+	// Close both connections to unblock the other goroutine
+	conn1.Close()
+	conn2.Close()
 
-	wg.Wait()
+	// Wait for the other goroutine to finish
+	<-done
+
 	return bytesConn1ToConn2, bytesConn2ToConn1
 }
 
@@ -95,11 +86,21 @@ func (p *Proxy) ForwardWebSocket(method, path string, headers map[string]string,
 	// Parse local address to get host:port
 	// p.localAddr is like "http://localhost:3000" or "https://localhost:3000"
 	localURL := p.localAddr
+	isHTTPS := strings.HasPrefix(localURL, "https://")
 	host := strings.TrimPrefix(localURL, "http://")
 	host = strings.TrimPrefix(host, "https://")
 
 	// Connect to local service
-	conn, err := net.DialTimeout("tcp", host, 10*time.Second)
+	var conn net.Conn
+	var err error
+	if isHTTPS {
+		// Use TLS for HTTPS local services
+		conn, err = tls.DialWithDialer(&net.Dialer{Timeout: 10 * time.Second}, "tcp", host, &tls.Config{
+			InsecureSkipVerify: true, // Local services often use self-signed certs
+		})
+	} else {
+		conn, err = net.DialTimeout("tcp", host, 10*time.Second)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to local service: %w", err)
 	}
