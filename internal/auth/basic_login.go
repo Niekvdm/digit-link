@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"html/template"
 	"net/http"
 	"net/url"
 	"time"
@@ -20,19 +21,31 @@ const (
 	DefaultBasicSessionDuration = 24 * time.Hour
 )
 
+// LoginPageData contains data for rendering the login page
+type LoginPageData struct {
+	Subdomain string
+	Realm     string
+	ReturnURL string
+	LoginURL  string
+	Username  string
+	Error     string
+}
+
 // BasicAuthLoginHandler handles the Basic Auth login flow
-// It provides a single endpoint that triggers the browser's Basic Auth prompt,
-// validates credentials, creates a session, and redirects back to the original URL.
+// It serves a custom login page and handles form submissions
 type BasicAuthLoginHandler struct {
-	db     *db.DB
-	scheme string // "http" or "https" for cookie security
+	db       *db.DB
+	scheme   string // "http" or "https" for cookie security
+	template *template.Template
 }
 
 // NewBasicAuthLoginHandler creates a new BasicAuthLoginHandler
 func NewBasicAuthLoginHandler(database *db.DB, scheme string) *BasicAuthLoginHandler {
+	tmpl := template.Must(template.New("login").Parse(BasicLoginTemplate))
 	return &BasicAuthLoginHandler{
-		db:     database,
-		scheme: scheme,
+		db:       database,
+		scheme:   scheme,
+		template: tmpl,
 	}
 }
 
@@ -44,25 +57,83 @@ type LoginConfig struct {
 }
 
 // HandleLogin handles the login endpoint
-// GET /_auth/basic/login?return=<url>&subdomain=<subdomain>
+// GET: Renders the login page
+// POST: Handles form submission
 func (h *BasicAuthLoginHandler) HandleLogin(w http.ResponseWriter, r *http.Request, config *LoginConfig) {
 	if config == nil || config.Policy == nil || config.Policy.Basic == nil {
 		http.Error(w, "Basic auth not configured", http.StatusInternalServerError)
 		return
 	}
 
-	// Check for Authorization header
-	username, password, ok := r.BasicAuth()
-	if !ok {
-		// No credentials - send 401 challenge
-		h.sendChallenge(w, config.AuthCtx)
+	subdomain := ""
+	if config.AuthCtx != nil {
+		subdomain = config.AuthCtx.Subdomain
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		h.renderLoginPage(w, subdomain, config.ReturnURL, "", "")
+	case http.MethodPost:
+		h.handleFormSubmit(w, r, config)
+	default:
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// renderLoginPage renders the login HTML page
+func (h *BasicAuthLoginHandler) renderLoginPage(w http.ResponseWriter, subdomain, returnURL, username, errorMsg string) {
+	realm := "digit-link"
+	if subdomain != "" {
+		realm = subdomain + ".digit-link"
+	}
+
+	data := LoginPageData{
+		Subdomain: subdomain,
+		Realm:     realm,
+		ReturnURL: returnURL,
+		LoginURL:  BasicAuthLoginPath,
+		Username:  username,
+		Error:     errorMsg,
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+
+	if err := h.template.Execute(w, data); err != nil {
+		http.Error(w, "Failed to render login page", http.StatusInternalServerError)
+	}
+}
+
+// handleFormSubmit handles the login form POST submission
+func (h *BasicAuthLoginHandler) handleFormSubmit(w http.ResponseWriter, r *http.Request, config *LoginConfig) {
+	// Parse form data
+	if err := r.ParseForm(); err != nil {
+		h.renderLoginPage(w, config.AuthCtx.Subdomain, config.ReturnURL, "", "Invalid form data")
 		return
 	}
 
-	// Validate credentials
+	username := r.FormValue("username")
+	password := r.FormValue("password")
+	returnURL := r.FormValue("return")
+	subdomain := r.FormValue("subdomain")
+
+	if returnURL == "" {
+		returnURL = config.ReturnURL
+	}
+	if subdomain == "" && config.AuthCtx != nil {
+		subdomain = config.AuthCtx.Subdomain
+	}
+
+	// Validate required fields
+	if username == "" || password == "" {
+		h.renderLoginPage(w, subdomain, returnURL, username, "Username and password are required")
+		return
+	}
+
+	// Validate password
 	if !VerifyPassword(password, config.Policy.Basic.PassHash) {
 		h.logFailure(config.AuthCtx, r, "invalid_password")
-		h.sendChallenge(w, config.AuthCtx)
+		h.renderLoginPage(w, subdomain, returnURL, username, "Invalid username or password")
 		return
 	}
 
@@ -70,7 +141,7 @@ func (h *BasicAuthLoginHandler) HandleLogin(w http.ResponseWriter, r *http.Reque
 	if config.Policy.Basic.UserHash != "" {
 		if !VerifyPassword(username, config.Policy.Basic.UserHash) {
 			h.logFailure(config.AuthCtx, r, "invalid_username")
-			h.sendChallenge(w, config.AuthCtx)
+			h.renderLoginPage(w, subdomain, returnURL, username, "Invalid username or password")
 			return
 		}
 	}
@@ -78,7 +149,7 @@ func (h *BasicAuthLoginHandler) HandleLogin(w http.ResponseWriter, r *http.Reque
 	// Credentials valid - create session
 	sessionID, err := h.createSession(config.AuthCtx, username, config.Policy.Basic.SessionDuration)
 	if err != nil {
-		http.Error(w, "Failed to create session", http.StatusInternalServerError)
+		h.renderLoginPage(w, subdomain, returnURL, username, "Failed to create session")
 		return
 	}
 
@@ -89,21 +160,10 @@ func (h *BasicAuthLoginHandler) HandleLogin(w http.ResponseWriter, r *http.Reque
 	h.logSuccess(config.AuthCtx, r, username)
 
 	// Redirect back to original URL
-	returnURL := config.ReturnURL
 	if returnURL == "" {
 		returnURL = "/"
 	}
 	http.Redirect(w, r, returnURL, http.StatusFound)
-}
-
-// sendChallenge sends the WWW-Authenticate challenge
-func (h *BasicAuthLoginHandler) sendChallenge(w http.ResponseWriter, ctx *policy.AuthContext) {
-	realm := "digit-link"
-	if ctx != nil && ctx.Subdomain != "" {
-		realm = ctx.Subdomain + ".digit-link"
-	}
-	w.Header().Set("WWW-Authenticate", `Basic realm="`+realm+`", charset="UTF-8"`)
-	http.Error(w, "Unauthorized", http.StatusUnauthorized)
 }
 
 // createSession creates a new auth session and returns the session ID
