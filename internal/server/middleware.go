@@ -26,6 +26,15 @@ const (
 	ContextKeyEffectivePolicy contextKey = "effectivePolicy"
 )
 
+// pendingAuthEntry tracks a pending basic auth challenge
+type pendingAuthEntry struct {
+	created   time.Time
+	done      chan struct{} // Closed when auth completes
+	succeeded bool          // True if auth succeeded (set before closing done)
+	username  string        // Authenticated username (if succeeded)
+	sessionID string        // Session ID (if succeeded)
+}
+
 // AuthMiddleware handles authentication for tunnel traffic
 type AuthMiddleware struct {
 	db             *db.DB
@@ -43,6 +52,9 @@ type AuthMiddleware struct {
 	// Per-app rate limiter cache
 	appRateLimiters sync.Map // map[string]*auth.RateLimiter
 	appRLConfigCache sync.Map // map[string]*appRateLimitCacheEntry
+
+	// Pending basic auth challenges (prevents multiple 401s for concurrent requests)
+	pendingBasicAuth sync.Map // map[string]*pendingAuthEntry (key: clientIP+subdomain)
 
 	// Configuration
 	defaultDeny bool   // If true, deny when policy cannot be determined
@@ -389,34 +401,127 @@ func (m *AuthMiddleware) sendBasicChallenge(w http.ResponseWriter, ctx *policy.A
 
 // Default auth implementations (stubs that deny by default)
 
+// getClientIP extracts the client IP from the request
+func getClientIP(r *http.Request) string {
+	// Check X-Forwarded-For header first (for proxied requests)
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// Take the first IP in the chain
+		if idx := strings.Index(xff, ","); idx != -1 {
+			return strings.TrimSpace(xff[:idx])
+		}
+		return strings.TrimSpace(xff)
+	}
+	// Check X-Real-IP header
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		return xri
+	}
+	// Fall back to RemoteAddr
+	if idx := strings.LastIndex(r.RemoteAddr, ":"); idx != -1 {
+		return r.RemoteAddr[:idx]
+	}
+	return r.RemoteAddr
+}
+
 func (m *AuthMiddleware) defaultBasicAuth(w http.ResponseWriter, r *http.Request, p *policy.EffectivePolicy, ctx *policy.AuthContext) *policy.AuthResult {
-	// First, check for existing session cookie (avoids re-prompting on concurrent requests)
-	if cookie, err := r.Cookie("digit_link_basic_session"); err == nil && cookie.Value != "" {
-		if m.db != nil {
-			var appID, orgID *string
-			if ctx != nil {
-				if ctx.AppID != "" {
-					appID = &ctx.AppID
-				}
-				if ctx.OrgID != "" {
-					orgID = &ctx.OrgID
-				}
-			}
-			session, err := m.db.ValidateSessionForApp(cookie.Value, appID, orgID)
-			if err == nil && session != nil {
-				// Valid session - allow through without re-authenticating
-				return policy.SuccessWithSession(session.ID, session.UserEmail)
-			}
+	var appID, orgID *string
+	if ctx != nil {
+		if ctx.AppID != "" {
+			appID = &ctx.AppID
+		}
+		if ctx.OrgID != "" {
+			orgID = &ctx.OrgID
 		}
 	}
 
+	// Helper to check session cookie
+	checkSession := func() *policy.AuthResult {
+		if cookie, err := r.Cookie("digit_link_basic_session"); err == nil && cookie.Value != "" {
+			if m.db != nil {
+				session, err := m.db.ValidateSessionForApp(cookie.Value, appID, orgID)
+				if err == nil && session != nil {
+					return policy.SuccessWithSession(session.ID, session.UserEmail)
+				}
+			}
+		}
+		return nil
+	}
+
+	// First, check for existing session cookie
+	if result := checkSession(); result != nil {
+		return result
+	}
+
+	// Build pending auth key (client IP + subdomain)
+	subdomain := ""
+	if ctx != nil {
+		subdomain = ctx.Subdomain
+	}
+	pendingKey := getClientIP(r) + ":" + subdomain
+
 	// Check for Authorization header
 	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" || !strings.HasPrefix(authHeader, "Basic ") {
+	hasCredentials := authHeader != "" && strings.HasPrefix(authHeader, "Basic ")
+
+	if !hasCredentials {
+		// No credentials - check if there's already a pending auth challenge for this client
+		if existing, loaded := m.pendingBasicAuth.Load(pendingKey); loaded {
+			entry := existing.(*pendingAuthEntry)
+			// If the pending entry is recent (within 60 seconds), wait for it
+			if time.Since(entry.created) < 60*time.Second {
+				// Wait for the pending auth to complete (with timeout)
+				select {
+				case <-entry.done:
+					// Auth completed - check if it succeeded
+					if entry.succeeded {
+						if entry.sessionID != "" {
+							return policy.SuccessWithSession(entry.sessionID, entry.username)
+						}
+						return policy.Success(entry.username)
+					}
+					// Auth failed, fall through to challenge
+				case <-time.After(30 * time.Second):
+					// Timeout waiting - user might be slow entering credentials
+					// Check session one more time in case auth completed
+					if result := checkSession(); result != nil {
+						return result
+					}
+				case <-r.Context().Done():
+					// Request cancelled
+					return policy.Failure("request cancelled")
+				}
+			}
+		}
+
+		// Create a new pending auth entry
+		entry := &pendingAuthEntry{
+			created: time.Now(),
+			done:    make(chan struct{}),
+		}
+		// Only store if there isn't already one (to avoid overwriting)
+		if actual, loaded := m.pendingBasicAuth.LoadOrStore(pendingKey, entry); loaded {
+			// Another goroutine beat us - wait on their entry instead
+			existingEntry := actual.(*pendingAuthEntry)
+			select {
+			case <-existingEntry.done:
+				if existingEntry.succeeded {
+					if existingEntry.sessionID != "" {
+						return policy.SuccessWithSession(existingEntry.sessionID, existingEntry.username)
+					}
+					return policy.Success(existingEntry.username)
+				}
+			case <-time.After(30 * time.Second):
+				if result := checkSession(); result != nil {
+					return result
+				}
+			case <-r.Context().Done():
+				return policy.Failure("request cancelled")
+			}
+		}
+
 		return policy.Challenge("basic auth required")
 	}
 
-	// Parse credentials
+	// Has credentials - parse and validate
 	username, password, ok := r.BasicAuth()
 	if !ok {
 		return policy.Challenge("invalid basic auth header")
@@ -437,17 +542,9 @@ func (m *AuthMiddleware) defaultBasicAuth(w http.ResponseWriter, r *http.Request
 		return policy.Challenge("invalid credentials")
 	}
 
-	// Create session for successful Basic Auth to avoid re-prompting on concurrent requests
+	// Create session for successful Basic Auth
+	var sessionID string
 	if m.db != nil {
-		var appID, orgID *string
-		if ctx != nil {
-			if ctx.AppID != "" {
-				appID = &ctx.AppID
-			}
-			if ctx.OrgID != "" {
-				orgID = &ctx.OrgID
-			}
-		}
 		// Determine session duration (default 24 hours if not configured)
 		sessionDuration := 24 * time.Hour
 		if p.Basic != nil && p.Basic.SessionDuration > 0 {
@@ -456,6 +553,7 @@ func (m *AuthMiddleware) defaultBasicAuth(w http.ResponseWriter, r *http.Request
 		// Create session with configured duration
 		session, err := m.db.CreateSession(appID, orgID, username, map[string]string{"auth_type": "basic"}, sessionDuration)
 		if err == nil && session != nil {
+			sessionID = session.ID
 			// Set session cookie with matching duration
 			http.SetCookie(w, &http.Cookie{
 				Name:     "digit_link_basic_session",
@@ -467,6 +565,15 @@ func (m *AuthMiddleware) defaultBasicAuth(w http.ResponseWriter, r *http.Request
 				SameSite: http.SameSiteLaxMode,
 			})
 		}
+	}
+
+	// Signal completion to any waiting requests
+	if existing, loaded := m.pendingBasicAuth.LoadAndDelete(pendingKey); loaded {
+		entry := existing.(*pendingAuthEntry)
+		entry.succeeded = true
+		entry.username = username
+		entry.sessionID = sessionID
+		close(entry.done)
 	}
 
 	return policy.Success(username)
