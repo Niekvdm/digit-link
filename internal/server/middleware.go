@@ -174,6 +174,11 @@ func (m *AuthMiddleware) AuthenticateRequest(w http.ResponseWriter, r *http.Requ
 		return policy.Success("no_auth_required"), authCtx
 	}
 
+	// Auth is required - prevent caching of all auth-protected responses
+	// This ensures browsers always check auth status instead of serving stale cached pages
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, private")
+	w.Header().Set("Pragma", "no-cache")
+
 	// Store policy in context
 	ctx := context.WithValue(r.Context(), ContextKeyEffectivePolicy, effectivePolicy)
 	ctx = context.WithValue(ctx, ContextKeyAuthContext, authCtx)
@@ -210,6 +215,11 @@ func (m *AuthMiddleware) AuthenticateWithContext(w http.ResponseWriter, r *http.
 	if effectivePolicy == nil || effectivePolicy.IsNone() {
 		return policy.Success("no_auth_required"), authCtx
 	}
+
+	// Auth is required - prevent caching of all auth-protected responses
+	// This ensures browsers always check auth status instead of serving stale cached pages
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, private")
+	w.Header().Set("Pragma", "no-cache")
 
 	// Store policy in context
 	ctx := context.WithValue(r.Context(), ContextKeyEffectivePolicy, effectivePolicy)
