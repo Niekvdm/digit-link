@@ -2,6 +2,7 @@ package auth
 
 import (
 	"html/template"
+	"log"
 	"net/http"
 	"net/url"
 	"time"
@@ -177,7 +178,13 @@ func (h *BasicAuthLoginHandler) createSession(ctx *policy.AuthContext, username 
 	}
 
 	var appID, orgID *string
+	ctxSubdomain := ""
+	ctxAppID := ""
+	ctxOrgID := ""
 	if ctx != nil {
+		ctxSubdomain = ctx.Subdomain
+		ctxAppID = ctx.AppID
+		ctxOrgID = ctx.OrgID
 		if ctx.AppID != "" {
 			appID = &ctx.AppID
 		}
@@ -186,13 +193,20 @@ func (h *BasicAuthLoginHandler) createSession(ctx *policy.AuthContext, username 
 		}
 	}
 
+	log.Printf("[BasicAuth] Creating session: subdomain=%s appID=%s orgID=%s username=%s",
+		ctxSubdomain, ctxAppID, ctxOrgID, username)
+
 	session, err := h.db.CreateSession(appID, orgID, username, map[string]string{"auth_type": "basic"}, duration)
 	if err != nil {
+		log.Printf("[BasicAuth] Session creation error: %v", err)
 		return "", err
 	}
 	if session == nil {
+		log.Printf("[BasicAuth] Session creation returned nil")
 		return "", nil
 	}
+
+	log.Printf("[BasicAuth] Session created: id=%s", session.ID)
 	return session.ID, nil
 }
 

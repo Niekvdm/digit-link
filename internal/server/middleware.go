@@ -455,10 +455,28 @@ func (m *AuthMiddleware) defaultBasicAuth(w http.ResponseWriter, r *http.Request
 			}
 		}
 
+		// Debug logging for session validation
+		ctxSubdomain := ""
+		ctxAppID := ""
+		ctxOrgID := ""
+		if ctx != nil {
+			ctxSubdomain = ctx.Subdomain
+			ctxAppID = ctx.AppID
+			ctxOrgID = ctx.OrgID
+		}
+		log.Printf("[BasicAuth] Validating session for path=%s subdomain=%s appID=%s orgID=%s",
+			r.URL.Path, ctxSubdomain, ctxAppID, ctxOrgID)
+
 		session, err := m.basicLoginHandler.ValidateSession(r, appID, orgID)
-		if err == nil && session != nil {
+		if err != nil {
+			log.Printf("[BasicAuth] Session validation error: %v", err)
+		}
+		if session != nil {
+			log.Printf("[BasicAuth] Session valid: id=%s sessionAppID=%v sessionOrgID=%v",
+				session.ID, session.AppID, session.OrgID)
 			return policy.SuccessWithSession(session.ID, session.UserEmail)
 		}
+		log.Printf("[BasicAuth] No valid session, redirecting to login")
 	}
 
 	// No valid session - redirect to login endpoint
