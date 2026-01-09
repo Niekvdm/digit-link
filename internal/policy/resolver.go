@@ -118,7 +118,8 @@ func (r *Resolver) resolveForApp(app *db.Application, ctx *AuthContext) (*Effect
 			// Custom mode but no policy configured - fall back to org
 			return r.resolveForOrgWithContext(app.OrgID, ctx)
 		}
-		return r.appPolicyToEffective(appPolicy, app.OrgID, app.ID)
+		policy, err := r.appPolicyToEffective(appPolicy, app.OrgID, app.ID)
+		return policy, ctx, err
 
 	case db.AuthModeInherit:
 		fallthrough
@@ -149,11 +150,12 @@ func (r *Resolver) resolveForOrgWithContext(orgID string, ctx *AuthContext) (*Ef
 		return nil, ctx, nil
 	}
 
-	return r.orgPolicyToEffective(orgPolicy)
+	policy, err := r.orgPolicyToEffective(orgPolicy)
+	return policy, ctx, err
 }
 
 // orgPolicyToEffective converts an org auth policy to an effective policy
-func (r *Resolver) orgPolicyToEffective(orgPolicy *db.OrgAuthPolicy) (*EffectivePolicy, *AuthContext, error) {
+func (r *Resolver) orgPolicyToEffective(orgPolicy *db.OrgAuthPolicy) (*EffectivePolicy, error) {
 	policy := &EffectivePolicy{
 		Type:          AuthType(orgPolicy.AuthType),
 		APIKeyEnabled: orgPolicy.APIKeyEnabled,
@@ -176,7 +178,7 @@ func (r *Resolver) orgPolicyToEffective(orgPolicy *db.OrgAuthPolicy) (*Effective
 		if r.secretDecryptor != nil && clientSecret != "" {
 			decrypted, err := r.secretDecryptor(clientSecret)
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to decrypt OIDC client secret: %w", err)
+				return nil, fmt.Errorf("failed to decrypt OIDC client secret: %w", err)
 			}
 			clientSecret = decrypted
 		}
@@ -191,11 +193,11 @@ func (r *Resolver) orgPolicyToEffective(orgPolicy *db.OrgAuthPolicy) (*Effective
 		}
 	}
 
-	return policy, nil, nil
+	return policy, nil
 }
 
 // appPolicyToEffective converts an app auth policy to an effective policy
-func (r *Resolver) appPolicyToEffective(appPolicy *db.AppAuthPolicy, orgID, appID string) (*EffectivePolicy, *AuthContext, error) {
+func (r *Resolver) appPolicyToEffective(appPolicy *db.AppAuthPolicy, orgID, appID string) (*EffectivePolicy, error) {
 	policy := &EffectivePolicy{
 		Type:          AuthType(appPolicy.AuthType),
 		APIKeyEnabled: appPolicy.APIKeyEnabled,
@@ -219,7 +221,7 @@ func (r *Resolver) appPolicyToEffective(appPolicy *db.AppAuthPolicy, orgID, appI
 		if r.secretDecryptor != nil && clientSecret != "" {
 			decrypted, err := r.secretDecryptor(clientSecret)
 			if err != nil {
-				return nil, nil, fmt.Errorf("failed to decrypt OIDC client secret: %w", err)
+				return nil, fmt.Errorf("failed to decrypt OIDC client secret: %w", err)
 			}
 			clientSecret = decrypted
 		}
@@ -234,7 +236,7 @@ func (r *Resolver) appPolicyToEffective(appPolicy *db.AppAuthPolicy, orgID, appI
 		}
 	}
 
-	return policy, nil, nil
+	return policy, nil
 }
 
 // ResolveEffectivePolicy is a standalone function that resolves the effective policy
