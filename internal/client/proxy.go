@@ -79,6 +79,16 @@ type WebSocketUpgradeResult struct {
 	Success    bool              // Whether upgrade was successful (status 101)
 }
 
+// bufferedConn wraps a net.Conn with a bufio.Reader to handle any buffered data
+type bufferedConn struct {
+	net.Conn
+	reader *bufio.Reader
+}
+
+func (c *bufferedConn) Read(p []byte) (int, error) {
+	return c.reader.Read(p)
+}
+
 // ForwardWebSocket attempts a WebSocket upgrade to the local service
 // Returns the raw connection for bidirectional piping if successful
 func (p *Proxy) ForwardWebSocket(method, path string, headers map[string]string, body []byte) (*WebSocketUpgradeResult, error) {
@@ -115,7 +125,7 @@ func (p *Proxy) ForwardWebSocket(method, path string, headers map[string]string,
 		return nil, fmt.Errorf("failed to send upgrade request: %w", err)
 	}
 
-	// Read response
+	// Read response using buffered reader
 	reader := bufio.NewReader(conn)
 	resp, err := http.ReadResponse(reader, nil)
 	if err != nil {
@@ -138,8 +148,9 @@ func (p *Proxy) ForwardWebSocket(method, path string, headers map[string]string,
 	}
 
 	if result.Success {
-		// Upgrade successful - return the connection for piping
-		result.Conn = conn
+		// Upgrade successful - wrap connection with buffered reader
+		// This ensures any data buffered after the HTTP response is not lost
+		result.Conn = &bufferedConn{Conn: conn, reader: reader}
 	} else {
 		// Not a 101 response - close connection
 		conn.Close()

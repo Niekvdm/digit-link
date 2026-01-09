@@ -929,6 +929,9 @@ func (s *Server) forwardRequestViaTCP(w http.ResponseWriter, r *http.Request, se
 
 	// Check if this is a WebSocket upgrade request
 	isWS := isWebSocketUpgrade(r)
+	if isWS {
+		log.Printf("[WS] Detected WebSocket upgrade request for %s: %s %s", subdomain, r.Method, r.URL.RequestURI())
+	}
 
 	// Open a new yamux stream for this request
 	stream, err := session.Open()
@@ -1011,8 +1014,14 @@ func (s *Server) forwardRequestViaTCP(w http.ResponseWriter, r *http.Request, se
 
 	// Handle WebSocket upgrade (101 Switching Protocols)
 	if isWS && respFrame.Status == http.StatusSwitchingProtocols {
+		log.Printf("[WS] Received 101 from client, initiating WebSocket upgrade for %s", subdomain)
 		s.handleWebSocketUpgrade(w, r, stream, respFrame, orgID)
 		return
+	}
+
+	// Log if WebSocket was expected but didn't get 101
+	if isWS {
+		log.Printf("[WS] WebSocket upgrade failed for %s: got status %d instead of 101", subdomain, respFrame.Status)
 	}
 
 	// Regular HTTP response
@@ -1037,6 +1046,8 @@ func (s *Server) forwardRequestViaTCP(w http.ResponseWriter, r *http.Request, se
 
 // handleWebSocketUpgrade handles the WebSocket upgrade response and pipes data bidirectionally
 func (s *Server) handleWebSocketUpgrade(w http.ResponseWriter, r *http.Request, stream net.Conn, respFrame *tunnel.ResponseFrame, orgID string) {
+	log.Printf("[WS] handleWebSocketUpgrade called, headers: %v", respFrame.Headers)
+
 	// Hijack the HTTP connection to get raw TCP access
 	hijacker, ok := w.(http.Hijacker)
 	if !ok {
@@ -1061,12 +1072,16 @@ func (s *Server) handleWebSocketUpgrade(w http.ResponseWriter, r *http.Request, 
 	}
 	responseBuf.WriteString("\r\n")
 
+	log.Printf("[WS] Sending 101 response to browser: %s", responseBuf.String())
+
 	if _, err := clientConn.Write([]byte(responseBuf.String())); err != nil {
 		log.Printf("WebSocket upgrade failed: error writing 101 response: %v", err)
 		clientConn.Close()
 		stream.Close()
 		return
 	}
+
+	log.Printf("[WS] Starting bidirectional pipe")
 
 	// Check if there's any buffered data that needs to be written to the stream first
 	if clientBuf.Reader.Buffered() > 0 {

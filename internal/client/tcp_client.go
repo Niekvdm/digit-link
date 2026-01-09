@@ -382,9 +382,12 @@ func (c *TCPClient) handleRequest(stream net.Conn) {
 
 // handleWebSocketRequest handles WebSocket upgrade requests
 func (c *TCPClient) handleWebSocketRequest(stream net.Conn, reqFrame *tunnel.RequestFrame, proxy *Proxy, startTime time.Time, bytesRecv int64) {
+	fmt.Printf("[WS] Forwarding WebSocket upgrade: %s %s\n", reqFrame.Method, reqFrame.Path)
+
 	// Attempt WebSocket upgrade to local service
 	result, err := proxy.ForwardWebSocket(reqFrame.Method, reqFrame.Path, reqFrame.Headers, reqFrame.Body)
 	if err != nil {
+		fmt.Printf("[WS] Error forwarding WebSocket: %v\n", err)
 		// Send error response
 		tunnel.WriteFrame(stream, &tunnel.ResponseFrame{
 			ID:     reqFrame.ID,
@@ -397,6 +400,8 @@ func (c *TCPClient) handleWebSocketRequest(stream net.Conn, reqFrame *tunnel.Req
 		stream.Close()
 		return
 	}
+
+	fmt.Printf("[WS] Local service responded with status %d, headers: %v\n", result.StatusCode, result.Headers)
 
 	// Send the upgrade response back through the tunnel
 	respFrame := &tunnel.ResponseFrame{
@@ -417,26 +422,36 @@ func (c *TCPClient) handleWebSocketRequest(stream net.Conn, reqFrame *tunnel.Req
 	if result.Success && result.Conn != nil {
 		// Notify model that WebSocket is connected
 		if c.model != nil {
-			c.model.SendUpdate(RequestCompletedMsg{
-				ID:         reqFrame.ID,
-				StatusCode: 101,
-				Duration:   time.Since(startTime),
-				BytesSent:  0,
-				BytesRecv:  bytesRecv,
+			c.model.SendUpdate(WebSocketConnectedMsg{
+				ID:        reqFrame.ID,
+				Path:      reqFrame.Path,
+				Subdomain: reqFrame.Subdomain,
 			})
 		}
+
+		fmt.Printf("[WS] WebSocket upgrade successful, starting bidirectional pipe\n")
 
 		// Pipe data bidirectionally between yamux stream and local WebSocket
 		// This blocks until one side closes
 		bytesSent, bytesRecvWS := Pipe(stream, result.Conn)
 
+		fmt.Printf("[WS] WebSocket closed, sent=%d recv=%d\n", bytesSent, bytesRecvWS)
+
+		// Notify model of data transferred and connection closed
+		if c.model != nil {
+			c.model.SendUpdate(WebSocketDataMsg{
+				ID:        reqFrame.ID,
+				BytesSent: bytesSent,
+				BytesRecv: bytesRecvWS,
+			})
+			c.model.SendUpdate(WebSocketClosedMsg{
+				ID: reqFrame.ID,
+			})
+		}
+
 		// Cleanup
 		result.Conn.Close()
 		stream.Close()
-
-		// Log WebSocket session stats (optional)
-		_ = bytesSent
-		_ = bytesRecvWS
 	} else {
 		// Not a 101 response - close stream
 		stream.Close()

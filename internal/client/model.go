@@ -168,6 +168,35 @@ type FastTickMsg time.Time // Fast tick for pending request timer updates
 
 type QuitMsg struct{}
 
+// WebSocket connection messages
+type WebSocketConnectedMsg struct {
+	ID        string
+	Path      string
+	Subdomain string
+}
+
+type WebSocketDataMsg struct {
+	ID        string
+	BytesSent int64
+	BytesRecv int64
+}
+
+type WebSocketClosedMsg struct {
+	ID string
+}
+
+// WebSocketLog represents an active or closed WebSocket connection
+type WebSocketLog struct {
+	ID        string
+	Path      string
+	Subdomain string
+	StartTime time.Time
+	EndTime   time.Time
+	BytesSent int64
+	BytesRecv int64
+	Active    bool
+}
+
 // Model holds the state for the Bubbletea TUI
 type Model struct {
 	status       string
@@ -184,6 +213,19 @@ type Model struct {
 	bytesSent   int64
 	bytesRecv   int64
 	startTime   time.Time
+
+	// WebSocket connections (separate from HTTP requests)
+	wsConnections    []WebSocketLog
+	maxWSConnections int
+	wsBytesSent      int64
+	wsBytesRecv      int64
+	totalWSConns     int64
+	activeWSConns    int
+
+	// Request view (0=HTTP, 1=WebSocket)
+	requestView   int
+	wsPaginator   paginator.Model
+	wsSelectedIdx int
 
 	spinner   spinner.Model
 	paginator paginator.Model
@@ -276,10 +318,20 @@ func NewTCPModel() *Model {
 	p.ActiveDot = lipgloss.NewStyle().Foreground(colorMustardYellow).Render("•")
 	p.InactiveDot = lipgloss.NewStyle().Foreground(colorGray).Render("•")
 
+	// WebSocket paginator
+	wsP := paginator.New()
+	wsP.Type = paginator.Dots
+	wsP.PerPage = 5
+	wsP.ActiveDot = lipgloss.NewStyle().Foreground(colorMustardYellow).Render("•")
+	wsP.InactiveDot = lipgloss.NewStyle().Foreground(colorGray).Render("•")
+
 	now := time.Now()
 	return &Model{
-		status:          "connecting",
-		requests:        make([]RequestLog, 0, 50),
+		status:           "connecting",
+		requests:         make([]RequestLog, 0, 50),
+		wsConnections:    make([]WebSocketLog, 0, 50),
+		maxWSConnections: 50,
+		wsPaginator:      wsP,
 		maxRequests:     50,
 		startTime:       now,
 		spinner:         s,
@@ -308,6 +360,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
+		case "1":
+			// Switch to HTTP view
+			m.requestView = 0
+			return m, nil
+		case "2":
+			// Switch to WebSocket view
+			m.requestView = 1
+			return m, nil
 		case "tab":
 			// Cycle stats tabs (0=Traffic, 1=Requests, 2=Connection, 3=Performance)
 			m.statsTab = (m.statsTab + 1) % 4
@@ -317,17 +377,31 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.statsTab = (m.statsTab + 3) % 4
 			return m, nil
 		case "up", "k":
-			// Select previous request
-			if m.selectedIndex > 0 {
-				m.selectedIndex--
-				m.ensureSelectionVisible()
+			// Select previous item in current view
+			if m.requestView == 0 {
+				if m.selectedIndex > 0 {
+					m.selectedIndex--
+					m.ensureSelectionVisible()
+				}
+			} else {
+				if m.wsSelectedIdx > 0 {
+					m.wsSelectedIdx--
+					m.ensureWSSelectionVisible()
+				}
 			}
 			return m, nil
 		case "down", "j":
-			// Select next request
-			if m.selectedIndex < len(m.requests)-1 {
-				m.selectedIndex++
-				m.ensureSelectionVisible()
+			// Select next item in current view
+			if m.requestView == 0 {
+				if m.selectedIndex < len(m.requests)-1 {
+					m.selectedIndex++
+					m.ensureSelectionVisible()
+				}
+			} else {
+				if m.wsSelectedIdx < len(m.wsConnections)-1 {
+					m.wsSelectedIdx++
+					m.ensureWSSelectionVisible()
+				}
 			}
 			return m, nil
 		case "enter":
@@ -464,6 +538,49 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Update paginator total pages (pass item count, not page count)
 		m.paginator.SetTotalPages(len(m.requests))
 		// Keep draining channel for more completions
+		return m, m.waitForUpdates()
+
+	case WebSocketConnectedMsg:
+		ws := WebSocketLog{
+			ID:        msg.ID,
+			Path:      msg.Path,
+			Subdomain: msg.Subdomain,
+			StartTime: time.Now(),
+			Active:    true,
+		}
+		m.wsConnections = append(m.wsConnections, ws)
+		m.totalWSConns++
+		m.activeWSConns++
+		if len(m.wsConnections) > m.maxWSConnections {
+			m.wsConnections = m.wsConnections[1:]
+			if m.wsSelectedIdx > 0 {
+				m.wsSelectedIdx--
+			}
+		}
+		m.wsPaginator.SetTotalPages(len(m.wsConnections))
+		return m, tea.Batch(m.waitForUpdates(), m.fastTick())
+
+	case WebSocketDataMsg:
+		for i := range m.wsConnections {
+			if m.wsConnections[i].ID == msg.ID {
+				m.wsConnections[i].BytesSent += msg.BytesSent
+				m.wsConnections[i].BytesRecv += msg.BytesRecv
+				break
+			}
+		}
+		m.wsBytesSent += msg.BytesSent
+		m.wsBytesRecv += msg.BytesRecv
+		return m, m.waitForUpdates()
+
+	case WebSocketClosedMsg:
+		for i := range m.wsConnections {
+			if m.wsConnections[i].ID == msg.ID {
+				m.wsConnections[i].Active = false
+				m.wsConnections[i].EndTime = time.Now()
+				m.activeWSConns--
+				break
+			}
+		}
 		return m, m.waitForUpdates()
 
 	case TickMsg:
@@ -657,6 +774,53 @@ func (m *Model) View() string {
 	content = append(content, "")
 	content = append(content, timeStyle.Render(strings.Repeat("─", 80)))
 
+	// Request view tabs (HTTP / WebSocket)
+	content = append(content, m.renderViewTabs())
+	content = append(content, "")
+
+	// Render either HTTP or WebSocket view based on requestView
+	if m.requestView == 1 {
+		content = append(content, m.renderWebSocketView()...)
+	} else {
+		content = append(content, m.renderHTTPView()...)
+	}
+
+	// Add detail view if expanded
+	if m.detailExpanded {
+		content = append(content, m.renderDetailView())
+	}
+
+	// Combine everything into one box (no border)
+	boxContent := mainBoxStyle.Render(strings.Join(content, "\n"))
+
+	return lipgloss.JoinVertical(lipgloss.Left, header, "", boxContent)
+}
+
+// renderViewTabs renders the HTTP/WebSocket tab bar
+func (m *Model) renderViewTabs() string {
+	httpTab := " HTTP "
+	wsTab := fmt.Sprintf(" WebSocket (%d) ", m.activeWSConns)
+
+	if m.requestView == 0 {
+		httpTab = labelStyle.Render("[HTTP]")
+		wsTab = timeStyle.Render(wsTab)
+	} else {
+		httpTab = timeStyle.Render(httpTab)
+		wsTab = labelStyle.Render(fmt.Sprintf("[WebSocket (%d)]", m.activeWSConns))
+	}
+
+	return lipgloss.JoinHorizontal(lipgloss.Left,
+		httpTab,
+		timeStyle.Render(" | "),
+		wsTab,
+		timeStyle.Render("  (1: HTTP, 2: WebSocket)"),
+	)
+}
+
+// renderHTTPView renders the HTTP requests view
+func (m *Model) renderHTTPView() []string {
+	var content []string
+
 	// Filter bar (if enabled)
 	if m.filterEnabled {
 		filterStyle := lipgloss.NewStyle().
@@ -792,15 +956,157 @@ func (m *Model) View() string {
 	}
 	content = append(content, helpText)
 
-	// Add detail view if expanded
-	if m.detailExpanded {
-		content = append(content, m.renderDetailView())
+	return content
+}
+
+// renderWebSocketView renders the WebSocket connections view
+func (m *Model) renderWebSocketView() []string {
+	var content []string
+
+	// Table header
+	headerRow := lipgloss.JoinHorizontal(lipgloss.Left,
+		lipgloss.NewStyle().Width(10).Render(timeStyle.Render("Time")),
+		lipgloss.NewStyle().Width(8).Render(labelStyle.Render("Status")),
+		lipgloss.NewStyle().Width(36).Render(labelStyle.Render("Path")),
+		lipgloss.NewStyle().Width(12).Render(labelStyle.Render("Duration")),
+		lipgloss.NewStyle().Width(14).Render(labelStyle.Render("Data")),
+	)
+	content = append(content, headerRow)
+	content = append(content, timeStyle.Render(strings.Repeat("─", 80)))
+
+	wsCount := len(m.wsConnections)
+	m.wsPaginator.SetTotalPages(wsCount)
+	totalPages := m.wsPaginator.TotalPages
+	if totalPages == 0 {
+		totalPages = 1
 	}
 
-	// Combine everything into one box (no border)
-	boxContent := mainBoxStyle.Render(strings.Join(content, "\n"))
+	// Calculate start/end indices for the current page (in reversed order)
+	start, end := m.wsPaginator.GetSliceBounds(wsCount)
+	pageItemCount := end - start
+	if pageItemCount < 0 {
+		pageItemCount = 0
+	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, header, "", boxContent)
+	// WebSocket badge style (purple)
+	wsBadgeActive := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("232")).
+		Background(lipgloss.Color("141")). // Purple
+		Bold(true).
+		Padding(0, 1).
+		Width(6).
+		Align(lipgloss.Center)
+	wsBadgeClosed := lipgloss.NewStyle().
+		Foreground(colorWhite).
+		Background(colorDarkGray).
+		Bold(true).
+		Padding(0, 1).
+		Width(6).
+		Align(lipgloss.Center)
+
+	// Display paginated WebSocket connections (most recent first)
+	for i := 0; i < m.pageSize; i++ {
+		if i < pageItemCount {
+			actualIndex := start + i
+			reverseIdx := wsCount - 1 - actualIndex
+			if reverseIdx < 0 || reverseIdx >= wsCount {
+				continue
+			}
+			ws := m.wsConnections[reverseIdx]
+
+			// Build display path with subdomain prefix for multi-tunnel
+			path := ws.Path
+			if len(m.tunnels) > 1 && ws.Subdomain != "" {
+				path = "[" + ws.Subdomain + "] " + path
+			}
+			if len(path) > 34 {
+				path = path[:31] + "..."
+			}
+
+			// Determine row style based on selection
+			var rowStyle lipgloss.Style
+			isSelected := actualIndex == m.wsSelectedIdx
+			if isSelected {
+				rowStyle = lipgloss.NewStyle().
+					Background(colorMustardYellow).
+					Foreground(lipgloss.Color("232")).
+					Padding(0, 1)
+			} else {
+				rowStyle = requestRowStyle
+			}
+
+			// Status badge
+			var statusBadge string
+			if ws.Active {
+				statusBadge = wsBadgeActive.Render("LIVE")
+			} else {
+				statusBadge = wsBadgeClosed.Render("DONE")
+			}
+
+			// Duration
+			var duration time.Duration
+			if ws.Active {
+				duration = time.Since(ws.StartTime)
+			} else {
+				duration = ws.EndTime.Sub(ws.StartTime)
+			}
+
+			// Data transferred
+			dataStr := fmt.Sprintf("↑%s ↓%s", formatBytes(ws.BytesSent), formatBytes(ws.BytesRecv))
+
+			row := lipgloss.JoinHorizontal(lipgloss.Left,
+				lipgloss.NewStyle().Width(10).Render(timeStyle.Render(ws.StartTime.Format("15:04:05"))),
+				lipgloss.NewStyle().Width(8).Render(statusBadge),
+				lipgloss.NewStyle().Width(36).Render(valueStyle.Render(path)),
+				lipgloss.NewStyle().Width(12).Render(timeStyle.Render(formatDuration(duration))),
+				lipgloss.NewStyle().Width(14).Render(timeStyle.Render(dataStr)),
+			)
+			content = append(content, rowStyle.Render(row))
+		} else {
+			// Empty row placeholder
+			emptyRow := lipgloss.JoinHorizontal(lipgloss.Left,
+				lipgloss.NewStyle().Width(10).Render(""),
+				lipgloss.NewStyle().Width(8).Render(""),
+				lipgloss.NewStyle().Width(36).Render(""),
+				lipgloss.NewStyle().Width(12).Render(""),
+				lipgloss.NewStyle().Width(14).Render(""),
+			)
+			content = append(content, requestRowStyle.Render(emptyRow))
+		}
+	}
+
+	// Add pagination and help
+	content = append(content, "")
+	if totalPages > 1 {
+		paginationText := lipgloss.NewStyle().
+			Foreground(colorGray).
+			Render(fmt.Sprintf("Page %d of %d", m.wsPaginator.Page+1, totalPages))
+		content = append(content, paginationText)
+		content = append(content, m.wsPaginator.View())
+	}
+
+	// WebSocket stats summary
+	statsLine := timeStyle.Render(fmt.Sprintf("Total: %d | Active: %d | ↑%s ↓%s",
+		m.totalWSConns, m.activeWSConns,
+		formatBytes(m.wsBytesSent), formatBytes(m.wsBytesRecv)))
+	content = append(content, statsLine)
+
+	// Help text
+	helpText := timeStyle.Render("Tab: stats | ↑↓: select | c: copy URL | q: quit")
+	content = append(content, helpText)
+
+	return content
+}
+
+// ensureWSSelectionVisible ensures the selected WebSocket is visible in the paginator
+func (m *Model) ensureWSSelectionVisible() {
+	pageStart := m.wsPaginator.Page * m.pageSize
+	pageEnd := pageStart + m.pageSize
+	if m.wsSelectedIdx < pageStart {
+		m.wsPaginator.Page = m.wsSelectedIdx / m.pageSize
+	} else if m.wsSelectedIdx >= pageEnd {
+		m.wsPaginator.Page = m.wsSelectedIdx / m.pageSize
+	}
 }
 
 // tick returns a command that sends a TickMsg after 1 second
